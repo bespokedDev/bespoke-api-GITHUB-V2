@@ -1,0 +1,214 @@
+{
+  "info": {
+    "name": "Plans API - Bespoked",
+    "description": "Colección de Postman para probar la API de Planes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "YOUR_JWT_TOKEN_HERE",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Plans",
+      "item": [
+        {
+          "name": "Create Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Plan Básico\",\n  \"weeklyClasses\": 2,\n  \"pricing\": {\n    \"single\": 50.00,\n    \"couple\": 90.00,\n    \"group\": 35.00\n  },\n  \"description\": \"Plan ideal para principiantes\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans"]
+            },
+            "description": "Crea un nuevo plan de clases"
+          },
+          "response": []
+        },
+        {
+          "name": "List Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans"]
+            },
+            "description": "Lista todos los planes disponibles"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Plan by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/plans/PLAN_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans", "PLAN_ID_HERE"]
+            },
+            "description": "Obtiene un plan específico por su ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Plan Básico Actualizado\",\n  \"weeklyClasses\": 3,\n  \"pricing\": {\n    \"single\": 55.00,\n    \"couple\": 95.00,\n    \"group\": 40.00\n  },\n  \"description\": \"Plan actualizado para principiantes\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/plans/PLAN_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans", "PLAN_ID_HERE"]
+            },
+            "description": "Actualiza un plan existente"
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Plan temporalmente no disponible\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/plans/PLAN_ID_HERE/deactivate",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans", "PLAN_ID_HERE", "deactivate"]
+            },
+            "description": "Desactiva un plan"
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/plans/PLAN_ID_HERE/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans", "PLAN_ID_HERE", "activate"]
+            },
+            "description": "Activa un plan"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Plans Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/plans/stats/overview",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans", "stats", "overview"]
+            },
+            "description": "Obtiene estadísticas generales de los planes"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints para la gestión de planes"
+    },
+    {
+      "name": "Examples",
+      "item": [
+        {
+          "name": "Plan Premium",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Plan Premium\",\n  \"weeklyClasses\": 5,\n  \"pricing\": {\n    \"single\": 120.00,\n    \"couple\": 200.00,\n    \"group\": 80.00\n  },\n  \"description\": \"Plan avanzado con 5 clases por semana\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans"]
+            },
+            "description": "Ejemplo de plan premium"
+          },
+          "response": []
+        },
+        {
+          "name": "Plan Económico",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Plan Económico\",\n  \"weeklyClasses\": 1,\n  \"pricing\": {\n    \"single\": 25.00,\n    \"couple\": 45.00,\n    \"group\": 20.00\n  },\n  \"description\": \"Plan básico con 1 clase por semana\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["plans"]
+            },
+            "description": "Ejemplo de plan económico"
+          },
+          "response": []
+        }
+      ],
+      "description": "Ejemplos de planes para probar la API"
+    }
+  ]
+}

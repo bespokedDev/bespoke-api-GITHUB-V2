@@ -1,0 +1,200 @@
+{
+  "info": {
+    "name": "Payment Methods API - Bespoked",
+    "description": "Colección de Postman para probar la API de Métodos de Pago",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "YOUR_JWT_TOKEN_HERE",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Payment Methods",
+      "item": [
+        {
+          "name": "Create Payment Method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Zelle\",\n  \"type\": \"Bank Transfer\",\n  \"description\": \"Transferencia bancaria a través de Zelle\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods"]
+            },
+            "description": "Crea un nuevo método de pago"
+          },
+          "response": []
+        },
+        {
+          "name": "List Payment Methods",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods"]
+            },
+            "description": "Lista todos los métodos de pago disponibles"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Payment Method by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods/PAYMENT_METHOD_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods", "PAYMENT_METHOD_ID_HERE"]
+            },
+            "description": "Obtiene un método de pago específico por su ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Payment Method",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Zelle Transfer\",\n  \"type\": \"Digital Banking\",\n  \"description\": \"Transferencia digital a través de Zelle\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods/PAYMENT_METHOD_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods", "PAYMENT_METHOD_ID_HERE"]
+            },
+            "description": "Actualiza un método de pago existente"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Payment Method",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods/PAYMENT_METHOD_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods", "PAYMENT_METHOD_ID_HERE"]
+            },
+            "description": "Elimina un método de pago (⚠️ Verificar uso antes de eliminar)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints para la gestión de métodos de pago"
+    },
+    {
+      "name": "Examples",
+      "item": [
+        {
+          "name": "Bank Transfer Method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Banesco\",\n  \"type\": \"Bank Transfer\",\n  \"description\": \"Transferencia bancaria Banesco\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods"]
+            },
+            "description": "Ejemplo de método de pago bancario"
+          },
+          "response": []
+        },
+        {
+          "name": "Cash Method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Efectivo\",\n  \"type\": \"Cash\",\n  \"description\": \"Pago en efectivo\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods"]
+            },
+            "description": "Ejemplo de método de pago en efectivo"
+          },
+          "response": []
+        },
+        {
+          "name": "Crypto Method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Binance Pay\",\n  \"type\": \"Crypto\",\n  \"description\": \"Pago con criptomonedas a través de Binance\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payment-methods",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-methods"]
+            },
+            "description": "Ejemplo de método de pago con criptomonedas"
+          },
+          "response": []
+        }
+      ],
+      "description": "Ejemplos de métodos de pago para probar la API"
+    }
+  ]
+}

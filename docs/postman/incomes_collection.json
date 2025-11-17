@@ -1,0 +1,253 @@
+{
+  "info": {
+    "name": "Incomes API - Bespoked",
+    "description": "Colección de Postman para probar la API de Ingresos",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "YOUR_JWT_TOKEN_HERE",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Incomes",
+      "item": [
+        {
+          "name": "Create Income",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+                         "body": {
+               "mode": "raw",
+               "raw": "{\n  \"income_date\": \"2024-01-15T10:30:00.000Z\",\n  \"deposit_name\": \"Pago clase de piano\",\n  \"amount\": 50.00,\n  \"amountInDollars\": 50.00,\n  \"tasa\": 1.0,\n  \"idDivisa\": \"64f8a1b2c3d4e5f6a7b8c9d0\",\n  \"idProfessor\": \"64f8a1b2c3d4e5f6a7b8c9d1\",\n  \"idPaymentMethod\": \"64f8a1b2c3d4e5f6a7b8c9d2\",\n  \"idEnrollment\": \"64f8a1b2c3d4e5f6a7b8c9d3\",\n  \"note\": \"Pago por clase individual de piano\"\n}"
+             },
+            "url": {
+              "raw": "{{baseUrl}}/incomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes"]
+            },
+            "description": "Crea un nuevo ingreso"
+          },
+          "response": []
+        },
+        {
+          "name": "List Incomes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/incomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes"]
+            },
+            "description": "Lista todos los ingresos con referencias populadas"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Income by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/incomes/INCOME_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes", "INCOME_ID_HERE"]
+            },
+            "description": "Obtiene un ingreso específico por su ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Income",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deposit_name\": \"Pago clase de piano actualizado\",\n  \"amount\": 60.00,\n  \"note\": \"Nota actualizada\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/incomes/INCOME_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes", "INCOME_ID_HERE"]
+            },
+            "description": "Actualiza un ingreso existente"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Income",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/incomes/INCOME_ID_HERE",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes", "INCOME_ID_HERE"]
+            },
+            "description": "Elimina un ingreso por su ID"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints CRUD básicos para la gestión de ingresos"
+    },
+    {
+      "name": "Reports & Analytics",
+      "item": [
+        {
+          "name": "Summary by Payment Method",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/incomes/summary-by-payment-method?startDate=2024-01-01&endDate=2024-01-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes", "summary-by-payment-method"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2024-01-01",
+                  "description": "Fecha de inicio (YYYY-MM-DD)"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2024-01-31",
+                  "description": "Fecha de fin (YYYY-MM-DD)"
+                }
+              ]
+            },
+            "description": "Genera resumen de ingresos por método de pago con filtros de fecha opcionales"
+          },
+          "response": []
+        },
+        {
+          "name": "Professors Payout Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/incomes/professors-payout-report?month=2025-01",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes", "professors-payout-report"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2025-01",
+                  "description": "Mes en formato YYYY-MM (obligatorio)"
+                }
+              ]
+            },
+            "description": "Genera reportes detallados de pagos por profesor para un mes específico"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints para reportes y análisis de ingresos"
+    },
+    {
+      "name": "Examples",
+      "item": [
+        {
+          "name": "Income with Professor Only",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+                         "body": {
+               "mode": "raw",
+               "raw": "{\n  \"income_date\": \"2024-01-15T14:00:00.000Z\",\n  \"deposit_name\": \"Pago por consultoría\",\n  \"amount\": 100.00,\n  \"amountInDollars\": 100.00,\n  \"idProfessor\": \"64f8a1b2c3d4e5f6a7b8c9d1\",\n  \"idPaymentMethod\": \"64f8a1b2c3d4e5f6a7b8c9d2\",\n  \"note\": \"Pago por consultoría musical\"\n}"
+             },
+            "url": {
+              "raw": "{{baseUrl}}/incomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes"]
+            },
+            "description": "Ejemplo de ingreso solo con profesor (sin matrícula)"
+          },
+          "response": []
+        },
+        {
+          "name": "Income with Enrollment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+                         "body": {
+               "mode": "raw",
+               "raw": "{\n  \"income_date\": \"2024-01-15T09:00:00.000Z\",\n  \"deposit_name\": \"Pago plan mensual\",\n  \"amount\": 200.00,\n  \"amountInDollars\": 200.00,\n  \"tasa\": 1.0,\n  \"idDivisa\": \"64f8a1b2c3d4e5f6a7b8c9d0\",\n  \"idProfessor\": \"64f8a1b2c3d4e5f6a7b8c9d1\",\n  \"idPaymentMethod\": \"64f8a1b2c3d4e5f6a7b8c9d2\",\n  \"idEnrollment\": \"64f8a1b2c3d4e5f6a7b8c9d3\",\n  \"note\": \"Pago por plan mensual de clases\"\n}"
+             },
+            "url": {
+              "raw": "{{baseUrl}}/incomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes"]
+            },
+            "description": "Ejemplo de ingreso completo con matrícula"
+          },
+          "response": []
+        },
+        {
+          "name": "Income with Different Currency",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+                         "body": {
+               "mode": "raw",
+               "raw": "{\n  \"income_date\": \"2024-01-15T16:00:00.000Z\",\n  \"deposit_name\": \"Pago en bolívares\",\n  \"amount\": 1500000.00,\n  \"amountInDollars\": 50.00,\n  \"tasa\": 30000.00,\n  \"idDivisa\": \"64f8a1b2c3d4e5f6a7b8c9d9\",\n  \"idProfessor\": \"64f8a1b2c3d4e5f6a7b8c9d1\",\n  \"idPaymentMethod\": \"64f8a1b2c3d4e5f6a7b8c9d7\",\n  \"note\": \"Pago en bolívares con tasa de cambio\"\n}"
+             },
+            "url": {
+              "raw": "{{baseUrl}}/incomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["incomes"]
+            },
+            "description": "Ejemplo de ingreso con divisa diferente y tasa de cambio"
+          },
+          "response": []
+        }
+      ],
+      "description": "Ejemplos de diferentes tipos de ingresos para probar la API"
+    }
+  ]
+}
