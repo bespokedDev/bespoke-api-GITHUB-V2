@@ -12,6 +12,7 @@ const incomeRoutes = require('./routes/incomes.route');
 const bonusRoutes = require('./routes/bonus.route');
 const divisaRoutes = require('./routes/divisas.route');
 const paymentMethodsRoutes = require('./routes/paymentMethods.route');
+const tiposPagoRoutes = require('./routes/tiposPago.route');
 const generalPaymentTrackerRoutes = require('./routes/generalPaymentTracker.route');
 const specialProfessorReportRoutes = require('./routes/specialProfessorReport.route');
 const cors = require('cors');
@@ -24,8 +25,10 @@ require('./models/ProfessorType');
 app.use(express.json());
 app.use(cors());
 
-// Conectar DB
-connectDB();
+// Conectar DB (solo si no estamos en modo de testing)
+if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+  connectDB();
+}
 
 // Rutas
 app.use('/api/users', userRoutes);
@@ -38,6 +41,7 @@ app.use('/api/payouts', payoutRoutes); // ¡Añade esta línea para las rutas de
 app.use('/api/bonuses', bonusRoutes);
 app.use('/api/divisas', divisaRoutes);
 app.use('/api/payment-methods', paymentMethodsRoutes);
+app.use('/api/tipos-pago', tiposPagoRoutes);
 app.use('/api/general-payment-tracker', generalPaymentTrackerRoutes);
 app.use('/api/special-professor-report', specialProfessorReportRoutes);
 

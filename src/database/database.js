@@ -56,7 +56,11 @@ const connectDB = async () => {
     console.error('   • Verifica que no haya proxy/VPN interfiriendo');
     console.error('   • Intenta desde otra red (móvil hotspot)');
     
-    process.exit(1);
+    // No hacer exit en modo de testing
+    if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+      process.exit(1);
+    }
+    throw error; // Lanzar el error para que las pruebas puedan manejarlo
   }
 };
 
