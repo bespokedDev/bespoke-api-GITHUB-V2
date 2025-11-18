@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const tipoPagoCtrl = {};
 
 /**
- * @route POST /api/tipos-pago
+ * @route POST /api/payment-types
  * @description Crea un nuevo tipo de pago
  * @access Private (Requiere JWT)
  */
@@ -50,7 +50,7 @@ tipoPagoCtrl.create = async (req, res) => {
 };
 
 /**
- * @route GET /api/tipos-pago
+ * @route GET /api/payment-types
  * @description Lista todos los tipos de pago
  * @access Private (Requiere JWT)
  */
@@ -72,7 +72,7 @@ tipoPagoCtrl.list = async (req, res) => {
 };
 
 /**
- * @route GET /api/tipos-pago/:id
+ * @route GET /api/payment-types/:id
  * @description Obtiene un tipo de pago por su ID
  * @access Private (Requiere JWT)
  */
@@ -107,7 +107,7 @@ tipoPagoCtrl.getById = async (req, res) => {
 };
 
 /**
- * @route PUT /api/tipos-pago/:id
+ * @route PUT /api/payment-types/:id
  * @description Actualiza los datos de un tipo de pago por su ID (sin cambiar status)
  * @access Private (Requiere JWT)
  */
@@ -166,7 +166,7 @@ tipoPagoCtrl.update = async (req, res) => {
 };
 
 /**
- * @route PATCH /api/tipos-pago/:id/activate
+ * @route PATCH /api/payment-types/:id/activate
  * @description Activa un tipo de pago (cambia status a 1)
  * @access Private (Requiere JWT)
  */
@@ -217,7 +217,7 @@ tipoPagoCtrl.activate = async (req, res) => {
 };
 
 /**
- * @route PATCH /api/tipos-pago/:id/anular
+ * @route PATCH /api/payment-types/:id/anular
  * @description Anula un tipo de pago (cambia status a 2)
  * @access Private (Requiere JWT)
  */

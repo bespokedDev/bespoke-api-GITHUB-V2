@@ -13,6 +13,7 @@ const bonusRoutes = require('./routes/bonus.route');
 const divisaRoutes = require('./routes/divisas.route');
 const paymentMethodsRoutes = require('./routes/paymentMethods.route');
 const tiposPagoRoutes = require('./routes/tiposPago.route');
+const penalizacionesRoutes = require('./routes/penalizaciones.route');
 const generalPaymentTrackerRoutes = require('./routes/generalPaymentTracker.route');
 const specialProfessorReportRoutes = require('./routes/specialProfessorReport.route');
 const cors = require('cors');
@@ -41,7 +42,8 @@ app.use('/api/payouts', payoutRoutes); // ¡Añade esta línea para las rutas de
 app.use('/api/bonuses', bonusRoutes);
 app.use('/api/divisas', divisaRoutes);
 app.use('/api/payment-methods', paymentMethodsRoutes);
-app.use('/api/tipos-pago', tiposPagoRoutes);
+app.use('/api/payment-types', tiposPagoRoutes);
+app.use('/api/penalties', penalizacionesRoutes);
 app.use('/api/general-payment-tracker', generalPaymentTrackerRoutes);
 app.use('/api/special-professor-report', specialProfessorReportRoutes);
 

@@ -1,4 +1,4 @@
-# 💰 API de Tipos de Pago - Documentación para Frontend
+# ⚠️ API de Penalizaciones - Documentación para Frontend
 
 ## 🔐 **Seguridad y Autenticación**
 
@@ -29,22 +29,22 @@ const headers = {
 ### **📋 Resumen de Endpoints**
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/api/payment-types` | Crear nuevo tipo de pago |
-| `GET` | `/api/payment-types` | Listar todos los tipos de pago |
-| `GET` | `/api/payment-types/:id` | Obtener tipo de pago por ID |
-| `PUT` | `/api/payment-types/:id` | Actualizar datos del tipo de pago |
-| `PATCH` | `/api/payment-types/:id/activate` | Activar tipo de pago |
-| `PATCH` | `/api/payment-types/:id/anular` | Anular tipo de pago |
+| `POST` | `/api/penalties` | Crear nueva penalización |
+| `GET` | `/api/penalties` | Listar todas las penalizaciones |
+| `GET` | `/api/penalties/:id` | Obtener penalización por ID |
+| `PUT` | `/api/penalties/:id` | Actualizar datos de la penalización |
+| `PATCH` | `/api/penalties/:id/activate` | Activar penalización |
+| `PATCH` | `/api/penalties/:id/anular` | Anular penalización |
 
 ---
 
 ## 📝 **Modelo de Datos**
 
-### **Estructura del Tipo de Pago**
+### **Estructura de la Penalización**
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-  "name": "Efectivo",
+  "name": "Falta de asistencia",
   "status": 1,
   "statusText": "Activo",
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -53,9 +53,9 @@ const headers = {
 ```
 
 ### **Campos del Modelo**
-- `_id` (ObjectId): ID único del tipo de pago (generado automáticamente)
-- `name` (string): Nombre del tipo de pago (requerido, único)
-- `status` (number): Estado del tipo de pago
+- `_id` (ObjectId): ID único de la penalización (generado automáticamente)
+- `name` (string): Nombre de la penalización (requerido, único)
+- `status` (number): Estado de la penalización
   - `1` = Activo
   - `2` = Anulado
 - `statusText` (string): Texto legible del estado (generado automáticamente)
@@ -68,14 +68,14 @@ const headers = {
 
 ## 🔧 **Endpoints Detallados**
 
-### **1. Crear Tipo de Pago**
+### **1. Crear Penalización**
 - **Método**: `POST`
-- **Ruta**: `/api/payment-types`
-- **Descripción**: Crea un nuevo tipo de pago en el sistema
+- **Ruta**: `/api/penalties`
+- **Descripción**: Crea una nueva penalización en el sistema
 
 #### **URL Completa**
 ```
-POST /api/payment-types
+POST /api/penalties
 ```
 
 #### **Headers Requeridos**
@@ -89,16 +89,16 @@ POST /api/payment-types
 #### **Request Body**
 ```json
 {
-  "name": "Efectivo"
+  "name": "Falta de asistencia"
 }
 ```
 
 #### **Campos Requeridos**
-- `name` (string): Nombre del tipo de pago
+- `name` (string): Nombre de la penalización
   - **Requisitos**: 
     - No puede estar vacío
     - No puede ser solo espacios en blanco
-    - Debe ser único (no puede existir otro tipo de pago con el mismo nombre)
+    - Debe ser único (no puede existir otra penalización con el mismo nombre)
 
 #### **Campos Automáticos**
 - `status` (number): Se establece automáticamente en `1` (Activo)
@@ -108,10 +108,10 @@ POST /api/payment-types
 #### **Response (201 - Created)**
 ```json
 {
-  "message": "Tipo de pago creado exitosamente",
-  "tipoPago": {
+  "message": "Penalización creada exitosamente",
+  "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Falta de asistencia",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -125,7 +125,7 @@ POST /api/payment-types
 **400 - Bad Request**
 ```json
 {
-  "message": "El nombre del tipo de pago es requerido."
+  "message": "El nombre de la penalización es requerido."
 }
 ```
 - **Causa**: El campo `name` no fue proporcionado, está vacío o es solo espacios en blanco
@@ -133,10 +133,10 @@ POST /api/payment-types
 **409 - Conflict**
 ```json
 {
-  "message": "Ya existe un nombre del tipo de pago con el mismo name: 'Efectivo'. Este campo debe ser único."
+  "message": "Ya existe un nombre de la penalización con el mismo name: 'Falta de asistencia'. Este campo debe ser único."
 }
 ```
-- **Causa**: Ya existe un tipo de pago con el mismo nombre
+- **Causa**: Ya existe una penalización con el mismo nombre
 
 **401 - Unauthorized**
 ```json
@@ -157,7 +157,7 @@ POST /api/payment-types
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al crear tipo de pago",
+  "message": "Error interno al crear penalización",
   "error": "Mensaje de error detallado"
 }
 ```
@@ -165,9 +165,9 @@ POST /api/payment-types
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const crearTipoPago = async (nombre) => {
+const crearPenalizacion = async (nombre) => {
   try {
-    const response = await fetch('http://localhost:3000/api/payment-types', {
+    const response = await fetch('http://localhost:3000/api/penalties', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -184,10 +184,10 @@ const crearTipoPago = async (nombre) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago creado:', data.tipoPago);
-    return data.tipoPago;
+    console.log('Penalización creada:', data.penalizacion);
+    return data.penalizacion;
   } catch (error) {
-    console.error('Error al crear tipo de pago:', error);
+    console.error('Error al crear penalización:', error);
     throw error;
   }
 };
@@ -195,14 +195,14 @@ const crearTipoPago = async (nombre) => {
 
 ---
 
-### **2. Listar Tipos de Pago**
+### **2. Listar Penalizaciones**
 - **Método**: `GET`
-- **Ruta**: `/api/payment-types`
-- **Descripción**: Obtiene todos los tipos de pago disponibles en el sistema
+- **Ruta**: `/api/penalties`
+- **Descripción**: Obtiene todas las penalizaciones disponibles en el sistema
 
 #### **URL Completa**
 ```
-GET /api/payment-types
+GET /api/penalties
 ```
 
 #### **Headers Requeridos**
@@ -213,14 +213,14 @@ GET /api/payment-types
 ```
 
 #### **Sin Query Parameters**
-Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pago sin filtros.
+Este endpoint no requiere parámetros de consulta. Retorna todas las penalizaciones sin filtros.
 
 #### **Response (200 - OK)**
 ```json
 [
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Falta de asistencia",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -228,7 +228,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pa
   },
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
-    "name": "Transferencia Bancaria",
+    "name": "Llegada tardía",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T11:00:00.000Z",
@@ -236,7 +236,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pa
   },
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
-    "name": "Tarjeta de Crédito",
+    "name": "No completar tarea",
     "status": 2,
     "statusText": "Anulado",
     "createdAt": "2024-01-15T11:30:00.000Z",
@@ -246,7 +246,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pa
 ```
 
 #### **Response Vacío (200 - OK)**
-Si no hay tipos de pago registrados, retorna un array vacío:
+Si no hay penalizaciones registradas, retorna un array vacío:
 ```json
 []
 ```
@@ -270,16 +270,16 @@ Si no hay tipos de pago registrados, retorna un array vacío:
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al listar tipos de pago",
+  "message": "Error interno al listar penalizaciones",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const listarTiposPago = async () => {
+const listarPenalizaciones = async () => {
   try {
-    const response = await fetch('http://localhost:3000/api/payment-types', {
+    const response = await fetch('http://localhost:3000/api/penalties', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -291,11 +291,11 @@ const listarTiposPago = async () => {
       throw new Error(error.message);
     }
 
-    const tiposPago = await response.json();
-    console.log('Tipos de pago:', tiposPago);
-    return tiposPago;
+    const penalizaciones = await response.json();
+    console.log('Penalizaciones:', penalizaciones);
+    return penalizaciones;
   } catch (error) {
-    console.error('Error al listar tipos de pago:', error);
+    console.error('Error al listar penalizaciones:', error);
     throw error;
   }
 };
@@ -303,17 +303,17 @@ const listarTiposPago = async () => {
 
 ---
 
-### **3. Obtener Tipo de Pago por ID**
+### **3. Obtener Penalización por ID**
 - **Método**: `GET`
-- **Ruta**: `/api/payment-types/:id`
-- **Descripción**: Obtiene un tipo de pago específico por su ID único
+- **Ruta**: `/api/penalties/:id`
+- **Descripción**: Obtiene una penalización específica por su ID único
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago (MongoDB ObjectId)
+- `id` (string): ID único de la penalización (MongoDB ObjectId)
 
 #### **URL Completa**
 ```
-GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
+GET /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0
 ```
 
 #### **Headers Requeridos**
@@ -327,7 +327,7 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-  "name": "Efectivo",
+  "name": "Falta de asistencia",
   "status": 1,
   "statusText": "Activo",
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -340,7 +340,7 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de penalización inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido de MongoDB ObjectId
@@ -348,10 +348,10 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado."
+  "message": "Penalización no encontrada."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una penalización con el ID proporcionado
 
 **401 - Unauthorized**
 ```json
@@ -370,16 +370,16 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al obtener tipo de pago",
+  "message": "Error interno al obtener penalización",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const obtenerTipoPagoPorId = async (id) => {
+const obtenerPenalizacionPorId = async (id) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}`, {
+    const response = await fetch(`http://localhost:3000/api/penalties/${id}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -391,11 +391,11 @@ const obtenerTipoPagoPorId = async (id) => {
       throw new Error(error.message);
     }
 
-    const tipoPago = await response.json();
-    console.log('Tipo de pago:', tipoPago);
-    return tipoPago;
+    const penalizacion = await response.json();
+    console.log('Penalización:', penalizacion);
+    return penalizacion;
   } catch (error) {
-    console.error('Error al obtener tipo de pago:', error);
+    console.error('Error al obtener penalización:', error);
     throw error;
   }
 };
@@ -403,17 +403,17 @@ const obtenerTipoPagoPorId = async (id) => {
 
 ---
 
-### **4. Actualizar Tipo de Pago**
+### **4. Actualizar Penalización**
 - **Método**: `PUT`
-- **Ruta**: `/api/payment-types/:id`
-- **Descripción**: Actualiza los datos de un tipo de pago existente (sin cambiar el status)
+- **Ruta**: `/api/penalties/:id`
+- **Descripción**: Actualiza los datos de una penalización existente (sin cambiar el status)
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago
+- `id` (string): ID único de la penalización
 
 #### **URL Completa**
 ```
-PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
+PUT /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0
 ```
 
 #### **Headers Requeridos**
@@ -427,16 +427,16 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 #### **Request Body**
 ```json
 {
-  "name": "Efectivo Actualizado"
+  "name": "Falta de asistencia sin justificación"
 }
 ```
 
 #### **Campos Disponibles para Actualización**
-- `name` (string): Nombre del tipo de pago
+- `name` (string): Nombre de la penalización
   - **Requisitos**: 
     - No puede estar vacío
     - No puede ser solo espacios en blanco
-    - Debe ser único (no puede existir otro tipo de pago con el mismo nombre)
+    - Debe ser único (no puede existir otra penalización con el mismo nombre)
 
 #### **Notas Importantes**
 - El campo `name` es **requerido** en el request body
@@ -447,10 +447,10 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 #### **Response (200 - OK)**
 ```json
 {
-  "message": "Tipo de pago actualizado exitosamente",
-  "tipoPago": {
+  "message": "Penalización actualizada exitosamente",
+  "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo Actualizado",
+    "name": "Falta de asistencia sin justificación",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -464,21 +464,21 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de penalización inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido
 
 ```json
 {
-  "message": "Se requiere el campo name para actualizar el tipo de pago."
+  "message": "Se requiere el campo name para actualizar la penalización."
 }
 ```
 - **Causa**: No se proporcionó el campo `name` en el request body
 
 ```json
 {
-  "message": "El nombre del tipo de pago no puede estar vacío."
+  "message": "El nombre de la penalización no puede estar vacío."
 }
 ```
 - **Causa**: El campo `name` está vacío o es solo espacios en blanco
@@ -486,18 +486,18 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado para actualizar."
+  "message": "Penalización no encontrada para actualizar."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una penalización con el ID proporcionado
 
 **409 - Conflict**
 ```json
 {
-  "message": "Ya existe un nombre del tipo de pago con el mismo name: 'Efectivo'. Este campo debe ser único."
+  "message": "Ya existe un nombre de la penalización con el mismo name: 'Falta de asistencia'. Este campo debe ser único."
 }
 ```
-- **Causa**: Ya existe otro tipo de pago con el mismo nombre
+- **Causa**: Ya existe otra penalización con el mismo nombre
 
 **401 - Unauthorized**
 ```json
@@ -516,16 +516,16 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al actualizar tipo de pago",
+  "message": "Error interno al actualizar penalización",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const actualizarTipoPago = async (id, nuevoNombre) => {
+const actualizarPenalizacion = async (id, nuevoNombre) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}`, {
+    const response = await fetch(`http://localhost:3000/api/penalties/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -542,10 +542,10 @@ const actualizarTipoPago = async (id, nuevoNombre) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago actualizado:', data.tipoPago);
-    return data.tipoPago;
+    console.log('Penalización actualizada:', data.penalizacion);
+    return data.penalizacion;
   } catch (error) {
-    console.error('Error al actualizar tipo de pago:', error);
+    console.error('Error al actualizar penalización:', error);
     throw error;
   }
 };
@@ -553,17 +553,17 @@ const actualizarTipoPago = async (id, nuevoNombre) => {
 
 ---
 
-### **5. Activar Tipo de Pago**
+### **5. Activar Penalización**
 - **Método**: `PATCH`
-- **Ruta**: `/api/payment-types/:id/activate`
-- **Descripción**: Activa un tipo de pago (cambia status a 1)
+- **Ruta**: `/api/penalties/:id/activate`
+- **Descripción**: Activa una penalización (cambia status a 1)
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago
+- `id` (string): ID único de la penalización
 
 #### **URL Completa**
 ```
-PATCH /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/activate
+PATCH /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0/activate
 ```
 
 #### **Headers Requeridos**
@@ -579,10 +579,10 @@ Este endpoint no requiere body, solo el ID en la URL.
 #### **Response (200 - OK)**
 ```json
 {
-  "message": "Tipo de pago activado exitosamente",
-  "tipoPago": {
+  "message": "Penalización activada exitosamente",
+  "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Falta de asistencia",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -596,25 +596,25 @@ Este endpoint no requiere body, solo el ID en la URL.
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de penalización inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido
 
 ```json
 {
-  "message": "El tipo de pago ya está activo."
+  "message": "La penalización ya está activa."
 }
 ```
-- **Causa**: El tipo de pago ya tiene status = 1 (activo)
+- **Causa**: La penalización ya tiene status = 1 (activa)
 
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado."
+  "message": "Penalización no encontrada."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una penalización con el ID proporcionado
 
 **401 - Unauthorized**
 ```json
@@ -633,16 +633,16 @@ Este endpoint no requiere body, solo el ID en la URL.
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al activar tipo de pago",
+  "message": "Error interno al activar penalización",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const activarTipoPago = async (id) => {
+const activarPenalizacion = async (id) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}/activate`, {
+    const response = await fetch(`http://localhost:3000/api/penalties/${id}/activate`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -655,10 +655,10 @@ const activarTipoPago = async (id) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago activado:', data.tipoPago);
-    return data.tipoPago;
+    console.log('Penalización activada:', data.penalizacion);
+    return data.penalizacion;
   } catch (error) {
-    console.error('Error al activar tipo de pago:', error);
+    console.error('Error al activar penalización:', error);
     throw error;
   }
 };
@@ -666,17 +666,17 @@ const activarTipoPago = async (id) => {
 
 ---
 
-### **6. Anular Tipo de Pago**
+### **6. Anular Penalización**
 - **Método**: `PATCH`
-- **Ruta**: `/api/payment-types/:id/anular`
-- **Descripción**: Anula un tipo de pago (cambia status a 2)
+- **Ruta**: `/api/penalties/:id/anular`
+- **Descripción**: Anula una penalización (cambia status a 2)
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago
+- `id` (string): ID único de la penalización
 
 #### **URL Completa**
 ```
-PATCH /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/anular
+PATCH /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0/anular
 ```
 
 #### **Headers Requeridos**
@@ -692,10 +692,10 @@ Este endpoint no requiere body, solo el ID en la URL.
 #### **Response (200 - OK)**
 ```json
 {
-  "message": "Tipo de pago anulado exitosamente",
-  "tipoPago": {
+  "message": "Penalización anulada exitosamente",
+  "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Falta de asistencia",
     "status": 2,
     "statusText": "Anulado",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -709,25 +709,25 @@ Este endpoint no requiere body, solo el ID en la URL.
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de penalización inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido
 
 ```json
 {
-  "message": "El tipo de pago ya está anulado."
+  "message": "La penalización ya está anulada."
 }
 ```
-- **Causa**: El tipo de pago ya tiene status = 2 (anulado)
+- **Causa**: La penalización ya tiene status = 2 (anulada)
 
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado."
+  "message": "Penalización no encontrada."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una penalización con el ID proporcionado
 
 **401 - Unauthorized**
 ```json
@@ -746,16 +746,16 @@ Este endpoint no requiere body, solo el ID en la URL.
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al anular tipo de pago",
+  "message": "Error interno al anular penalización",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const anularTipoPago = async (id) => {
+const anularPenalizacion = async (id) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}/anular`, {
+    const response = await fetch(`http://localhost:3000/api/penalties/${id}/anular`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -768,10 +768,10 @@ const anularTipoPago = async (id) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago anulado:', data.tipoPago);
-    return data.tipoPago;
+    console.log('Penalización anulada:', data.penalizacion);
+    return data.penalizacion;
   } catch (error) {
-    console.error('Error al anular tipo de pago:', error);
+    console.error('Error al anular penalización:', error);
     throw error;
   }
 };
@@ -781,40 +781,40 @@ const anularTipoPago = async (id) => {
 
 ## 📚 **Ejemplos de Flujos Completos**
 
-### **Flujo 1: Crear y Activar un Tipo de Pago**
+### **Flujo 1: Crear y Activar una Penalización**
 ```javascript
-// 1. Crear tipo de pago
-const nuevoTipoPago = await crearTipoPago("PayPal");
+// 1. Crear penalización
+const nuevaPenalizacion = await crearPenalizacion("Falta de asistencia");
 
-// 2. El tipo de pago se crea automáticamente como activo (status = 1)
-console.log(nuevoTipoPago.statusText); // "Activo"
+// 2. La penalización se crea automáticamente como activa (status = 1)
+console.log(nuevaPenalizacion.statusText); // "Activo"
 ```
 
-### **Flujo 2: Anular y Reactivar un Tipo de Pago**
+### **Flujo 2: Anular y Reactivar una Penalización**
 ```javascript
-// 1. Obtener tipo de pago
-const tipoPago = await obtenerTipoPagoPorId("64f8a1b2c3d4e5f6a7b8c9d0");
+// 1. Obtener penalización
+const penalizacion = await obtenerPenalizacionPorId("64f8a1b2c3d4e5f6a7b8c9d0");
 
-// 2. Anular tipo de pago
-const tipoPagoAnulado = await anularTipoPago(tipoPago._id);
-console.log(tipoPagoAnulado.statusText); // "Anulado"
+// 2. Anular penalización
+const penalizacionAnulada = await anularPenalizacion(penalizacion._id);
+console.log(penalizacionAnulada.statusText); // "Anulado"
 
-// 3. Reactivar tipo de pago
-const tipoPagoReactivated = await activarTipoPago(tipoPago._id);
-console.log(tipoPagoReactivated.statusText); // "Activo"
+// 3. Reactivar penalización
+const penalizacionReactivated = await activarPenalizacion(penalizacion._id);
+console.log(penalizacionReactivated.statusText); // "Activo"
 ```
 
-### **Flujo 3: Actualizar Nombre de Tipo de Pago**
+### **Flujo 3: Actualizar Nombre de Penalización**
 ```javascript
-// 1. Obtener tipo de pago
-const tipoPago = await obtenerTipoPagoPorId("64f8a1b2c3d4e5f6a7b8c9d0");
+// 1. Obtener penalización
+const penalizacion = await obtenerPenalizacionPorId("64f8a1b2c3d4e5f6a7b8c9d0");
 
 // 2. Actualizar nombre
-const tipoPagoActualizado = await actualizarTipoPago(
-  tipoPago._id, 
-  "Efectivo Actualizado"
+const penalizacionActualizada = await actualizarPenalizacion(
+  penalizacion._id, 
+  "Falta de asistencia sin justificación"
 );
-console.log(tipoPagoActualizado.name); // "Efectivo Actualizado"
+console.log(penalizacionActualizada.name); // "Falta de asistencia sin justificación"
 ```
 
 ---
@@ -856,32 +856,32 @@ Para probar los endpoints, puedes usar herramientas como:
 ### **Ejemplo con cURL**
 
 ```bash
-# Crear tipo de pago
-curl -X POST http://localhost:3000/api/payment-types \
+# Crear penalización
+curl -X POST http://localhost:3000/api/penalties \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <tu-token>" \
-  -d '{"name": "Efectivo"}'
+  -d '{"name": "Falta de asistencia"}'
 
-# Listar tipos de pago
-curl -X GET http://localhost:3000/api/payment-types \
+# Listar penalizaciones
+curl -X GET http://localhost:3000/api/penalties \
   -H "Authorization: Bearer <tu-token>"
 
 # Obtener por ID
-curl -X GET http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0 \
+curl -X GET http://localhost:3000/api/penalties/64f8a1b2c3d4e5f6a7b8c9d0 \
   -H "Authorization: Bearer <tu-token>"
 
 # Actualizar
-curl -X PUT http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0 \
+curl -X PUT http://localhost:3000/api/penalties/64f8a1b2c3d4e5f6a7b8c9d0 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <tu-token>" \
-  -d '{"name": "Efectivo Actualizado"}'
+  -d '{"name": "Falta de asistencia sin justificación"}'
 
 # Activar
-curl -X PATCH http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/activate \
+curl -X PATCH http://localhost:3000/api/penalties/64f8a1b2c3d4e5f6a7b8c9d0/activate \
   -H "Authorization: Bearer <tu-token>"
 
 # Anular
-curl -X PATCH http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/anular \
+curl -X PATCH http://localhost:3000/api/penalties/64f8a1b2c3d4e5f6a7b8c9d0/anular \
   -H "Authorization: Bearer <tu-token>"
 ```
 
