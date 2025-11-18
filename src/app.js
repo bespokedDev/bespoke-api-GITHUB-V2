@@ -17,6 +17,7 @@ const penalizacionesRoutes = require('./routes/penalizaciones.route');
 const classTypesRoutes = require('./routes/classTypes.route');
 const contentClassRoutes = require('./routes/contentClass.route');
 const categoryClassRoutes = require('./routes/categoryClass.route');
+const categoryMoneyRoutes = require('./routes/categoryMoney.route');
 const generalPaymentTrackerRoutes = require('./routes/generalPaymentTracker.route');
 const specialProfessorReportRoutes = require('./routes/specialProfessorReport.route');
 const cors = require('cors');
@@ -50,6 +51,7 @@ app.use('/api/penalties', penalizacionesRoutes);
 app.use('/api/class-types', classTypesRoutes);
 app.use('/api/content-class', contentClassRoutes);
 app.use('/api/category-class', categoryClassRoutes);
+app.use('/api/category-money', categoryMoneyRoutes);
 app.use('/api/general-payment-tracker', generalPaymentTrackerRoutes);
 app.use('/api/special-professor-report', specialProfessorReportRoutes);
 
