@@ -1,4 +1,4 @@
-# 💰 API de Tipos de Pago - Documentación para Frontend
+# 📂 API de Categoría de Clase - Documentación para Frontend
 
 ## 🔐 **Seguridad y Autenticación**
 
@@ -29,22 +29,22 @@ const headers = {
 ### **📋 Resumen de Endpoints**
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/api/payment-types` | Crear nuevo tipo de pago |
-| `GET` | `/api/payment-types` | Listar todos los tipos de pago |
-| `GET` | `/api/payment-types/:id` | Obtener tipo de pago por ID |
-| `PUT` | `/api/payment-types/:id` | Actualizar datos del tipo de pago |
-| `PATCH` | `/api/payment-types/:id/activate` | Activar tipo de pago |
-| `PATCH` | `/api/payment-types/:id/anular` | Anular tipo de pago |
+| `POST` | `/api/category-class` | Crear nueva categoría de clase |
+| `GET` | `/api/category-class` | Listar todas las categorías de clase |
+| `GET` | `/api/category-class/:id` | Obtener categoría de clase por ID |
+| `PUT` | `/api/category-class/:id` | Actualizar datos de la categoría de clase |
+| `PATCH` | `/api/category-class/:id/activate` | Activar categoría de clase |
+| `PATCH` | `/api/category-class/:id/anular` | Anular categoría de clase |
 
 ---
 
 ## 📝 **Modelo de Datos**
 
-### **Estructura del Tipo de Pago**
+### **Estructura de la Categoría de Clase**
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-  "name": "Efectivo",
+  "name": "Principiante",
   "status": 1,
   "statusText": "Activo",
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -53,9 +53,9 @@ const headers = {
 ```
 
 ### **Campos del Modelo**
-- `_id` (ObjectId): ID único del tipo de pago (generado automáticamente)
-- `name` (string): Nombre del tipo de pago (requerido, único)
-- `status` (number): Estado del tipo de pago
+- `_id` (ObjectId): ID único de la categoría de clase (generado automáticamente)
+- `name` (string): Nombre de la categoría de clase (requerido, único)
+- `status` (number): Estado de la categoría de clase
   - `1` = Activo
   - `2` = Anulado
 - `statusText` (string): Texto legible del estado (generado automáticamente)
@@ -68,14 +68,14 @@ const headers = {
 
 ## 🔧 **Endpoints Detallados**
 
-### **1. Crear Tipo de Pago**
+### **1. Crear Categoría de Clase**
 - **Método**: `POST`
-- **Ruta**: `/api/payment-types`
-- **Descripción**: Crea un nuevo tipo de pago en el sistema
+- **Ruta**: `/api/category-class`
+- **Descripción**: Crea una nueva categoría de clase en el sistema
 
 #### **URL Completa**
 ```
-POST /api/payment-types
+POST /api/category-class
 ```
 
 #### **Headers Requeridos**
@@ -89,16 +89,16 @@ POST /api/payment-types
 #### **Request Body**
 ```json
 {
-  "name": "Efectivo"
+  "name": "Principiante"
 }
 ```
 
 #### **Campos Requeridos**
-- `name` (string): Nombre del tipo de pago
+- `name` (string): Nombre de la categoría de clase
   - **Requisitos**: 
     - No puede estar vacío
     - No puede ser solo espacios en blanco
-    - Debe ser único (no puede existir otro tipo de pago con el mismo nombre)
+    - Debe ser único (no puede existir otra categoría de clase con el mismo nombre)
 
 #### **Campos Automáticos**
 - `status` (number): Se establece automáticamente en `1` (Activo)
@@ -108,10 +108,10 @@ POST /api/payment-types
 #### **Response (201 - Created)**
 ```json
 {
-  "message": "Tipo de pago creado exitosamente",
-  "paymentType": {
+  "message": "Categoría de clase creada exitosamente",
+  "categoryClass": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Principiante",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -125,7 +125,7 @@ POST /api/payment-types
 **400 - Bad Request**
 ```json
 {
-  "message": "El nombre del tipo de pago es requerido."
+  "message": "El nombre de la categoría de clase es requerido."
 }
 ```
 - **Causa**: El campo `name` no fue proporcionado, está vacío o es solo espacios en blanco
@@ -133,10 +133,10 @@ POST /api/payment-types
 **409 - Conflict**
 ```json
 {
-  "message": "Ya existe un nombre del tipo de pago con el mismo name: 'Efectivo'. Este campo debe ser único."
+  "message": "Ya existe un nombre de la categoría de clase con el mismo name: 'Principiante'. Este campo debe ser único."
 }
 ```
-- **Causa**: Ya existe un tipo de pago con el mismo nombre
+- **Causa**: Ya existe una categoría de clase con el mismo nombre
 
 **401 - Unauthorized**
 ```json
@@ -157,7 +157,7 @@ POST /api/payment-types
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al crear tipo de pago",
+  "message": "Error interno al crear categoría de clase",
   "error": "Mensaje de error detallado"
 }
 ```
@@ -165,9 +165,9 @@ POST /api/payment-types
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const crearTipoPago = async (nombre) => {
+const crearCategoriaClase = async (nombre) => {
   try {
-    const response = await fetch('http://localhost:3000/api/payment-types', {
+    const response = await fetch('http://localhost:3000/api/category-class', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -184,10 +184,10 @@ const crearTipoPago = async (nombre) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago creado:', data.paymentType);
-    return data.paymentType;
+    console.log('Categoría de clase creada:', data.categoryClass);
+    return data.categoryClass;
   } catch (error) {
-    console.error('Error al crear tipo de pago:', error);
+    console.error('Error al crear categoría de clase:', error);
     throw error;
   }
 };
@@ -195,14 +195,14 @@ const crearTipoPago = async (nombre) => {
 
 ---
 
-### **2. Listar Tipos de Pago**
+### **2. Listar Categorías de Clase**
 - **Método**: `GET`
-- **Ruta**: `/api/payment-types`
-- **Descripción**: Obtiene todos los tipos de pago disponibles en el sistema
+- **Ruta**: `/api/category-class`
+- **Descripción**: Obtiene todas las categorías de clase disponibles en el sistema
 
 #### **URL Completa**
 ```
-GET /api/payment-types
+GET /api/category-class
 ```
 
 #### **Headers Requeridos**
@@ -213,14 +213,14 @@ GET /api/payment-types
 ```
 
 #### **Sin Query Parameters**
-Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pago sin filtros.
+Este endpoint no requiere parámetros de consulta. Retorna todas las categorías de clase sin filtros.
 
 #### **Response (200 - OK)**
 ```json
 [
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Principiante",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -228,7 +228,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pa
   },
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
-    "name": "Transferencia Bancaria",
+    "name": "Intermedio",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T11:00:00.000Z",
@@ -236,7 +236,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pa
   },
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
-    "name": "Tarjeta de Crédito",
+    "name": "Avanzado",
     "status": 2,
     "statusText": "Anulado",
     "createdAt": "2024-01-15T11:30:00.000Z",
@@ -246,7 +246,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pa
 ```
 
 #### **Response Vacío (200 - OK)**
-Si no hay tipos de pago registrados, retorna un array vacío:
+Si no hay categorías de clase registradas, retorna un array vacío:
 ```json
 []
 ```
@@ -270,16 +270,16 @@ Si no hay tipos de pago registrados, retorna un array vacío:
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al listar tipos de pago",
+  "message": "Error interno al listar categorías de clase",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const listarTiposPago = async () => {
+const listarCategoriasClase = async () => {
   try {
-    const response = await fetch('http://localhost:3000/api/payment-types', {
+    const response = await fetch('http://localhost:3000/api/category-class', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -291,11 +291,11 @@ const listarTiposPago = async () => {
       throw new Error(error.message);
     }
 
-    const tiposPago = await response.json();
-    console.log('Tipos de pago:', tiposPago);
-    return tiposPago;
+    const categoriasClase = await response.json();
+    console.log('Categorías de clase:', categoriasClase);
+    return categoriasClase;
   } catch (error) {
-    console.error('Error al listar tipos de pago:', error);
+    console.error('Error al listar categorías de clase:', error);
     throw error;
   }
 };
@@ -303,17 +303,17 @@ const listarTiposPago = async () => {
 
 ---
 
-### **3. Obtener Tipo de Pago por ID**
+### **3. Obtener Categoría de Clase por ID**
 - **Método**: `GET`
-- **Ruta**: `/api/payment-types/:id`
-- **Descripción**: Obtiene un tipo de pago específico por su ID único
+- **Ruta**: `/api/category-class/:id`
+- **Descripción**: Obtiene una categoría de clase específica por su ID único
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago (MongoDB ObjectId)
+- `id` (string): ID único de la categoría de clase (MongoDB ObjectId)
 
 #### **URL Completa**
 ```
-GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
+GET /api/category-class/64f8a1b2c3d4e5f6a7b8c9d0
 ```
 
 #### **Headers Requeridos**
@@ -327,7 +327,7 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-  "name": "Efectivo",
+  "name": "Principiante",
   "status": 1,
   "statusText": "Activo",
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -340,7 +340,7 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de categoría de clase inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido de MongoDB ObjectId
@@ -348,10 +348,10 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado."
+  "message": "Categoría de clase no encontrada."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una categoría de clase con el ID proporcionado
 
 **401 - Unauthorized**
 ```json
@@ -370,16 +370,16 @@ GET /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al obtener tipo de pago",
+  "message": "Error interno al obtener categoría de clase",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const obtenerTipoPagoPorId = async (id) => {
+const obtenerCategoriaClasePorId = async (id) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}`, {
+    const response = await fetch(`http://localhost:3000/api/category-class/${id}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -391,11 +391,11 @@ const obtenerTipoPagoPorId = async (id) => {
       throw new Error(error.message);
     }
 
-    const tipoPago = await response.json();
-    console.log('Tipo de pago:', tipoPago);
-    return tipoPago;
+    const categoriaClase = await response.json();
+    console.log('Categoría de clase:', categoriaClase);
+    return categoriaClase;
   } catch (error) {
-    console.error('Error al obtener tipo de pago:', error);
+    console.error('Error al obtener categoría de clase:', error);
     throw error;
   }
 };
@@ -403,17 +403,17 @@ const obtenerTipoPagoPorId = async (id) => {
 
 ---
 
-### **4. Actualizar Tipo de Pago**
+### **4. Actualizar Categoría de Clase**
 - **Método**: `PUT`
-- **Ruta**: `/api/payment-types/:id`
-- **Descripción**: Actualiza los datos de un tipo de pago existente (sin cambiar el status)
+- **Ruta**: `/api/category-class/:id`
+- **Descripción**: Actualiza los datos de una categoría de clase existente (sin cambiar el status)
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago
+- `id` (string): ID único de la categoría de clase
 
 #### **URL Completa**
 ```
-PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
+PUT /api/category-class/64f8a1b2c3d4e5f6a7b8c9d0
 ```
 
 #### **Headers Requeridos**
@@ -427,16 +427,16 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 #### **Request Body**
 ```json
 {
-  "name": "Efectivo Actualizado"
+  "name": "Principiante Plus"
 }
 ```
 
 #### **Campos Disponibles para Actualización**
-- `name` (string): Nombre del tipo de pago
+- `name` (string): Nombre de la categoría de clase
   - **Requisitos**: 
     - No puede estar vacío
     - No puede ser solo espacios en blanco
-    - Debe ser único (no puede existir otro tipo de pago con el mismo nombre)
+    - Debe ser único (no puede existir otra categoría de clase con el mismo nombre)
 
 #### **Notas Importantes**
 - El campo `name` es **requerido** en el request body
@@ -447,10 +447,10 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 #### **Response (200 - OK)**
 ```json
 {
-  "message": "Tipo de pago actualizado exitosamente",
-  "paymentType": {
+  "message": "Categoría de clase actualizada exitosamente",
+  "categoryClass": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo Actualizado",
+    "name": "Principiante Plus",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -464,21 +464,21 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de categoría de clase inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido
 
 ```json
 {
-  "message": "Se requiere el campo name para actualizar el tipo de pago."
+  "message": "Se requiere el campo name para actualizar la categoría de clase."
 }
 ```
 - **Causa**: No se proporcionó el campo `name` en el request body
 
 ```json
 {
-  "message": "El nombre del tipo de pago no puede estar vacío."
+  "message": "El nombre de la categoría de clase no puede estar vacío."
 }
 ```
 - **Causa**: El campo `name` está vacío o es solo espacios en blanco
@@ -486,18 +486,18 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado para actualizar."
+  "message": "Categoría de clase no encontrada para actualizar."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una categoría de clase con el ID proporcionado
 
 **409 - Conflict**
 ```json
 {
-  "message": "Ya existe un nombre del tipo de pago con el mismo name: 'Efectivo'. Este campo debe ser único."
+  "message": "Ya existe un nombre de la categoría de clase con el mismo name: 'Principiante'. Este campo debe ser único."
 }
 ```
-- **Causa**: Ya existe otro tipo de pago con el mismo nombre
+- **Causa**: Ya existe otra categoría de clase con el mismo nombre
 
 **401 - Unauthorized**
 ```json
@@ -516,16 +516,16 @@ PUT /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al actualizar tipo de pago",
+  "message": "Error interno al actualizar categoría de clase",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const actualizarTipoPago = async (id, nuevoNombre) => {
+const actualizarCategoriaClase = async (id, nuevoNombre) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}`, {
+    const response = await fetch(`http://localhost:3000/api/category-class/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -542,10 +542,10 @@ const actualizarTipoPago = async (id, nuevoNombre) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago actualizado:', data.paymentType);
-    return data.paymentType;
+    console.log('Categoría de clase actualizada:', data.categoryClass);
+    return data.categoryClass;
   } catch (error) {
-    console.error('Error al actualizar tipo de pago:', error);
+    console.error('Error al actualizar categoría de clase:', error);
     throw error;
   }
 };
@@ -553,17 +553,17 @@ const actualizarTipoPago = async (id, nuevoNombre) => {
 
 ---
 
-### **5. Activar Tipo de Pago**
+### **5. Activar Categoría de Clase**
 - **Método**: `PATCH`
-- **Ruta**: `/api/payment-types/:id/activate`
-- **Descripción**: Activa un tipo de pago (cambia status a 1)
+- **Ruta**: `/api/category-class/:id/activate`
+- **Descripción**: Activa una categoría de clase (cambia status a 1)
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago
+- `id` (string): ID único de la categoría de clase
 
 #### **URL Completa**
 ```
-PATCH /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/activate
+PATCH /api/category-class/64f8a1b2c3d4e5f6a7b8c9d0/activate
 ```
 
 #### **Headers Requeridos**
@@ -579,10 +579,10 @@ Este endpoint no requiere body, solo el ID en la URL.
 #### **Response (200 - OK)**
 ```json
 {
-  "message": "Tipo de pago activado exitosamente",
-  "paymentType": {
+  "message": "Categoría de clase activada exitosamente",
+  "categoryClass": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Principiante",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -596,25 +596,25 @@ Este endpoint no requiere body, solo el ID en la URL.
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de categoría de clase inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido
 
 ```json
 {
-  "message": "El tipo de pago ya está activo."
+  "message": "La categoría de clase ya está activa."
 }
 ```
-- **Causa**: El tipo de pago ya tiene status = 1 (activo)
+- **Causa**: La categoría de clase ya tiene status = 1 (activa)
 
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado."
+  "message": "Categoría de clase no encontrada."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una categoría de clase con el ID proporcionado
 
 **401 - Unauthorized**
 ```json
@@ -633,16 +633,16 @@ Este endpoint no requiere body, solo el ID en la URL.
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al activar tipo de pago",
+  "message": "Error interno al activar categoría de clase",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const activarTipoPago = async (id) => {
+const activarCategoriaClase = async (id) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}/activate`, {
+    const response = await fetch(`http://localhost:3000/api/category-class/${id}/activate`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -655,10 +655,10 @@ const activarTipoPago = async (id) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago activado:', data.paymentType);
-    return data.paymentType;
+    console.log('Categoría de clase activada:', data.categoryClass);
+    return data.categoryClass;
   } catch (error) {
-    console.error('Error al activar tipo de pago:', error);
+    console.error('Error al activar categoría de clase:', error);
     throw error;
   }
 };
@@ -666,17 +666,17 @@ const activarTipoPago = async (id) => {
 
 ---
 
-### **6. Anular Tipo de Pago**
+### **6. Anular Categoría de Clase**
 - **Método**: `PATCH`
-- **Ruta**: `/api/payment-types/:id/anular`
-- **Descripción**: Anula un tipo de pago (cambia status a 2)
+- **Ruta**: `/api/category-class/:id/anular`
+- **Descripción**: Anula una categoría de clase (cambia status a 2)
 
 #### **URL Parameters**
-- `id` (string): ID único del tipo de pago
+- `id` (string): ID único de la categoría de clase
 
 #### **URL Completa**
 ```
-PATCH /api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/anular
+PATCH /api/category-class/64f8a1b2c3d4e5f6a7b8c9d0/anular
 ```
 
 #### **Headers Requeridos**
@@ -692,10 +692,10 @@ Este endpoint no requiere body, solo el ID en la URL.
 #### **Response (200 - OK)**
 ```json
 {
-  "message": "Tipo de pago anulado exitosamente",
-  "paymentType": {
+  "message": "Categoría de clase anulada exitosamente",
+  "categoryClass": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Efectivo",
+    "name": "Principiante",
     "status": 2,
     "statusText": "Anulado",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -709,25 +709,25 @@ Este endpoint no requiere body, solo el ID en la URL.
 **400 - Bad Request**
 ```json
 {
-  "message": "ID de tipo de pago inválido."
+  "message": "ID de categoría de clase inválido."
 }
 ```
 - **Causa**: El ID proporcionado no tiene un formato válido
 
 ```json
 {
-  "message": "El tipo de pago ya está anulado."
+  "message": "La categoría de clase ya está anulada."
 }
 ```
-- **Causa**: El tipo de pago ya tiene status = 2 (anulado)
+- **Causa**: La categoría de clase ya tiene status = 2 (anulada)
 
 **404 - Not Found**
 ```json
 {
-  "message": "Tipo de pago no encontrado."
+  "message": "Categoría de clase no encontrada."
 }
 ```
-- **Causa**: No existe un tipo de pago con el ID proporcionado
+- **Causa**: No existe una categoría de clase con el ID proporcionado
 
 **401 - Unauthorized**
 ```json
@@ -746,16 +746,16 @@ Este endpoint no requiere body, solo el ID en la URL.
 **500 - Internal Server Error**
 ```json
 {
-  "message": "Error interno al anular tipo de pago",
+  "message": "Error interno al anular categoría de clase",
   "error": "Mensaje de error detallado"
 }
 ```
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const anularTipoPago = async (id) => {
+const anularCategoriaClase = async (id) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/payment-types/${id}/anular`, {
+    const response = await fetch(`http://localhost:3000/api/category-class/${id}/anular`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -768,10 +768,10 @@ const anularTipoPago = async (id) => {
     }
 
     const data = await response.json();
-    console.log('Tipo de pago anulado:', data.paymentType);
-    return data.paymentType;
+    console.log('Categoría de clase anulada:', data.categoryClass);
+    return data.categoryClass;
   } catch (error) {
-    console.error('Error al anular tipo de pago:', error);
+    console.error('Error al anular categoría de clase:', error);
     throw error;
   }
 };
@@ -781,40 +781,40 @@ const anularTipoPago = async (id) => {
 
 ## 📚 **Ejemplos de Flujos Completos**
 
-### **Flujo 1: Crear y Activar un Tipo de Pago**
+### **Flujo 1: Crear y Activar una Categoría de Clase**
 ```javascript
-// 1. Crear tipo de pago
-const nuevoTipoPago = await crearTipoPago("PayPal");
+// 1. Crear categoría de clase
+const nuevaCategoriaClase = await crearCategoriaClase("Principiante");
 
-// 2. El tipo de pago se crea automáticamente como activo (status = 1)
-console.log(nuevoTipoPago.statusText); // "Activo"
+// 2. La categoría de clase se crea automáticamente como activa (status = 1)
+console.log(nuevaCategoriaClase.statusText); // "Activo"
 ```
 
-### **Flujo 2: Anular y Reactivar un Tipo de Pago**
+### **Flujo 2: Anular y Reactivar una Categoría de Clase**
 ```javascript
-// 1. Obtener tipo de pago
-const tipoPago = await obtenerTipoPagoPorId("64f8a1b2c3d4e5f6a7b8c9d0");
+// 1. Obtener categoría de clase
+const categoriaClase = await obtenerCategoriaClasePorId("64f8a1b2c3d4e5f6a7b8c9d0");
 
-// 2. Anular tipo de pago
-const tipoPagoAnulado = await anularTipoPago(tipoPago._id);
-console.log(tipoPagoAnulado.statusText); // "Anulado"
+// 2. Anular categoría de clase
+const categoriaClaseAnulada = await anularCategoriaClase(categoriaClase._id);
+console.log(categoriaClaseAnulada.statusText); // "Anulado"
 
-// 3. Reactivar tipo de pago
-const tipoPagoReactivated = await activarTipoPago(tipoPago._id);
-console.log(tipoPagoReactivated.statusText); // "Activo"
+// 3. Reactivar categoría de clase
+const categoriaClaseReactivated = await activarCategoriaClase(categoriaClase._id);
+console.log(categoriaClaseReactivated.statusText); // "Activo"
 ```
 
-### **Flujo 3: Actualizar Nombre de Tipo de Pago**
+### **Flujo 3: Actualizar Nombre de Categoría de Clase**
 ```javascript
-// 1. Obtener tipo de pago
-const tipoPago = await obtenerTipoPagoPorId("64f8a1b2c3d4e5f6a7b8c9d0");
+// 1. Obtener categoría de clase
+const categoriaClase = await obtenerCategoriaClasePorId("64f8a1b2c3d4e5f6a7b8c9d0");
 
 // 2. Actualizar nombre
-const tipoPagoActualizado = await actualizarTipoPago(
-  tipoPago._id, 
-  "Efectivo Actualizado"
+const categoriaClaseActualizada = await actualizarCategoriaClase(
+  categoriaClase._id, 
+  "Principiante Plus"
 );
-console.log(tipoPagoActualizado.name); // "Efectivo Actualizado"
+console.log(categoriaClaseActualizada.name); // "Principiante Plus"
 ```
 
 ---
@@ -856,32 +856,32 @@ Para probar los endpoints, puedes usar herramientas como:
 ### **Ejemplo con cURL**
 
 ```bash
-# Crear tipo de pago
-curl -X POST http://localhost:3000/api/payment-types \
+# Crear categoría de clase
+curl -X POST http://localhost:3000/api/category-class \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <tu-token>" \
-  -d '{"name": "Efectivo"}'
+  -d '{"name": "Principiante"}'
 
-# Listar tipos de pago
-curl -X GET http://localhost:3000/api/payment-types \
+# Listar categorías de clase
+curl -X GET http://localhost:3000/api/category-class \
   -H "Authorization: Bearer <tu-token>"
 
 # Obtener por ID
-curl -X GET http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0 \
+curl -X GET http://localhost:3000/api/category-class/64f8a1b2c3d4e5f6a7b8c9d0 \
   -H "Authorization: Bearer <tu-token>"
 
 # Actualizar
-curl -X PUT http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0 \
+curl -X PUT http://localhost:3000/api/category-class/64f8a1b2c3d4e5f6a7b8c9d0 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <tu-token>" \
-  -d '{"name": "Efectivo Actualizado"}'
+  -d '{"name": "Principiante Plus"}'
 
 # Activar
-curl -X PATCH http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/activate \
+curl -X PATCH http://localhost:3000/api/category-class/64f8a1b2c3d4e5f6a7b8c9d0/activate \
   -H "Authorization: Bearer <tu-token>"
 
 # Anular
-curl -X PATCH http://localhost:3000/api/payment-types/64f8a1b2c3d4e5f6a7b8c9d0/anular \
+curl -X PATCH http://localhost:3000/api/category-class/64f8a1b2c3d4e5f6a7b8c9d0/anular \
   -H "Authorization: Bearer <tu-token>"
 ```
 

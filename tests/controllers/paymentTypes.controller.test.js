@@ -36,10 +36,10 @@ describe('TiposPago Controller', () => {
         .expect(201);
 
       expect(response.body).toHaveProperty('message', 'Tipo de pago creado exitosamente');
-      expect(response.body.tipoPago).toHaveProperty('name', 'Efectivo');
-      expect(response.body.tipoPago).toHaveProperty('status', 1);
-      expect(response.body.tipoPago).toHaveProperty('statusText', 'Activo');
-      expect(response.body.tipoPago).toHaveProperty('_id');
+      expect(response.body.paymentType).toHaveProperty('name', 'Efectivo');
+      expect(response.body.paymentType).toHaveProperty('status', 1);
+      expect(response.body.paymentType).toHaveProperty('statusText', 'Activo');
+      expect(response.body.paymentType).toHaveProperty('_id');
     });
 
     it('debería retornar error 400 si no se proporciona el nombre', async () => {
@@ -163,7 +163,7 @@ describe('TiposPago Controller', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('message', 'Tipo de pago actualizado exitosamente');
-      expect(response.body.tipoPago).toHaveProperty('name', 'Efectivo Actualizado');
+      expect(response.body.paymentType).toHaveProperty('name', 'Efectivo Actualizado');
     });
 
     it('debería retornar error 400 si no se proporciona el nombre', async () => {
@@ -214,8 +214,8 @@ describe('TiposPago Controller', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('message', 'Tipo de pago activado exitosamente');
-      expect(response.body.tipoPago).toHaveProperty('status', 1);
-      expect(response.body.tipoPago).toHaveProperty('statusText', 'Activo');
+      expect(response.body.paymentType).toHaveProperty('status', 1);
+      expect(response.body.paymentType).toHaveProperty('statusText', 'Activo');
     });
 
     it('debería retornar error 400 si el tipo de pago ya está activo', async () => {
@@ -251,8 +251,8 @@ describe('TiposPago Controller', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('message', 'Tipo de pago anulado exitosamente');
-      expect(response.body.tipoPago).toHaveProperty('status', 2);
-      expect(response.body.tipoPago).toHaveProperty('statusText', 'Anulado');
+      expect(response.body.paymentType).toHaveProperty('status', 2);
+      expect(response.body.paymentType).toHaveProperty('statusText', 'Anulado');
     });
 
     it('debería retornar error 400 si el tipo de pago ya está anulado', async () => {

@@ -30,7 +30,7 @@ tipoPagoCtrl.create = async (req, res) => {
 
         res.status(201).json({
             message: 'Tipo de pago creado exitosamente',
-            tipoPago: tipoPagoWithStatus
+            paymentType: tipoPagoWithStatus
         });
 
     } catch (error) {
@@ -146,7 +146,7 @@ tipoPagoCtrl.update = async (req, res) => {
 
         res.status(200).json({
             message: 'Tipo de pago actualizado exitosamente',
-            tipoPago: tipoPagoWithStatus
+            paymentType: tipoPagoWithStatus
         });
 
     } catch (error) {
@@ -197,7 +197,7 @@ tipoPagoCtrl.activate = async (req, res) => {
 
         res.status(200).json({
             message: 'Tipo de pago activado exitosamente',
-            tipoPago: {
+            paymentType: {
                 ...updatedTipoPago,
                 statusText: 'Activo'
             }
@@ -248,7 +248,7 @@ tipoPagoCtrl.anular = async (req, res) => {
 
         res.status(200).json({
             message: 'Tipo de pago anulado exitosamente',
-            tipoPago: {
+            paymentType: {
                 ...updatedTipoPago,
                 statusText: 'Anulado'
             }
