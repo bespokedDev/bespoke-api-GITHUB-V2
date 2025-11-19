@@ -51,6 +51,10 @@ const EnrollmentSchema = new mongoose.Schema({
         type: Date
         //default: Date.now
     },
+    endDate: {
+        type: Date
+        // fecha de vencimiento del enrollment (un mes menos un día desde startDate)
+    },
     pricePerStudent: {
         type: Number,
         required: true,
@@ -65,6 +69,11 @@ const EnrollmentSchema = new mongoose.Schema({
         type: Number,
         default: 0,
         min: 0
+    },
+    available_balance: {
+        type: Number,
+        min: 0
+        // balance disponible
     },
     status: {
         type: Number,

@@ -3,6 +3,7 @@ const Enrollment = require('../models/Enrollment');
 const Plan = require('../models/Plans'); // Necesario para popular
 const Student = require('../models/Student'); // Necesario para popular
 const Professor = require('../models/Professor'); // Necesario para popular
+const ClassRegistry = require('../models/ClassRegistry'); // Modelo para registros de clase
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
 const mongoose = require('mongoose');
 
@@ -20,14 +21,165 @@ const populateOptions = [
  * @description Crea una nueva matrícula
  * @access Private (Requiere JWT)
  */
+/**
+ * Función helper para calcular las fechas de las clases
+ * @param {Date} startDate - Fecha de inicio del enrollment
+ * @param {Date} endDate - Fecha de vencimiento del enrollment
+ * @param {Array} scheduledDays - Array de objetos con {day: 'Lunes'}, etc.
+ * @param {Number} weeklyClasses - Cantidad de clases por semana del plan
+ * @returns {Array<Date>} Array de fechas de clases programadas
+ */
+const calculateClassDates = (startDate, endDate, scheduledDays, weeklyClasses) => {
+    if (!startDate || !endDate || !scheduledDays || scheduledDays.length === 0) {
+        return [];
+    }
+
+    const classDates = [];
+    
+    // Normalizar fechas a medianoche (00:00:00.000) UTC para comparaciones consistentes
+    const start = new Date(startDate);
+    start.setUTCHours(0, 0, 0, 0);
+
+    // Extraer solo la fecha (año, mes, día) del endDate usando UTC para evitar problemas de zona horaria
+    // Esto asegura que el día completo de endDate se incluya
+    const endDateObj = new Date(endDate);
+    const end = new Date(Date.UTC(
+        endDateObj.getUTCFullYear(), 
+        endDateObj.getUTCMonth(), 
+        endDateObj.getUTCDate(), 
+        0, 0, 0, 0
+    ));
+
+    // Mapeo de días en español a números de día de la semana (0 = Domingo, 1 = Lunes, etc.)
+    const dayMap = {
+        'Domingo': 0,
+        'Lunes': 1,
+        'Martes': 2,
+        'Miércoles': 3,
+        'Jueves': 4,
+        'Viernes': 5,
+        'Sábado': 6
+    };
+
+    // Extraer los números de día de scheduledDays
+    const scheduledDayNumbers = scheduledDays.map(sd => dayMap[sd.day]).filter(day => day !== undefined);
+
+    if (scheduledDayNumbers.length === 0) {
+        return [];
+    }
+
+    // Iterar desde startDate hasta endDate (incluyendo ambos días)
+    // IMPORTANTE: Tanto startDate como endDate DEBEN estar incluidos
+    // Usar métodos UTC para evitar problemas de zona horaria
+    const currentDate = new Date(start);
+    currentDate.setUTCHours(0, 0, 0, 0);
+    
+    // Extraer componentes de fecha de endDate usando UTC para comparación
+    const endYear = end.getUTCFullYear();
+    const endMonth = end.getUTCMonth();
+    const endDay = end.getUTCDate();
+    
+    // Iterar día por día desde startDate hasta endDate (ambos incluidos)
+    while (true) {
+        // Extraer componentes de fecha de currentDate usando UTC para comparación
+        const currentYear = currentDate.getUTCFullYear();
+        const currentMonth = currentDate.getUTCMonth();
+        const currentDay = currentDate.getUTCDate();
+        
+        // Verificar si hemos pasado el día de endDate
+        // Si currentDate es mayor que endDate, salir del loop
+        if (currentYear > endYear || 
+            (currentYear === endYear && currentMonth > endMonth) || 
+            (currentYear === endYear && currentMonth === endMonth && currentDay > endDay)) {
+            break;
+        }
+        
+        // Si llegamos aquí, currentDate está dentro del rango (incluyendo endDate)
+        const dayOfWeek = currentDate.getUTCDay(); // Usar UTC para obtener el día de la semana
+        
+        // Verificar si este día está en los scheduledDays
+        if (scheduledDayNumbers.includes(dayOfWeek)) {
+            // Guardar una copia de la fecha normalizada a medianoche UTC
+            const dateToAdd = new Date(currentDate);
+            dateToAdd.setUTCHours(0, 0, 0, 0);
+            classDates.push(dateToAdd);
+        }
+        
+        // Avanzar al siguiente día a medianoche UTC
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        currentDate.setUTCHours(0, 0, 0, 0);
+    }
+
+    // Limitar la cantidad de clases según weeklyClasses
+    // Agrupar por semanas (domingo a sábado) y limitar por semana
+    const limitedDates = [];
+    const weeks = {};
+    
+    classDates.forEach(date => {
+        // Calcular el domingo de la semana para agrupar correctamente
+        const dateCopy = new Date(date);
+        dateCopy.setUTCHours(0, 0, 0, 0); // Asegurar que las horas estén normalizadas UTC
+        const dayOfWeek = dateCopy.getUTCDay(); // 0 = domingo, 1 = lunes, etc. (usar UTC)
+        
+        // Retroceder al domingo de esa semana
+        const weekStart = new Date(dateCopy);
+        weekStart.setUTCDate(dateCopy.getUTCDate() - dayOfWeek);
+        weekStart.setUTCHours(0, 0, 0, 0);
+        
+        // Usar timestamp para evitar problemas de zona horaria
+        const weekKey = weekStart.getTime();
+        
+        if (!weeks[weekKey]) {
+            weeks[weekKey] = [];
+        }
+        // Guardar una copia de la fecha para evitar problemas de referencia
+        weeks[weekKey].push(new Date(dateCopy));
+    });
+
+    // Para cada semana, tomar solo los primeros weeklyClasses días (ordenados por fecha)
+    Object.keys(weeks)
+        .map(key => parseInt(key))
+        .sort((a, b) => a - b)
+        .forEach(weekKey => {
+            const weekDates = weeks[weekKey].sort((a, b) => a.getTime() - b.getTime());
+            const datesToAdd = weekDates.slice(0, weeklyClasses);
+            limitedDates.push(...datesToAdd);
+        });
+
+    return limitedDates.sort((a, b) => a.getTime() - b.getTime());
+};
+
 enrollmentCtrl.create = async (req, res) => {
     try {
         // Validación de IDs antes de crear
-        const { planId, studentIds, professorId } = req.body;
+        const { planId, studentIds, professorId, scheduledDays, startDate } = req.body;
 
-        if (!mongoose.Types.ObjectId.isValid(planId) || !(await Plan.findById(planId))) {
-            return res.status(400).json({ message: 'ID de Plan inválido o no existente.' });
+        // Validar scheduledDays (OBLIGATORIO)
+        if (!scheduledDays || !Array.isArray(scheduledDays) || scheduledDays.length === 0) {
+            return res.status(400).json({ message: 'El campo scheduledDays es obligatorio y debe ser un array con al menos un día.' });
         }
+
+        // Validar que cada scheduledDay tenga el campo 'day'
+        for (const scheduledDay of scheduledDays) {
+            if (!scheduledDay.day || typeof scheduledDay.day !== 'string') {
+                return res.status(400).json({ message: 'Cada elemento de scheduledDays debe tener un campo "day" válido.' });
+            }
+        }
+
+        // Validar startDate (OBLIGATORIO para calcular las clases)
+        if (!startDate) {
+            return res.status(400).json({ message: 'El campo startDate es obligatorio para generar los registros de clase.' });
+        }
+
+        // Validar planId y obtener el plan para acceder a weeklyClasses
+        if (!mongoose.Types.ObjectId.isValid(planId)) {
+            return res.status(400).json({ message: 'ID de Plan inválido.' });
+        }
+        const plan = await Plan.findById(planId);
+        if (!plan) {
+            return res.status(400).json({ message: 'ID de Plan no existente.' });
+        }
+
         if (!mongoose.Types.ObjectId.isValid(professorId) || !(await Professor.findById(professorId))) {
             return res.status(400).json({ message: 'ID de Profesor inválido o no existente.' });
         }
@@ -44,9 +196,40 @@ enrollmentCtrl.create = async (req, res) => {
         if (req.body.purchaseDate && typeof req.body.purchaseDate === 'string') {
             req.body.purchaseDate = new Date(req.body.purchaseDate);
         }
+        if (req.body.startDate && typeof req.body.startDate === 'string') {
+            req.body.startDate = new Date(req.body.startDate);
+        }
+
+        // Calcular endDate: un mes menos un día desde startDate
+        // Ejemplo: 22 enero → 21 febrero, 16 julio → 15 agosto
+        const startDateObj = new Date(req.body.startDate);
+        startDateObj.setHours(0, 0, 0, 0);
+        const endDateObj = new Date(startDateObj);
+        endDateObj.setMonth(endDateObj.getMonth() + 1);
+        endDateObj.setDate(endDateObj.getDate() - 1); // Restar un día
+        endDateObj.setHours(23, 59, 59, 999); // Fin del día
+        req.body.endDate = endDateObj;
+
+        // Inicializar available_balance con el valor de totalAmount si no se proporciona
+        if (req.body.available_balance === undefined || req.body.available_balance === null) {
+            req.body.available_balance = req.body.totalAmount;
+        }
 
         const newEnrollment = new Enrollment(req.body);
         const savedEnrollment = await newEnrollment.save();
+
+        // Calcular fechas de clases y crear registros en class-registry
+        const classDates = calculateClassDates(savedEnrollment.startDate, savedEnrollment.endDate, savedEnrollment.scheduledDays, plan.weeklyClasses);
+        
+        // Crear registros de clase para cada fecha calculada
+        const classRegistries = classDates.map(classDate => ({
+            enrollmentId: savedEnrollment._id,
+            classDate: classDate
+        }));
+
+        if (classRegistries.length > 0) {
+            await ClassRegistry.insertMany(classRegistries);
+        }
 
         // Popular los campos en la respuesta
         const populatedEnrollment = await Enrollment.findById(savedEnrollment._id)
@@ -55,7 +238,8 @@ enrollmentCtrl.create = async (req, res) => {
 
         res.status(201).json({
             message: 'Matrícula creada exitosamente',
-            enrollment: populatedEnrollment
+            enrollment: populatedEnrollment,
+            classesCreated: classRegistries.length
         });
     } catch (error) {
         console.error('Error al crear matrícula:', error);
