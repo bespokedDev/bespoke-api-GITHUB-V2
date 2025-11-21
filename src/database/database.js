@@ -16,11 +16,15 @@ const connectDB = async () => {
       }
     };
 
-    // Usar variable de entorno si existe, sino usar la URI hardcodeada como fallback
-    const mongoURI = process.env.MONGODB_URI
+    // Usar variable de entorno si existe
+    const mongoURI = process.env.MONGODB_URI;
+    
+    if (!mongoURI) {
+      throw new Error('MONGODB_URI no está definida en las variables de entorno');
+    }
     
     console.log('Intentando conectar a MongoDB...');
-    console.log('URI:', mongoURI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')); // Ocultar credenciales en logs
+    console.log('URI:', mongoURI ? mongoURI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') : 'No definida'); // Ocultar credenciales en logs
     
     await mongoose.connect(mongoURI, options);
     
@@ -56,8 +60,9 @@ const connectDB = async () => {
     console.error('   • Verifica que no haya proxy/VPN interfiriendo');
     console.error('   • Intenta desde otra red (móvil hotspot)');
     
-    // No hacer exit en modo de testing
-    if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+    // No hacer exit en modo de testing ni en Vercel (serverless)
+    // En Vercel, si la conexión falla, no debemos hacer exit ya que es un entorno serverless
+    if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID && !process.env.VERCEL && !process.env.VERCEL_ENV) {
       process.exit(1);
     }
     throw error; // Lanzar el error para que las pruebas puedan manejarlo
