@@ -32,6 +32,11 @@
                 return res.status(400).json({ message: 'ID de tipo de profesor inválido.' });
             }
 
+            // Validar que isActive sea un booleano si se proporciona
+            if (req.body.hasOwnProperty('isActive') && typeof req.body.isActive !== 'boolean') {
+                return res.status(400).json({ message: 'El campo isActive debe ser un valor booleano (true o false).' });
+            }
+
             const newProfessor = new Professor(req.body);
             const saved = await newProfessor.save();
 
@@ -83,6 +88,11 @@
      */
     professorCtrl.getById = async (req, res) => {
         try {
+            // Validar que el ID del profesor sea válido antes de continuar
+            if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+                return res.status(400).json({ message: 'ID de profesor inválido' });
+            }
+
             const professor = await Professor.findById(req.params.id)
                                                 .populate('typeId', 'name rates')
                                                 .lean();
@@ -105,6 +115,11 @@
      */
     professorCtrl.update = async (req, res) => {
         try {
+            // Validar que el ID del profesor sea válido antes de continuar
+            if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+                return res.status(400).json({ message: 'ID de profesor inválido' });
+            }
+
             // Asegúrate de que los campos de fecha se conviertan a Date si vienen como string
             ['dob', 'startDate'].forEach(field => {
                 if (req.body[field] && typeof req.body[field] === 'string') {
@@ -122,6 +137,11 @@
             // Si se proporciona typeId en la actualización, valida que sea un ObjectId válido
             if (req.body.typeId && !mongoose.Types.ObjectId.isValid(req.body.typeId)) {
                 return res.status(400).json({ message: 'ID de tipo de profesor inválido.' });
+            }
+
+            // Validar que isActive sea un booleano si se proporciona
+            if (req.body.hasOwnProperty('isActive') && typeof req.body.isActive !== 'boolean') {
+                return res.status(400).json({ message: 'El campo isActive debe ser un valor booleano (true o false).' });
             }
 
             const updated = await Professor.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -154,6 +174,11 @@
      */
     professorCtrl.deactivate = async (req, res) => {
         try {
+            // Validar que el ID del profesor sea válido antes de continuar
+            if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+                return res.status(400).json({ message: 'ID de profesor inválido' });
+            }
+
             const deactivated = await Professor.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
             if (!deactivated) return res.status(404).json({ message: 'Profesor no encontrado' });
 
@@ -179,6 +204,11 @@
      */
     professorCtrl.activate = async (req, res) => {
         try {
+            // Validar que el ID del profesor sea válido antes de continuar
+            if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+                return res.status(400).json({ message: 'ID de profesor inválido' });
+            }
+
             const activated = await Professor.findByIdAndUpdate(req.params.id, { isActive: true }, { new: true });
             if (!activated) return res.status(404).json({ message: 'Profesor no encontrado' });
 

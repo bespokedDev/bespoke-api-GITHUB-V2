@@ -50,13 +50,14 @@ studentCtrl.create = async (req, res) => {
         // Asignar el código generado al body de la petición
         req.body.studentCode = studentCode;
         
-        // Asegúrate de que los campos de fecha se conviertan a Date si vienen como string
-        // Mongoose maneja esto automáticamente si el tipo es Date, pero es buena práctica verificar
-        ['dob', 'enrollmentDate', 'startDate', 'disenrollmentDate'].forEach(field => {
-            if (req.body[field] && typeof req.body[field] === 'string') {
-                req.body[field] = new Date(req.body[field]);
-            }
-        });
+        // El campo 'dob' se guarda como String según el modelo Student
+        // Si se envía como Date object, se convierte a string ISO
+        if (req.body.dob && req.body.dob instanceof Date) {
+            req.body.dob = req.body.dob.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+        } else if (req.body.dob && typeof req.body.dob === 'string') {
+            // Asegurar que el string esté en formato válido (trim)
+            req.body.dob = req.body.dob.trim();
+        }
 
         // Generar _id para cada nota si se proporcionan en el cuerpo de la petición
         if (Array.isArray(req.body.notes)) {
@@ -133,12 +134,19 @@ studentCtrl.getById = async (req, res) => {
  */
 studentCtrl.update = async (req, res) => {
     try {
-        // Asegúrate de que los campos de fecha se conviertan a Date si vienen como string
-        ['dob', 'enrollmentDate', 'startDate', 'disenrollmentDate'].forEach(field => {
-            if (req.body[field] && typeof req.body[field] === 'string') {
-                req.body[field] = new Date(req.body[field]);
-            }
-        });
+        // Validar que el ID del estudiante sea válido antes de continuar
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'ID de estudiante inválido' });
+        }
+
+        // El campo 'dob' se guarda como String según el modelo Student
+        // Si se envía como Date object, se convierte a string ISO
+        if (req.body.dob && req.body.dob instanceof Date) {
+            req.body.dob = req.body.dob.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+        } else if (req.body.dob && typeof req.body.dob === 'string') {
+            // Asegurar que el string esté en formato válido (trim)
+            req.body.dob = req.body.dob.trim();
+        }
 
         // Si se actualizan las notas, asegúrate de generar _id para las nuevas si no lo tienen
         if (Array.isArray(req.body.notes)) {

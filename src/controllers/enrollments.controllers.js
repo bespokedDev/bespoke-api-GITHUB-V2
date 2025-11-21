@@ -12,7 +12,7 @@ const enrollmentCtrl = {};
 // Propiedades a popular y seleccionar para mejorar el rendimiento
 const populateOptions = [
     { path: 'planId', select: 'name weeklyClasses pricing description' }, // Datos relevantes del plan
-    { path: 'studentIds', select: 'name studentCode email phone' }, // Datos relevantes de los estudiantes
+    { path: 'studentIds.studentId', select: 'name studentCode email phone' }, // Datos relevantes de los estudiantes (ahora es un subdocumento)
     { path: 'professorId', select: 'name email phone occupation' } // Datos relevantes del profesor
 ];
 
@@ -149,6 +149,86 @@ const calculateClassDates = (startDate, endDate, scheduledDays, weeklyClasses) =
     return limitedDates.sort((a, b) => a.getTime() - b.getTime());
 };
 
+/**
+ * Función helper para calcular las fechas de las clases por número de semanas (Tipo B)
+ * @param {Date} startDate - Fecha de inicio del enrollment
+ * @param {Number} numberOfWeeks - Cantidad de semanas asignadas
+ * @param {Array} scheduledDays - Array de objetos con {day: 'Lunes'}, etc.
+ * @param {Number} weeklyClasses - Cantidad de clases por semana del plan
+ * @returns {Array<Date>} Array de fechas de clases programadas
+ */
+const calculateClassDatesByWeeks = (startDate, numberOfWeeks, scheduledDays, weeklyClasses) => {
+    if (!startDate || !numberOfWeeks || numberOfWeeks <= 0 || !scheduledDays || scheduledDays.length === 0) {
+        return [];
+    }
+
+    const classDates = [];
+    
+    // Normalizar fecha de inicio a medianoche UTC
+    const start = new Date(startDate);
+    start.setUTCHours(0, 0, 0, 0);
+
+    // Mapeo de días en español a números de día de la semana (0 = Domingo, 1 = Lunes, etc.)
+    const dayMap = {
+        'Domingo': 0,
+        'Lunes': 1,
+        'Martes': 2,
+        'Miércoles': 3,
+        'Jueves': 4,
+        'Viernes': 5,
+        'Sábado': 6
+    };
+
+    // Extraer los números de día de scheduledDays
+    const scheduledDayNumbers = scheduledDays.map(sd => dayMap[sd.day]).filter(day => day !== undefined);
+
+    if (scheduledDayNumbers.length === 0) {
+        return [];
+    }
+
+    // Calcular el domingo de la semana que contiene startDate
+    const startDayOfWeek = start.getUTCDay();
+    const firstWeekSunday = new Date(start);
+    firstWeekSunday.setUTCDate(start.getUTCDate() - startDayOfWeek);
+    firstWeekSunday.setUTCHours(0, 0, 0, 0);
+
+    // Iterar por cada semana
+    for (let week = 0; week < numberOfWeeks; week++) {
+        // Calcular el inicio de la semana (domingo) para esta semana
+        const weekStartDate = new Date(firstWeekSunday);
+        weekStartDate.setUTCDate(firstWeekSunday.getUTCDate() + (week * 7));
+        weekStartDate.setUTCHours(0, 0, 0, 0);
+
+        // Array para almacenar las fechas de esta semana
+        const weekDates = [];
+
+        // Iterar por cada día de la semana (domingo a sábado)
+        for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+            const currentDate = new Date(weekStartDate);
+            currentDate.setUTCDate(weekStartDate.getUTCDate() + dayOffset);
+            currentDate.setUTCHours(0, 0, 0, 0);
+
+            const dayOfWeekNum = currentDate.getUTCDay();
+
+            // Verificar si este día está en los scheduledDays
+            if (scheduledDayNumbers.includes(dayOfWeekNum)) {
+                // Solo agregar si la fecha es >= startDate (para la primera semana)
+                if (week === 0 && currentDate.getTime() < start.getTime()) {
+                    continue; // Saltar días antes del startDate en la primera semana
+                }
+                weekDates.push(new Date(currentDate));
+            }
+        }
+
+        // Ordenar las fechas de la semana y tomar solo los primeros weeklyClasses
+        weekDates.sort((a, b) => a.getTime() - b.getTime());
+        const datesToAdd = weekDates.slice(0, weeklyClasses);
+        classDates.push(...datesToAdd);
+    }
+
+    return classDates.sort((a, b) => a.getTime() - b.getTime());
+};
+
 enrollmentCtrl.create = async (req, res) => {
     try {
         // Validación de IDs antes de crear
@@ -184,11 +264,23 @@ enrollmentCtrl.create = async (req, res) => {
             return res.status(400).json({ message: 'ID de Profesor inválido o no existente.' });
         }
         if (!Array.isArray(studentIds) || studentIds.length === 0) {
-            return res.status(400).json({ message: 'Se requiere al menos un ID de estudiante.' });
+            return res.status(400).json({ message: 'Se requiere al menos un objeto de estudiante en studentIds.' });
         }
-        for (const studentId of studentIds) {
-            if (!mongoose.Types.ObjectId.isValid(studentId) || !(await Student.findById(studentId))) {
-                return res.status(400).json({ message: `ID de estudiante inválido o no existente: ${studentId}.` });
+        // Validar que cada elemento de studentIds sea un objeto con studentId
+        for (const studentInfo of studentIds) {
+            if (!studentInfo || typeof studentInfo !== 'object') {
+                return res.status(400).json({ message: 'Cada elemento de studentIds debe ser un objeto.' });
+            }
+            if (!studentInfo.studentId) {
+                return res.status(400).json({ message: 'Cada objeto en studentIds debe tener un campo studentId.' });
+            }
+            const studentId = studentInfo.studentId;
+            if (!mongoose.Types.ObjectId.isValid(studentId)) {
+                return res.status(400).json({ message: `ID de estudiante inválido: ${studentId}.` });
+            }
+            const studentExists = await Student.findById(studentId);
+            if (!studentExists) {
+                return res.status(400).json({ message: `ID de estudiante no existente: ${studentId}.` });
             }
         }
 
@@ -200,47 +292,96 @@ enrollmentCtrl.create = async (req, res) => {
             req.body.startDate = new Date(req.body.startDate);
         }
 
-        // Calcular endDate: un mes menos un día desde startDate
-        // Ejemplo: 22 enero → 21 febrero, 16 julio → 15 agosto
-        const startDateObj = new Date(req.body.startDate);
-        startDateObj.setHours(0, 0, 0, 0);
-        const endDateObj = new Date(startDateObj);
-        endDateObj.setMonth(endDateObj.getMonth() + 1);
-        endDateObj.setDate(endDateObj.getDate() - 1); // Restar un día
-        endDateObj.setHours(23, 59, 59, 999); // Fin del día
-        req.body.endDate = endDateObj;
+        // Obtener classCalculationType (default: 1 si no viene)
+        const classCalculationType = req.body.classCalculationType || 1;
 
         // Inicializar available_balance con el valor de totalAmount si no se proporciona
         if (req.body.available_balance === undefined || req.body.available_balance === null) {
             req.body.available_balance = req.body.totalAmount;
         }
 
-        const newEnrollment = new Enrollment(req.body);
-        const savedEnrollment = await newEnrollment.save();
+        let classDates = [];
+        let classRegistries = [];
 
-        // Calcular fechas de clases y crear registros en class-registry
-        const classDates = calculateClassDates(savedEnrollment.startDate, savedEnrollment.endDate, savedEnrollment.scheduledDays, plan.weeklyClasses);
-        
-        // Crear registros de clase para cada fecha calculada
-        const classRegistries = classDates.map(classDate => ({
-            enrollmentId: savedEnrollment._id,
-            classDate: classDate
-        }));
+        // LÓGICA TIPO A: Enrollment normal (cálculo por mes y scheduledDays)
+        if (classCalculationType === 1) {
+            // Calcular endDate: un mes menos un día desde startDate
+            // Ejemplo: 22 enero → 21 febrero, 16 julio → 15 agosto
+            const startDateObj = new Date(req.body.startDate);
+            startDateObj.setHours(0, 0, 0, 0);
+            const endDateObj = new Date(startDateObj);
+            endDateObj.setMonth(endDateObj.getMonth() + 1);
+            endDateObj.setDate(endDateObj.getDate() - 1); // Restar un día
+            endDateObj.setHours(23, 59, 59, 999); // Fin del día
+            req.body.endDate = endDateObj;
 
-        if (classRegistries.length > 0) {
-            await ClassRegistry.insertMany(classRegistries);
+            const newEnrollment = new Enrollment(req.body);
+            const savedEnrollment = await newEnrollment.save();
+
+            // Calcular fechas de clases y crear registros en class-registry
+            classDates = calculateClassDates(savedEnrollment.startDate, savedEnrollment.endDate, savedEnrollment.scheduledDays, plan.weeklyClasses);
+            
+            // Crear registros de clase para cada fecha calculada
+            classRegistries = classDates.map(classDate => ({
+                enrollmentId: savedEnrollment._id,
+                classDate: classDate
+            }));
+
+            if (classRegistries.length > 0) {
+                await ClassRegistry.insertMany(classRegistries);
+            }
+
+            // Popular los campos en la respuesta
+            const populatedEnrollment = await Enrollment.findById(savedEnrollment._id)
+                                                        .populate(populateOptions)
+                                                        .lean();
+
+            return res.status(201).json({
+                message: 'Matrícula creada exitosamente',
+                enrollment: populatedEnrollment,
+                classesCreated: classRegistries.length
+            });
         }
+        // LÓGICA TIPO B: Enrollment por número de semanas
+        else if (classCalculationType === 2) {
+            // Validar numberOfWeeks (OBLIGATORIO para tipo 2)
+            const numberOfWeeks = req.body.numberOfWeeks;
+            if (!numberOfWeeks || typeof numberOfWeeks !== 'number' || numberOfWeeks <= 0) {
+                return res.status(400).json({ message: 'El campo numberOfWeeks es obligatorio para classCalculationType 2 y debe ser un número mayor a 0.' });
+            }
 
-        // Popular los campos en la respuesta
-        const populatedEnrollment = await Enrollment.findById(savedEnrollment._id)
-                                                    .populate(populateOptions)
-                                                    .lean();
+            // No se calcula endDate para el tipo 2, se deja como null o no se incluye
+            // El endDate no es relevante para este tipo de cálculo
 
-        res.status(201).json({
-            message: 'Matrícula creada exitosamente',
-            enrollment: populatedEnrollment,
-            classesCreated: classRegistries.length
-        });
+            const newEnrollment = new Enrollment(req.body);
+            const savedEnrollment = await newEnrollment.save();
+
+            // Calcular fechas de clases por número de semanas
+            classDates = calculateClassDatesByWeeks(savedEnrollment.startDate, numberOfWeeks, savedEnrollment.scheduledDays, plan.weeklyClasses);
+            
+            // Crear registros de clase para cada fecha calculada
+            classRegistries = classDates.map(classDate => ({
+                enrollmentId: savedEnrollment._id,
+                classDate: classDate
+            }));
+
+            if (classRegistries.length > 0) {
+                await ClassRegistry.insertMany(classRegistries);
+            }
+
+            // Popular los campos en la respuesta
+            const populatedEnrollment = await Enrollment.findById(savedEnrollment._id)
+                                                        .populate(populateOptions)
+                                                        .lean();
+
+            return res.status(201).json({
+                message: 'Matrícula creada exitosamente',
+                enrollment: populatedEnrollment,
+                classesCreated: classRegistries.length
+            });
+        } else {
+            return res.status(400).json({ message: 'classCalculationType debe ser 1 o 2.' });
+        }
     } catch (error) {
         console.error('Error al crear matrícula:', error);
 
@@ -309,14 +450,26 @@ enrollmentCtrl.update = async (req, res) => {
             req.body.purchaseDate = new Date(req.body.purchaseDate);
         }
 
-        // Si se actualizan studentIds, validar que sean ObjectIds válidos y existan
+        // Si se actualizan studentIds, validar que sean objetos con studentId válido y existan
         if (req.body.studentIds) {
             if (!Array.isArray(req.body.studentIds) || req.body.studentIds.length === 0) {
                 return res.status(400).json({ message: 'El array de studentIds no puede estar vacío.' });
             }
-            for (const studentId of req.body.studentIds) {
-                if (!mongoose.Types.ObjectId.isValid(studentId) || !(await Student.findById(studentId))) {
-                    return res.status(400).json({ message: `ID de estudiante inválido o no existente para actualizar: ${studentId}.` });
+            // Validar que cada elemento de studentIds sea un objeto con studentId
+            for (const studentInfo of req.body.studentIds) {
+                if (!studentInfo || typeof studentInfo !== 'object') {
+                    return res.status(400).json({ message: 'Cada elemento de studentIds debe ser un objeto.' });
+                }
+                if (!studentInfo.studentId) {
+                    return res.status(400).json({ message: 'Cada objeto en studentIds debe tener un campo studentId.' });
+                }
+                const studentId = studentInfo.studentId;
+                if (!mongoose.Types.ObjectId.isValid(studentId)) {
+                    return res.status(400).json({ message: `ID de estudiante inválido para actualizar: ${studentId}.` });
+                }
+                const studentExists = await Student.findById(studentId);
+                if (!studentExists) {
+                    return res.status(400).json({ message: `ID de estudiante no existente para actualizar: ${studentId}.` });
                 }
             }
         }

@@ -58,9 +58,16 @@ const headers = {
   "studentIds": [
     {
       "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
-      "name": "Juan Pérez",
-      "studentCode": "STU001",
-      "email": "juan@example.com"
+      "studentId": "64f8a1b2c3d4e5f6a7b8c9d2",
+      "preferences": "Prefiere clases prácticas y conversacionales",
+      "firstTimeLearningLanguage": "Sí, es la primera vez",
+      "previousExperience": "Ninguna experiencia previa",
+      "goals": "Aprender inglés para viajar",
+      "dailyLearningTime": "1 hora al día",
+      "learningType": "Visual y auditivo",
+      "idealClassType": "Clases individuales",
+      "learningDifficulties": "Dificultad con la pronunciación",
+      "languageLevel": "Principiante"
     }
   ],
   "professorId": {
@@ -80,8 +87,15 @@ const headers = {
   "endDate": "2024-02-21T23:59:59.999Z",
   "pricePerStudent": 100,
   "totalAmount": 100,
-  "balance": 0,
   "available_balance": 100,
+  "disolve_reason": null,
+  "rescheduleHours": 0,
+  "substituteProfessor": null,
+  "cancellationPaymentsEnabled": false,
+  "graceDays": 0,
+  "latePaymentPenalty": 0,
+  "extendedGraceDays": 0,
+  "classCalculationType": 1,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -91,9 +105,22 @@ const headers = {
 ### **Campos del Modelo**
 - `_id` (ObjectId): ID único de la matrícula (generado automáticamente)
 - `planId` (ObjectId): Referencia al plan de clases
-- `studentIds` (Array[ObjectId]): Array de IDs de estudiantes
+- `studentIds` (Array[Object]): Array de objetos con información detallada de cada estudiante
+  - `studentId` (ObjectId): Referencia al estudiante
+  - `preferences` (string): Preferencias del estudiante (por defecto: null)
+  - `firstTimeLearningLanguage` (string): Indica si es la primera vez aprendiendo un idioma (por defecto: null)
+  - `previousExperience` (string): Experiencia previa del estudiante (por defecto: null)
+  - `goals` (string): Metas del estudiante (por defecto: null)
+  - `dailyLearningTime` (string): Tiempo de aprendizaje por día (por defecto: null)
+  - `learningType` (string): Tipo de aprendizaje (por defecto: null)
+  - `idealClassType` (string): Tipo de clase ideal (por defecto: null)
+  - `learningDifficulties` (string): Dificultades de aprendizaje (por defecto: null)
+  - `languageLevel` (string): Nivel de idioma (por defecto: null)
 - `professorId` (ObjectId): Referencia al profesor asignado
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
+- `classCalculationType` (number): Tipo de cálculo de clases para el enrollment (por defecto: 1)
+  - `1` = Enrollment normal (cálculo de clases por semana y por scheduledDays)
+  - `2` = Clases por semana / plan
 - `alias` (string): Alias opcional para la matrícula
 - `language` (string): Idioma (`English`, `French`)
 - `scheduledDays` (Array): Días programados de las clases
@@ -105,12 +132,24 @@ const headers = {
   - Ejemplo: si `startDate` es 16 julio, `endDate` será 15 agosto
 - `pricePerStudent` (number): Precio por estudiante
 - `totalAmount` (number): Monto total
-- `balance` (number): Saldo pendiente
 - `available_balance` (number): Balance disponible (se inicializa con el valor de `totalAmount` al crear el enrollment)
+- `disolve_reason` (string): Razón de disolución del enrollment (por defecto: null)
+- `rescheduleHours` (number): Horas de reschedule disponibles para el enrollment (por defecto: 0)
+- `substituteProfessor` (object): Profesor suplente asignado al enrollment (por defecto: null)
+  - `professorId` (ObjectId): Referencia al profesor suplente
+  - `status` (number): Estado de la suplencia
+    - `1` = Activo en suplencia
+    - `0` = Inactivo en suplencia
+  - `assignedDate` (date): Fecha en que se asignó la suplencia
+  - `expiryDate` (date): Fecha en que debe vencer la suplencia
+- `cancellationPaymentsEnabled` (boolean): Indica si el enrollment tiene pagos de cancelación activados (por defecto: false)
+- `graceDays` (number): Cantidad de días de gracia asignados al estudiante para pagar el enrollment nuevamente en caso de que `totalAmount` sea 0 o que la cancelación automática no esté disponible (por defecto: 0)
+- `latePaymentPenalty` (number): Penalización de dinero en caso de que se retrase el pago (por defecto: 0)
+- `extendedGraceDays` (number): Permite extender, de manera excepcional, los días de gracia cuando el administrador decide dar días adicionales al estudiante para que pague (por defecto: 0)
 - `status` (number): Estado de la matrícula
   - `1` = Activo
-  - `0` = Inactivo
-  - `2` = Pausado
+  - `2` = Inactivo
+  - `0` = Disuelto
 - `createdAt` (date): Fecha de creación (generado automáticamente)
 - `updatedAt` (date): Fecha de última actualización (generado automáticamente)
 
@@ -185,14 +224,45 @@ POST /api/enrollments
 }
 ```
 
-#### **Request Body**
+#### **Tipos de Cálculo de Clases**
+
+El sistema soporta dos tipos de cálculo de clases según el valor de `classCalculationType`:
+
+**Tipo A (`classCalculationType: 1`) - Enrollment Normal:**
+- Calcula clases basándose en un período mensual (desde `startDate` hasta un mes menos un día)
+- Genera clases día por día según `scheduledDays` dentro del período
+- Limita la cantidad de clases por semana según `weeklyClasses` del plan
+- El campo `endDate` se calcula automáticamente
+
+**Tipo B (`classCalculationType: 2`) - Enrollment por Semanas:**
+- Calcula clases basándose únicamente en el número de semanas asignadas
+- Multiplica `weeklyClasses` del plan × `numberOfWeeks` (enviado en `req.body`)
+- Genera clases desde `startDate` usando `scheduledDays` para determinar los días
+- **Requiere el campo `numberOfWeeks` en el request body** (no se guarda en el modelo)
+
+#### **Request Body - Tipo A (Normal)**
+
 ```json
 {
   "planId": "64f8a1b2c3d4e5f6a7b8c9d1",
-  "studentIds": ["64f8a1b2c3d4e5f6a7b8c9d2"],
+  "studentIds": [
+    {
+      "studentId": "64f8a1b2c3d4e5f6a7b8c9d2",
+      "preferences": "Prefiere clases prácticas y conversacionales",
+      "firstTimeLearningLanguage": "Sí, es la primera vez",
+      "previousExperience": "Ninguna experiencia previa",
+      "goals": "Aprender inglés para viajar",
+      "dailyLearningTime": "1 hora al día",
+      "learningType": "Visual y auditivo",
+      "idealClassType": "Clases individuales",
+      "learningDifficulties": "Dificultad con la pronunciación",
+      "languageLevel": "Principiante"
+    }
+  ],
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
   "enrollmentType": "single",
   "language": "English",
+  "classCalculationType": 1,
   "scheduledDays": [
     { "day": "Lunes" },
     { "day": "Miércoles" }
@@ -200,32 +270,117 @@ POST /api/enrollments
   "purchaseDate": "2024-01-15T10:30:00.000Z",
   "startDate": "2024-01-22T00:00:00.000Z",
   "pricePerStudent": 100,
-  "totalAmount": 100,
-  "balance": 0
+  "totalAmount": 100
 }
 ```
 
-**Nota:** El campo `endDate` se calcula automáticamente como un mes menos un día desde `startDate`. No es necesario enviarlo en el request.
+**Nota para Tipo A:** El campo `endDate` se calcula automáticamente como un mes menos un día desde `startDate`. No es necesario enviarlo en el request.
+
+#### **Request Body - Tipo B (Por Semanas)**
+
+```json
+{
+  "planId": "64f8a1b2c3d4e5f6a7b8c9d1",
+  "studentIds": [
+    {
+      "studentId": "64f8a1b2c3d4e5f6a7b8c9d2",
+      "preferences": "Prefiere clases prácticas y conversacionales",
+      "firstTimeLearningLanguage": "Sí, es la primera vez",
+      "previousExperience": "Ninguna experiencia previa",
+      "goals": "Aprender inglés para viajar",
+      "dailyLearningTime": "1 hora al día",
+      "learningType": "Visual y auditivo",
+      "idealClassType": "Clases individuales",
+      "learningDifficulties": "Dificultad con la pronunciación",
+      "languageLevel": "Principiante"
+    }
+  ],
+  "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
+  "enrollmentType": "single",
+  "language": "English",
+  "classCalculationType": 2,
+  "scheduledDays": [
+    { "day": "Lunes" },
+    { "day": "Miércoles" }
+  ],
+  "purchaseDate": "2024-01-15T10:30:00.000Z",
+  "startDate": "2024-01-22T00:00:00.000Z",
+  "numberOfWeeks": 4,
+  "pricePerStudent": 100,
+  "totalAmount": 100
+}
+```
+
+**Nota para Tipo B:** 
+- El campo `numberOfWeeks` es **OBLIGATORIO** cuando `classCalculationType` es `2`
+- `numberOfWeeks` debe ser un número mayor a 0
+- Este campo **NO se guarda en el modelo**, solo se usa para calcular las clases
+- Las clases se generan desde `startDate` usando `scheduledDays` y `weeklyClasses` del plan
 
 #### **Campos Requeridos**
+
+**Campos comunes para ambos tipos:**
 - `planId` (ObjectId): ID del plan
-- `studentIds` (Array[ObjectId]): Array con al menos un ID de estudiante
+- `studentIds` (Array[Object]): Array con al menos un objeto de estudiante, donde cada objeto debe tener:
+  - `studentId` (ObjectId): **OBLIGATORIO** - ID del estudiante
+  - `preferences` (string): **OPCIONAL** - Preferencias del estudiante
+  - `firstTimeLearningLanguage` (string): **OPCIONAL** - Primera vez aprendiendo un idioma
+  - `previousExperience` (string): **OPCIONAL** - Experiencia previa
+  - `goals` (string): **OPCIONAL** - Metas del estudiante
+  - `dailyLearningTime` (string): **OPCIONAL** - Tiempo de aprendizaje por día
+  - `learningType` (string): **OPCIONAL** - Tipo de aprendizaje
+  - `idealClassType` (string): **OPCIONAL** - Tipo de clase ideal
+  - `learningDifficulties` (string): **OPCIONAL** - Dificultades de aprendizaje
+  - `languageLevel` (string): **OPCIONAL** - Nivel de idioma
 - `professorId` (ObjectId): ID del profesor
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
 - `language` (string): Idioma (`English`, `French`)
 - `scheduledDays` (Array): **OBLIGATORIO** - Array de objetos con el campo `day`
-- `startDate` (date): Fecha de inicio de las clases
+- `startDate` (date): **OBLIGATORIO** - Fecha de inicio de las clases
 - `pricePerStudent` (number): Precio por estudiante
 - `totalAmount` (number): Monto total
+
+**Campos específicos por tipo:**
+- **Tipo A (`classCalculationType: 1`)**: No requiere campos adicionales. El `endDate` se calcula automáticamente.
+- **Tipo B (`classCalculationType: 2`)**: 
+  - `numberOfWeeks` (number): **OBLIGATORIO** - Número de semanas para calcular las clases. Este campo **NO se guarda en el modelo**, solo se usa para el cálculo.
 
 #### **Campos Opcionales**
 - `alias` (string): Alias para la matrícula
 - `purchaseDate` (date): Fecha de compra (por defecto: fecha actual)
-- `balance` (number): Saldo pendiente (por defecto: 0)
+- `classCalculationType` (number): Tipo de cálculo de clases (por defecto: 1)
+  - `1` = Enrollment normal (cálculo de clases por semana y por scheduledDays)
+  - `2` = Clases por semana / plan
+- `disolve_reason` (string): Razón de disolución del enrollment (por defecto: null)
+- `rescheduleHours` (number): Horas de reschedule disponibles (por defecto: 0)
+- `substituteProfessor` (object): Profesor suplente asignado
+  - `professorId` (ObjectId): ID del profesor suplente
+  - `status` (number): Estado de suplencia (1 = activo, 0 = inactivo)
+  - `assignedDate` (date): Fecha de asignación
+  - `expiryDate` (date): Fecha de vencimiento de la suplencia
+- `cancellationPaymentsEnabled` (boolean): Si tiene pagos de cancelación activados (por defecto: false)
+- `graceDays` (number): Días de gracia para pagar el enrollment nuevamente (por defecto: 0)
+- `latePaymentPenalty` (number): Penalización por retraso en el pago (por defecto: 0)
+- `extendedGraceDays` (number): Extensión excepcional de días de gracia (por defecto: 0)
+- `studentIds` (Array[Object]): Array de objetos con información detallada de cada estudiante
+  - `studentId` (ObjectId): ID del estudiante
+  - `preferences` (string): Preferencias del estudiante
+  - `firstTimeLearningLanguage` (string): Primera vez aprendiendo un idioma
+  - `previousExperience` (string): Experiencia previa
+  - `goals` (string): Metas del estudiante
+  - `dailyLearningTime` (string): Tiempo de aprendizaje por día
+  - `learningType` (string): Tipo de aprendizaje
+  - `idealClassType` (string): Tipo de clase ideal
+  - `learningDifficulties` (string): Dificultades de aprendizaje
+  - `languageLevel` (string): Nivel de idioma
 
 #### **Lógica de Generación de Clases**
 
-Al crear un enrollment, el sistema realiza el siguiente proceso:
+El proceso de generación de clases depende del valor de `classCalculationType`:
+
+**Tipo A (`classCalculationType: 1`) - Enrollment Normal:**
+
+Al crear un enrollment tipo A, el sistema realiza el siguiente proceso:
 
 **1. Cálculo de `endDate`:**
 - Se calcula automáticamente como un mes menos un día desde `startDate`
@@ -273,9 +428,43 @@ Al crear un enrollment, el sistema realiza el siguiente proceso:
 
 **Total:** 10 registros generados en `class-registry`
 
+**Tipo B (`classCalculationType: 2`) - Enrollment por Semanas:**
+
+Al crear un enrollment tipo B, el sistema realiza el siguiente proceso:
+
+**1. Validación de `numberOfWeeks`:**
+- Se valida que `numberOfWeeks` sea un número mayor a 0
+- Este campo viene en `req.body` pero **NO se guarda en el modelo**
+
+**2. Cálculo de fechas por semanas:**
+- El sistema itera desde `startDate` por `numberOfWeeks` semanas
+- Para cada semana, identifica los días que coinciden con `scheduledDays`
+- Toma solo los primeros `weeklyClasses` días de cada semana
+
+**3. Generación de registros:**
+- Se crean registros en `class-registry` para cada fecha calculada
+- Cada registro incluye: `enrollmentId` y `classDate`
+- Los demás campos se inicializan como `null`
+
+**Ejemplo completo Tipo B:**
+- `startDate`: 22 de enero de 2024 (lunes)
+- `numberOfWeeks`: 4
+- `scheduledDays`: ['Lunes', 'Miércoles']
+- `weeklyClasses`: 2
+
+**Cálculo:**
+- Semana 1: 22 enero (lunes), 24 enero (miércoles) ✅
+- Semana 2: 29 enero (lunes), 31 enero (miércoles) ✅
+- Semana 3: 5 febrero (lunes), 7 febrero (miércoles) ✅
+- Semana 4: 12 febrero (lunes), 14 febrero (miércoles) ✅
+
+**Total:** 8 registros generados en `class-registry` (2 clases/semana × 4 semanas)
+
 #### **Cómo se calcula el número de clases**
 
-El sistema calcula el número de clases de la siguiente manera:
+El cálculo depende del `classCalculationType`:
+
+**Tipo A (`classCalculationType: 1`):**
 
 1. **Período del enrollment:**
    - `startDate` (incluido): Primer día válido del enrollment
@@ -299,19 +488,35 @@ El sistema calcula el número de clases de la siguiente manera:
    - **Importante:** Tanto el día de `startDate` como el día de `endDate` se incluyen en el cálculo
    - Si el día de `startDate` o `endDate` coincide con alguno de los `scheduledDays`, se genera una clase para ese día
 
-**Ejemplo de cálculo:**
+**Ejemplo de cálculo Tipo A:**
 - `startDate`: 22 enero 2024 (lunes)
 - `endDate`: 21 febrero 2024 (miércoles) - calculado automáticamente
 - `scheduledDays`: ['Lunes', 'Miércoles']
 - `weeklyClasses`: 2
 
-**Proceso:**
-1. Se encuentra el 22 enero (lunes) - dentro del período ✅
-2. Se encuentra el 24 enero (miércoles) - dentro del período ✅
-3. Se encuentra el 29 enero (lunes) - dentro del período ✅
-4. ... y así sucesivamente hasta el 21 febrero (miércoles) ✅
-
 **Resultado:** 10 clases generadas (2 por semana × 5 semanas)
+
+**Tipo B (`classCalculationType: 2`):**
+
+1. **Cálculo simple:**
+   - El sistema multiplica `weeklyClasses` del plan × `numberOfWeeks` enviado en `req.body`
+   - Fórmula: `totalClases = weeklyClasses × numberOfWeeks`
+
+2. **Generación de fechas:**
+   - Desde `startDate`, el sistema itera por `numberOfWeeks` semanas
+   - Para cada semana, identifica los días que coinciden con `scheduledDays`
+   - Toma solo los primeros `weeklyClasses` días de cada semana
+
+3. **Generación de registros:**
+   - Se crean registros en `class-registry` con las fechas calculadas
+
+**Ejemplo de cálculo Tipo B:**
+- `startDate`: 22 enero 2024 (lunes)
+- `numberOfWeeks`: 4
+- `scheduledDays`: ['Lunes', 'Miércoles']
+- `weeklyClasses`: 2
+
+**Resultado:** 8 clases generadas (2 clases/semana × 4 semanas)
 
 #### **Response (201 - Created)**
 ```json
@@ -333,8 +538,15 @@ El sistema calcula el número de clases de la siguiente manera:
     "endDate": "2024-02-21T23:59:59.999Z",
     "pricePerStudent": 100,
     "totalAmount": 100,
-    "balance": 0,
     "available_balance": 100,
+    "disolve_reason": null,
+    "rescheduleHours": 0,
+    "substituteProfessor": null,
+    "cancellationPaymentsEnabled": false,
+    "graceDays": 0,
+    "latePaymentPenalty": 0,
+    "extendedGraceDays": 0,
+    "classCalculationType": 1,
     "status": 1,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -344,6 +556,264 @@ El sistema calcula el número de clases de la siguiente manera:
 ```
 
 **Nota:** El campo `classesCreated` indica cuántos registros se generaron automáticamente en `class-registry` para este enrollment.
+
+---
+
+### **2. Listar Enrollments**
+- **Método**: `GET`
+- **Ruta**: `/api/enrollments`
+- **Descripción**: Obtiene todas las matrículas registradas en el sistema
+
+#### **URL Completa**
+```
+GET /api/enrollments
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Response (200 - OK)**
+```json
+[
+  {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "planId": { ... },
+    "studentIds": [ ... ],
+    "professorId": { ... },
+    "enrollmentType": "single",
+    "language": "English",
+    "status": 1,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  },
+  ...
+]
+```
+
+---
+
+### **3. Obtener Enrollment por ID**
+- **Método**: `GET`
+- **Ruta**: `/api/enrollments/:id`
+- **Descripción**: Obtiene una matrícula específica por su ID
+
+#### **URL Completa**
+```
+GET /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Response (200 - OK)**
+```json
+{
+  "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+  "planId": { ... },
+  "studentIds": [ ... ],
+  "professorId": { ... },
+  "enrollmentType": "single",
+  "language": "English",
+  "scheduledDays": [
+    { "day": "Lunes" },
+    { "day": "Miércoles" }
+  ],
+  "startDate": "2024-01-22T00:00:00.000Z",
+  "endDate": "2024-02-21T23:59:59.999Z",
+  "status": 1,
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "updatedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+#### **Errores Posibles**
+- `404`: Matrícula no encontrada
+- `400`: ID inválido
+
+---
+
+### **4. Obtener Enrollments por Profesor**
+- **Método**: `GET`
+- **Ruta**: `/api/enrollments/professor/:professorId`
+- **Descripción**: Obtiene todas las matrículas asignadas a un profesor específico
+
+#### **URL Completa**
+```
+GET /api/enrollments/professor/64f8a1b2c3d4e5f6a7b8c9d3
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `professorId` (string): ID único del profesor
+
+#### **Response (200 - OK)**
+```json
+[
+  {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "planId": { ... },
+    "studentIds": [ ... ],
+    "professorId": { ... },
+    "enrollmentType": "single",
+    "language": "English",
+    "status": 1,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  },
+  ...
+]
+```
+
+#### **Errores Posibles**
+- `400`: ID de profesor inválido
+- `404`: Profesor no encontrado
+
+---
+
+### **5. Actualizar Enrollment**
+- **Método**: `PUT`
+- **Ruta**: `/api/enrollments/:id`
+- **Descripción**: Actualiza los datos de una matrícula existente
+
+#### **URL Completa**
+```
+PUT /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Request Body**
+Puedes enviar cualquier campo del modelo Enrollment que desees actualizar. Todos los campos son opcionales excepto los que son requeridos por el modelo.
+
+```json
+{
+  "alias": "Clases de Inglés Avanzado - Juan",
+  "rescheduleHours": 2,
+  "cancellationPaymentsEnabled": true,
+  "graceDays": 5
+}
+```
+
+#### **Response (200 - OK)**
+```json
+{
+  "message": "Matrícula actualizada exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "alias": "Clases de Inglés Avanzado - Juan",
+    "rescheduleHours": 2,
+    "cancellationPaymentsEnabled": true,
+    "graceDays": 5,
+    ...
+  }
+}
+```
+
+#### **Errores Posibles**
+- `404`: Matrícula no encontrada
+- `400`: ID inválido o datos inválidos
+
+---
+
+### **6. Activar Enrollment**
+- **Método**: `PATCH`
+- **Ruta**: `/api/enrollments/:id/activate`
+- **Descripción**: Activa una matrícula (establece `status` a `1`)
+
+#### **URL Completa**
+```
+PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/activate
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Response (200 - OK)**
+```json
+{
+  "message": "Matrícula activada exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "status": 1,
+    ...
+  }
+}
+```
+
+#### **Errores Posibles**
+- `404`: Matrícula no encontrada
+- `400`: ID inválido
+
+---
+
+### **7. Desactivar Enrollment**
+- **Método**: `PATCH`
+- **Ruta**: `/api/enrollments/:id/deactivate`
+- **Descripción**: Desactiva una matrícula (establece `status` a `0`)
+
+#### **URL Completa**
+```
+PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/deactivate
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Response (200 - OK)**
+```json
+{
+  "message": "Matrícula desactivada exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "status": 0,
+    ...
+  }
+}
+```
+
+#### **Errores Posibles**
+- `404`: Matrícula no encontrada
+- `400`: ID inválido
 
 ---
 
