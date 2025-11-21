@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const connectDB = require('../database/database');
+const ensureConnection = connectDB.ensureConnection || (async () => {});
 require('dotenv').config();
 
 const userCtrl = {};
@@ -8,6 +10,10 @@ userCtrl.login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    // Asegurar que la conexión a MongoDB esté lista antes de hacer queries
+    // Esto previene el error "Operation buffering" en entornos serverless (Vercel)
+    await ensureConnection();
+    
     console.log(email)
     const userFound = await User.findOne({ email });
     console.log(userFound)

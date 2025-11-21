@@ -33,16 +33,16 @@ require('./models/ProfessorType');
 app.use(express.json());
 app.use(cors());
 
-// Conectar DB de forma asíncrona sin bloquear la inicialización
-// En Vercel (serverless), la conexión no debe bloquear el cold start
+// Iniciar conexión a MongoDB de forma asíncrona sin bloquear la inicialización
+// En Vercel (serverless), la conexión se iniciará de inmediato pero no bloqueará el export
+// El helper ensureConnection() garantizará que la conexión esté lista antes de hacer queries
 if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID && process.env.MONGODB_URI) {
-  // Ejecutar la conexión en segundo plano sin esperar
-  setImmediate(() => {
-    connectDB().catch(err => {
-      console.error('Error inicial al conectar a MongoDB:', err.message);
-      // No bloquear la inicialización - la conexión se reintentará cuando se necesite
-      // En Vercel, las funciones serverless deben inicializarse rápidamente
-    });
+  // Iniciar la conexión inmediatamente (sin setImmediate para que no se retrase tanto)
+  // Pero sin await para que no bloquee la inicialización del módulo
+  connectDB().catch(err => {
+    console.error('Error inicial al conectar a MongoDB:', err.message);
+    // No bloquear la inicialización - la conexión se reintentará cuando se necesite
+    // El helper ensureConnection() manejará esto cuando llegue una petición
   });
 }
 
