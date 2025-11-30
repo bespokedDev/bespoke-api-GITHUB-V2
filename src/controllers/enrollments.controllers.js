@@ -295,36 +295,77 @@ enrollmentCtrl.create = async (req, res) => {
         // Obtener classCalculationType (default: 1 si no viene)
         const classCalculationType = req.body.classCalculationType || 1;
 
-        // Inicializar available_balance con el valor de totalAmount si no se proporciona
-        if (req.body.available_balance === undefined || req.body.available_balance === null) {
-            req.body.available_balance = req.body.totalAmount;
+        // Calcular precios automáticamente desde el plan
+        const enrollmentType = req.body.enrollmentType;
+        let planPrice = 0;
+        if (enrollmentType === 'single') {
+            planPrice = plan.pricing.single;
+        } else if (enrollmentType === 'couple') {
+            planPrice = plan.pricing.couple;
+        } else if (enrollmentType === 'group') {
+            planPrice = plan.pricing.group;
         }
+        
+        const numberOfStudents = studentIds.length;
+        
+        // Calcular pricePerStudent: precio del plan según enrollmentType
+        req.body.pricePerStudent = planPrice;
+        
+        // Calcular totalAmount: precio del plan × número de estudiantes
+        req.body.totalAmount = planPrice * numberOfStudents;
+        
+        // Calcular available_balance: igual a totalAmount
+        req.body.available_balance = req.body.totalAmount;
+        
+        // Asignar amount a cada estudiante: el precio del plan según enrollmentType
+        // NO se divide entre el número de estudiantes, cada estudiante tiene el mismo amount
+        req.body.studentIds = studentIds.map(studentInfo => ({
+            ...studentInfo,
+            amount: planPrice
+        }));
 
         let classDates = [];
         let classRegistries = [];
 
         // LÓGICA TIPO A: Enrollment normal (cálculo por mes y scheduledDays)
         if (classCalculationType === 1) {
+            // Validar que el plan sea de tipo mensual (planType 1)
+            if (plan.planType !== 1) {
+                return res.status(400).json({ message: 'El classCalculationType 1 solo es válido para planes de tipo mensual (planType 1).' });
+            }
+
             // Calcular endDate: un mes menos un día desde startDate
             // Ejemplo: 22 enero → 21 febrero, 16 julio → 15 agosto
+            // Usar UTC para consistencia con calculateClassDates
             const startDateObj = new Date(req.body.startDate);
-            startDateObj.setHours(0, 0, 0, 0);
+            startDateObj.setUTCHours(0, 0, 0, 0);
             const endDateObj = new Date(startDateObj);
-            endDateObj.setMonth(endDateObj.getMonth() + 1);
-            endDateObj.setDate(endDateObj.getDate() - 1); // Restar un día
-            endDateObj.setHours(23, 59, 59, 999); // Fin del día
+            endDateObj.setUTCMonth(endDateObj.getUTCMonth() + 1);
+            endDateObj.setUTCDate(endDateObj.getUTCDate() - 1); // Restar un día
+            endDateObj.setUTCHours(23, 59, 59, 999); // Fin del día
             req.body.endDate = endDateObj;
+
+            // Calcular fechas de clases ANTES de guardar para obtener el número real de clases
+            // calculateClassDates normaliza a UTC, así que pasamos las fechas ya normalizadas
+            classDates = calculateClassDates(startDateObj, endDateObj, scheduledDays, plan.weeklyClasses);
+            
+            // Calcular monthlyClasses: número real de clases que se pueden hacer según scheduledDays y el rango de fechas
+            // Esto ya tiene en cuenta que si un día cae fuera del rango (ej: viernes de la semana 5 cae el 23 de febrero cuando endDate es 22), no se cuenta
+            const monthlyClasses = classDates.length;
+
+            // Asignar monthlyClasses al enrollment
+            req.body.monthlyClasses = monthlyClasses;
 
             const newEnrollment = new Enrollment(req.body);
             const savedEnrollment = await newEnrollment.save();
 
-            // Calcular fechas de clases y crear registros en class-registry
-            classDates = calculateClassDates(savedEnrollment.startDate, savedEnrollment.endDate, savedEnrollment.scheduledDays, plan.weeklyClasses);
-            
             // Crear registros de clase para cada fecha calculada
             classRegistries = classDates.map(classDate => ({
                 enrollmentId: savedEnrollment._id,
-                classDate: classDate
+                classDate: classDate,
+                reschedule: 0, // Por defecto, no es una clase en reschedule
+                classViewed: 0, // Por defecto, 0 clase no vista
+                minutesClassDefault: 60 // Duración por defecto de la clase en minutos
             }));
 
             if (classRegistries.length > 0) {
@@ -344,25 +385,55 @@ enrollmentCtrl.create = async (req, res) => {
         }
         // LÓGICA TIPO B: Enrollment por número de semanas
         else if (classCalculationType === 2) {
-            // Validar numberOfWeeks (OBLIGATORIO para tipo 2)
-            const numberOfWeeks = req.body.numberOfWeeks;
-            if (!numberOfWeeks || typeof numberOfWeeks !== 'number' || numberOfWeeks <= 0) {
-                return res.status(400).json({ message: 'El campo numberOfWeeks es obligatorio para classCalculationType 2 y debe ser un número mayor a 0.' });
+            // Validar que el plan sea de tipo semanal (planType 2)
+            if (plan.planType !== 2) {
+                return res.status(400).json({ message: 'El classCalculationType 2 solo es válido para planes de tipo semanal (planType 2).' });
             }
 
-            // No se calcula endDate para el tipo 2, se deja como null o no se incluye
-            // El endDate no es relevante para este tipo de cálculo
+            // Validar que el plan tenga la key weeks definida
+            if (!plan.weeks || plan.weeks <= 0) {
+                return res.status(400).json({ message: 'El plan de tipo semanal debe tener la key weeks definida y mayor a 0.' });
+            }
+
+            // Calcular monthlyClasses: weeks * weeklyClasses
+            const monthlyClasses = plan.weeks * plan.weeklyClasses;
+            req.body.monthlyClasses = monthlyClasses;
+
+            // Calcular endDate basado en semanas completas desde startDate
+            // Las semanas se toman al pie de la letra: semana del 27 nov al 4 dic, del 4 al 11, etc.
+            const startDateObj = new Date(req.body.startDate);
+            startDateObj.setUTCHours(0, 0, 0, 0);
+            
+            // Calcular el domingo de la semana que contiene startDate
+            const startDayOfWeek = startDateObj.getUTCDay();
+            const firstWeekSunday = new Date(startDateObj);
+            firstWeekSunday.setUTCDate(startDateObj.getUTCDate() - startDayOfWeek);
+            firstWeekSunday.setUTCHours(0, 0, 0, 0);
+            
+            // Calcular el final de la última semana (sábado de la semana plan.weeks)
+            const endDateObj = new Date(firstWeekSunday);
+            endDateObj.setUTCDate(firstWeekSunday.getUTCDate() + (plan.weeks * 7) - 1); // Restar 1 para llegar al sábado
+            endDateObj.setUTCHours(23, 59, 59, 999); // Fin del día
+            
+            // El endDate del enrollment será el día antes de la culminación de las semanas
+            const enrollmentEndDate = new Date(endDateObj);
+            enrollmentEndDate.setUTCDate(endDateObj.getUTCDate() - 1);
+            enrollmentEndDate.setUTCHours(23, 59, 59, 999);
+            req.body.endDate = enrollmentEndDate;
 
             const newEnrollment = new Enrollment(req.body);
             const savedEnrollment = await newEnrollment.save();
 
-            // Calcular fechas de clases por número de semanas
-            classDates = calculateClassDatesByWeeks(savedEnrollment.startDate, numberOfWeeks, savedEnrollment.scheduledDays, plan.weeklyClasses);
+            // Calcular fechas de clases por número de semanas (usando plan.weeks, no numberOfWeeks del body)
+            classDates = calculateClassDatesByWeeks(savedEnrollment.startDate, plan.weeks, savedEnrollment.scheduledDays, plan.weeklyClasses);
             
             // Crear registros de clase para cada fecha calculada
             classRegistries = classDates.map(classDate => ({
                 enrollmentId: savedEnrollment._id,
-                classDate: classDate
+                classDate: classDate,
+                reschedule: 0, // Por defecto, no es una clase en reschedule
+                classViewed: 0, // Por defecto, clase no vista
+                minutesClassDefault: 60 // Duración por defecto de la clase en minutos
             }));
 
             if (classRegistries.length > 0) {
@@ -585,6 +656,77 @@ enrollmentCtrl.activate = async (req, res) => {
  * @description Obtiene todas las matrículas asociadas a un profesor específico, con datos populados.
  * @access Private (Requiere JWT)
  */
+/**
+ * @route GET /api/enrollments/:id/detail
+ * @description Obtiene el detalle completo de un enrollment sin campos sensibles
+ * @access Private (Requiere JWT)
+ */
+enrollmentCtrl.getDetail = async (req, res) => {
+    try {
+        const enrollmentId = req.params.id;
+        
+        if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+
+        // Buscar el enrollment con todos los datos populados
+        const enrollment = await Enrollment.findById(enrollmentId)
+            .populate('planId', 'name weeklyClasses pricing planType weeks')
+            .populate('studentIds.studentId', 'name email studentCode')
+            .populate('professorId', 'name email')
+            .lean();
+
+        if (!enrollment) {
+            return res.status(404).json({ message: 'Enrollment no encontrado' });
+        }
+
+        // Procesar el enrollment para quitar campos sensibles
+        const processedEnrollment = { ...enrollment };
+
+        // Quitar pricing del planId
+        if (processedEnrollment.planId && processedEnrollment.planId.pricing) {
+            delete processedEnrollment.planId.pricing;
+        }
+
+        // Quitar amount de cada studentId en studentIds
+        if (Array.isArray(processedEnrollment.studentIds)) {
+            processedEnrollment.studentIds = processedEnrollment.studentIds.map(studentInfo => {
+                const { amount, ...rest } = studentInfo;
+                return rest;
+            });
+        }
+
+        // Quitar campos sensibles del enrollment
+        delete processedEnrollment.pricePerStudent;
+        delete processedEnrollment.totalAmount;
+        delete processedEnrollment.available_balance;
+        delete processedEnrollment.rescheduleHours;
+        delete processedEnrollment.graceDays;
+        delete processedEnrollment.latePaymentPenalty;
+        delete processedEnrollment.extendedGraceDays;
+
+        // Construir respuesta con formato similar al ejemplo
+        const response = {
+            message: 'Detalle del enrollment obtenido exitosamente',
+            professor: enrollment.professorId ? {
+                id: enrollment.professorId._id,
+                name: enrollment.professorId.name,
+                email: enrollment.professorId.email
+            } : null,
+            enrollments: [processedEnrollment],
+            total: 1
+        };
+
+        res.status(200).json(response);
+    } catch (error) {
+        console.error('Error al obtener detalle del enrollment:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al obtener detalle del enrollment', error: error.message });
+    }
+};
+
 enrollmentCtrl.getEnrollmentsByProfessorId = async (req, res) => {
     try {
         const { professorId } = req.params;
@@ -611,6 +753,49 @@ enrollmentCtrl.getEnrollmentsByProfessorId = async (req, res) => {
              return res.status(400).json({ message: 'Error de casting al obtener matrículas por profesor. Verifique los IDs referenciados.' });
         }
         res.status(500).json({ message: 'Error interno al obtener matrículas por profesor', error: error.message });
+    }
+};
+
+/**
+ * @route GET /api/enrollments/:id/classes
+ * @description Obtiene la lista de registros de clases (ClassRegistry) de un enrollment
+ * @access Private (Requiere JWT)
+ */
+enrollmentCtrl.getClasses = async (req, res) => {
+    try {
+        const enrollmentId = req.params.id;
+        
+        if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+
+        // Verificar que el enrollment existe
+        const enrollment = await Enrollment.findById(enrollmentId);
+        if (!enrollment) {
+            return res.status(404).json({ message: 'Enrollment no encontrado' });
+        }
+
+        // Buscar todos los registros de clases del enrollment
+        const classRegistries = await ClassRegistry.find({
+            enrollmentId: enrollmentId
+        })
+        .populate('classType', 'name')
+        .populate('contentType', 'name')
+        .sort({ classDate: 1 }) // Ordenar por fecha de clase ascendente
+        .lean();
+
+        res.status(200).json({
+            message: 'Registros de clases obtenidos exitosamente',
+            enrollmentId: enrollmentId,
+            classes: classRegistries,
+            total: classRegistries.length
+        });
+    } catch (error) {
+        console.error('Error al obtener registros de clases:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al obtener registros de clases', error: error.message });
     }
 };
 

@@ -25,17 +25,35 @@ const headers = {
 - **Ruta**: `/api/plans`
 - **Descripción**: Crea un nuevo plan de clases
 
-#### **Request Body**
+#### **Request Body - Plan Mensual (planType: 1)**
 ```json
 {
-  "name": "Plan Básico",
+  "name": "Plan Básico Mensual",
   "weeklyClasses": 2,
+  "planType": 1,
   "pricing": {
     "single": 50.00,
     "couple": 90.00,
     "group": 35.00
   },
-  "description": "Plan ideal para principiantes",
+  "description": "Plan ideal para principiantes - Mensual",
+  "isActive": true
+}
+```
+
+#### **Request Body - Plan Semanal (planType: 2)**
+```json
+{
+  "name": "Plan Intensivo Semanal",
+  "weeklyClasses": 3,
+  "planType": 2,
+  "weeks": 4,
+  "pricing": {
+    "single": 120.00,
+    "couple": 200.00,
+    "group": 80.00
+  },
+  "description": "Plan intensivo de 4 semanas",
   "isActive": true
 }
 ```
@@ -43,6 +61,9 @@ const headers = {
 #### **Campos Requeridos**
 - `name` (string): Nombre del plan (único)
 - `weeklyClasses` (number): Número de clases por semana (≥ 0)
+- `planType` (number): Tipo de plan
+  - `1` = Plan mensual (se calcula dinámicamente por fechas, ej: del 22 de enero al 22 de febrero)
+  - `2` = Plan semanal (se calcula por número de semanas)
 - `pricing` (object): Estructura de precios
   - `single` (number): Precio para una persona (≥ 0)
   - `couple` (number): Precio para pareja (≥ 0)
@@ -51,21 +72,49 @@ const headers = {
 #### **Campos Opcionales**
 - `description` (string): Descripción del plan
 - `isActive` (boolean): Estado del plan (default: true)
+- `weeks` (number): Número de semanas para el plan (solo para `planType: 2`)
+  - **Para `planType: 1`**: Debe ser `null` o no enviarse (el cálculo es dinámico por fechas)
+  - **Para `planType: 2`**: Debe ser un número mayor a 0 (obligatorio para planes semanales)
 
-#### **Response (201)**
+#### **Response (201) - Plan Mensual**
 ```json
 {
   "message": "Plan creado exitosamente",
   "plan": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Plan Básico",
+    "name": "Plan Básico Mensual",
     "weeklyClasses": 2,
+    "planType": 1,
+    "weeks": null,
     "pricing": {
       "single": 50.00,
       "couple": 90.00,
       "group": 35.00
     },
-    "description": "Plan ideal para principiantes",
+    "description": "Plan ideal para principiantes - Mensual",
+    "isActive": true,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+#### **Response (201) - Plan Semanal**
+```json
+{
+  "message": "Plan creado exitosamente",
+  "plan": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+    "name": "Plan Intensivo Semanal",
+    "weeklyClasses": 3,
+    "planType": 2,
+    "weeks": 4,
+    "pricing": {
+      "single": 120.00,
+      "couple": 200.00,
+      "group": 80.00
+    },
+    "description": "Plan intensivo de 4 semanas",
     "isActive": true,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -100,28 +149,32 @@ GET /api/plans
   "plans": [
     {
       "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-      "name": "Plan Básico",
+      "name": "Plan Básico Mensual",
       "weeklyClasses": 2,
+      "planType": 1,
+      "weeks": null,
       "pricing": {
         "single": 50.00,
         "couple": 90.00,
         "group": 35.00
       },
-      "description": "Plan ideal para principiantes",
+      "description": "Plan ideal para principiantes - Mensual",
       "isActive": true,
       "createdAt": "2024-01-15T10:30:00.000Z",
       "updatedAt": "2024-01-15T10:30:00.000Z"
     },
     {
       "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
-      "name": "Plan Premium",
-      "weeklyClasses": 5,
+      "name": "Plan Intensivo Semanal",
+      "weeklyClasses": 3,
+      "planType": 2,
+      "weeks": 4,
       "pricing": {
         "single": 120.00,
         "couple": 200.00,
         "group": 80.00
       },
-      "description": "Plan avanzado con 5 clases por semana",
+      "description": "Plan intensivo de 4 semanas",
       "isActive": true,
       "createdAt": "2024-01-15T11:00:00.000Z",
       "updatedAt": "2024-01-15T11:00:00.000Z"
@@ -150,20 +203,22 @@ GET /api/plans/64f8a1b2c3d4e5f6a7b8c9d0
 ```json
 {
   "message": "Plan encontrado exitosamente",
-  "plan": {
-    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "name": "Plan Básico",
-    "weeklyClasses": 2,
-    "pricing": {
-      "single": 50.00,
-      "couple": 90.00,
-      "group": 35.00
-    },
-    "description": "Plan ideal para principiantes",
-    "isActive": true,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
+  "plan":     {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "name": "Plan Básico Mensual",
+      "weeklyClasses": 2,
+      "planType": 1,
+      "weeks": null,
+      "pricing": {
+        "single": 50.00,
+        "couple": 90.00,
+        "group": 35.00
+      },
+      "description": "Plan ideal para principiantes - Mensual",
+      "isActive": true,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
 }
 ```
 
@@ -187,6 +242,8 @@ GET /api/plans/64f8a1b2c3d4e5f6a7b8c9d0
 {
   "name": "Plan Básico Actualizado",
   "weeklyClasses": 3,
+  "planType": 1,
+  "weeks": null,
   "pricing": {
     "single": 55.00,
     "couple": 95.00,
@@ -489,6 +546,10 @@ export default PlansList;
 - **Strings**: Aplicar `trim()` a nombres y descripciones
 - **Estructura**: Validar que `pricing` tenga todos los campos requeridos
 - **IDs**: Validar formato de MongoDB ObjectId antes de enviar
+- **planType**: Debe ser `1` (mensual) o `2` (semanal)
+- **weeks**: 
+  - Para `planType: 1`: Debe ser `null` o no enviarse
+  - Para `planType: 2`: Debe ser un número mayor a 0 (obligatorio)
 
 ### **Manejo de Errores**
 - **400**: Mostrar mensajes específicos de validación

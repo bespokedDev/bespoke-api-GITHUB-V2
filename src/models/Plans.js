@@ -44,6 +44,20 @@ const PlanSchema = new mongoose.Schema({
     isActive: { // Para activar/desactivar lógicamente el plan
         type: Boolean,
         default: true
+    },
+    planType: {
+        type: Number,
+        enum: [1, 2],
+        required: true
+        // 1 para plan mensual (se calcula dinámicamente, ej: del 22 de enero al 22 de febrero)
+        // 2 para plan semanal (se calcula por número de semanas)
+    },
+    weeks: {
+        type: Number,
+        default: null,
+        min: 0
+        // null para planType 1 (mensual) - el cálculo es dinámico por fechas
+        // número de semanas para planType 2 (semanal) - con este valor se calcula el número de clases
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

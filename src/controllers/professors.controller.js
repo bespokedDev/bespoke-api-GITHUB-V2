@@ -2,6 +2,7 @@
     const utilsFunctions = require('../utils/utilsFunctions');
     const Professor = require('../models/Professor');
     const ProfessorType = require('../models/ProfessorType'); // Importa el modelo ProfessorType
+    const Enrollment = require('../models/Enrollment'); // Importa el modelo Enrollment
     const professorCtrl = {};
 
     const mongoose = require('mongoose');
@@ -289,6 +290,78 @@
         } catch (error) {
             console.error('Error al listar paymentData:', error);
             res.status(500).json({ message: 'Error interno al listar paymentData' });
+        }
+    };
+
+    /**
+     * @route GET /api/professors/:id/enrollments
+     * @description Obtiene la lista de enrollments disponibles del profesor
+     * @access Private (Requiere JWT)
+     */
+    professorCtrl.getEnrollments = async (req, res) => {
+        try {
+            // Obtener el ID del profesor desde los parámetros de la URL
+            const professorId = req.params.id;
+            
+            if (!professorId || !mongoose.Types.ObjectId.isValid(professorId)) {
+                return res.status(400).json({ message: 'ID de profesor inválido' });
+            }
+
+            // Verificar que el profesor existe
+            const professor = await Professor.findById(professorId);
+            if (!professor) {
+                return res.status(404).json({ message: 'Profesor no encontrado' });
+            }
+
+            // Buscar todos los enrollments donde el profesor esté asignado
+            const enrollments = await Enrollment.find({
+                professorId: professorId,
+                status: 1 // Solo enrollments activos
+            })
+            .populate('planId', 'name')
+            .populate('studentIds.studentId', 'name email studentCode')
+            .lean();
+
+            // Procesar enrollments para incluir solo los campos necesarios
+            const processedEnrollments = enrollments.map(enrollment => {
+                // Construir objeto simplificado del enrollment
+                const simplifiedEnrollment = {
+                    _id: enrollment._id,
+                    planId: {
+                        name: enrollment.planId ? enrollment.planId.name : null
+                    },
+                    studentIds: Array.isArray(enrollment.studentIds) 
+                        ? enrollment.studentIds.map(studentInfo => ({
+                            _id: studentInfo._id,
+                            studentId: {
+                                _id: studentInfo.studentId ? studentInfo.studentId._id : null,
+                                studentCode: studentInfo.studentId ? studentInfo.studentId.studentCode : null,
+                                name: studentInfo.studentId ? studentInfo.studentId.name : null,
+                                email: studentInfo.studentId ? studentInfo.studentId.email : null
+                            }
+                        }))
+                        : []
+                };
+
+                return simplifiedEnrollment;
+            });
+
+            res.status(200).json({
+                message: 'Enrollments del profesor obtenidos exitosamente',
+                professor: {
+                    id: professor._id,
+                    name: professor.name,
+                    email: professor.email
+                },
+                enrollments: processedEnrollments,
+                total: processedEnrollments.length
+            });
+        } catch (error) {
+            console.error('Error al obtener enrollments del profesor:', error);
+            if (error.name === 'CastError') {
+                return res.status(400).json({ message: 'ID de profesor inválido' });
+            }
+            res.status(500).json({ message: 'Error interno al obtener enrollments del profesor', error: error.message });
         }
     };
 

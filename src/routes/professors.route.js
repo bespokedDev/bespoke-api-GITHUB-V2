@@ -7,6 +7,7 @@ const verifyToken = require('../middlewares/verifyToken');
 // Rutas protegidas con JWT
 router.post('/', verifyToken, createProfessorValidation, professorCtrl.create);
 router.get('/', verifyToken, professorCtrl.list);
+router.get('/:id/enrollments', verifyToken, professorCtrl.getEnrollments);
 router.get('/:id', verifyToken, professorCtrl.getById);
 router.put('/:id', verifyToken, professorCtrl.update);
 router.patch('/:id/deactivate', verifyToken, professorCtrl.deactivate);

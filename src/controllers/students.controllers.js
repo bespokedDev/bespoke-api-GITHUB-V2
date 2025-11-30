@@ -1,6 +1,8 @@
 // controllers/students.controller.js
 const Student = require('../models/Student');
 const StudentCounter = require('../models/StudentCounter');
+const Enrollment = require('../models/Enrollment');
+const Plan = require('../models/Plans');
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
 const mongoose = require('mongoose');
 
@@ -239,6 +241,106 @@ studentCtrl.activate = async (req, res) => {
             return res.status(400).json({ message: 'ID de estudiante inválido' });
         }
         res.status(500).json({ message: 'Error interno al activar estudiante', error: error.message });
+    }
+};
+
+/**
+ * @route GET /api/students/info/:id
+ * @description Obtiene información del saldo disponible del estudiante
+ * @access Private (Requiere JWT)
+ */
+studentCtrl.studentInfo = async (req, res) => {
+    try {
+        console.log('🔍 studentInfo - Iniciando...');
+        console.log('📥 Parámetros recibidos:', req.params);
+        
+        // Obtener el ID del estudiante desde los parámetros de la URL
+        const studentId = req.params.id;
+        
+        if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+            console.log('❌ ID inválido:', studentId);
+            return res.status(400).json({ message: 'ID de estudiante inválido' });
+        }
+
+        // Convertir el ID a ObjectId
+        const studentObjectId = new mongoose.Types.ObjectId(studentId);
+        console.log('✅ ID convertido a ObjectId:', studentObjectId);
+
+        // Verificar que el estudiante existe
+        console.log('🔎 Buscando estudiante...');
+        const student = await Student.findById(studentObjectId);
+        if (!student) {
+            console.log('❌ Estudiante no encontrado');
+            return res.status(404).json({ message: 'Estudiante no encontrado' });
+        }
+        console.log('✅ Estudiante encontrado:', student.name);
+
+        // Buscar todos los enrollments donde el estudiante esté en studentIds
+        console.log('🔎 Buscando enrollments...');
+        const enrollments = await Enrollment.find({
+            'studentIds.studentId': studentObjectId,
+            status: 1 // Solo enrollments activos
+        })
+        .populate('planId', 'name')
+        .lean();
+        console.log('✅ Enrollments encontrados:', enrollments.length);
+
+        // Calcular el total sumando todos los amounts del estudiante
+        let totalAmount = 0;
+        const enrollmentDetails = [];
+
+        enrollments.forEach(enrollment => {
+            // Buscar el objeto del estudiante dentro de studentIds
+            const studentInfo = enrollment.studentIds.find(
+                studentInfo => {
+                    const infoStudentId = studentInfo.studentId.toString();
+                    const searchId = studentObjectId.toString();
+                    return infoStudentId === searchId;
+                }
+            );
+
+            if (studentInfo && studentInfo.amount) {
+                const amount = studentInfo.amount;
+                totalAmount += amount;
+
+                // Agregar información detallada del enrollment
+                enrollmentDetails.push({
+                    enrollmentId: enrollment._id,
+                    planName: enrollment.planId ? enrollment.planId.name : null,
+                    amount: amount,
+                    rescheduleHours: enrollment.rescheduleHours || 0,
+                    enrollmentType: enrollment.enrollmentType,
+                    startDate: enrollment.startDate,
+                    endDate: enrollment.endDate,
+                    status: enrollment.status
+                });
+            }
+        });
+
+        console.log('📊 Total calculado:', totalAmount);
+        console.log('📋 Detalles de enrollments:', enrollmentDetails.length);
+        
+        const response = {
+            message: 'Información del estudiante obtenida exitosamente',
+            student: {
+                id: student._id,
+                name: student.name,
+                email: student.email,
+                studentCode: student.studentCode
+            },
+            totalAvailableBalance: totalAmount,
+            enrollmentDetails: enrollmentDetails
+        };
+        
+        console.log('✅ Enviando respuesta...');
+        res.status(200).json(response);
+    } catch (error) {
+        console.error('❌ Error al obtener información del estudiante:', error);
+        console.error('❌ Stack trace:', error.stack);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de estudiante inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al obtener información del estudiante', error: error.message });
     }
 };
 

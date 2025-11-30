@@ -98,6 +98,11 @@ const StudentEnrollmentInfoSchema = new mongoose.Schema({
         trim: true,
         default: null
         // nivel de idioma
+    },
+    amount: {
+        type: Number,
+        min: 0
+        // monto disponible por estudiante (precio del plan según enrollmentType dividido entre el número de estudiantes)
     }
 }, { _id: true }); // Mongoose añade _id a cada subdocumento por defecto
 
@@ -146,7 +151,16 @@ const EnrollmentSchema = new mongoose.Schema({
     },
     endDate: {
         type: Date
-        // fecha de vencimiento del enrollment (un mes menos un día desde startDate)
+        // fecha de vencimiento del enrollment
+        // Para planType 1 (mensual): se calcula dinámicamente (un mes menos un día desde startDate, ej: del 22 de enero al 22 de febrero)
+        // Para planType 2 (semanal): se calcula según el número de semanas del plan
+    },
+    monthlyClasses: {
+        type: Number,
+        min: 0
+        // número total de clases calculadas para el enrollment
+        // Para planType 1 (mensual): weeklyClasses * número_de_clases_calculadas_dinámicamente (calculado según el período mensual)
+        // Para planType 2 (semanal): weeks * weeklyClasses
     },
     pricePerStudent: {
         type: Number,

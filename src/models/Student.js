@@ -48,6 +48,18 @@ const StudentSchema = new mongoose.Schema({
         sparse: true, // Permite múltiples documentos con 'null' en este campo, pero únicos para valores no nulos
         default: null
     },
+    password: {
+        type: String,
+        trim: true,
+        default: null
+        // contraseña del estudiante (debe ser hasheada antes de guardar)
+    },
+    role: {
+        type: String,
+        enum: ['student', 'admin', 'professor'],
+        default: 'student'
+        // rol del usuario en el sistema
+    },
     phone: {
         type: String,
         trim: true,

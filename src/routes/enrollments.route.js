@@ -16,6 +16,12 @@ router.get('/', verifyToken, enrollmentCtrl.list);
 // Esta ruta específica debe ir ANTES de router.get('/:id')
 router.get('/professor/:professorId', verifyToken, enrollmentCtrl.getEnrollmentsByProfessorId);
 
+// GET /api/enrollments/:id/detail - Obtiene el detalle completo de una matrícula
+router.get('/:id/detail', verifyToken, enrollmentCtrl.getDetail);
+
+// GET /api/enrollments/:id/classes - Obtiene los registros de clases de un enrollment
+router.get('/:id/classes', verifyToken, enrollmentCtrl.getClasses);
+
 // GET /api/enrollments/:id - Obtiene una matrícula por su ID
 router.get('/:id', verifyToken, enrollmentCtrl.getById);
 

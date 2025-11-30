@@ -22,18 +22,18 @@ const ClassRegistrySchema = new mongoose.Schema({
         default: null
         // tiempo visto en minutos
     },
-    classType: {
+    classType: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'ClassType',
-        default: null
-        // Tipo de clase
-    },
-    contentType: {
+        default: []
+        // Array de tipos de clase (referencia a la colección tipo_de_clase)
+    }],
+    contentType: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'ContentClass',
-        default: null
-        // Tipo de contenido
-    },
+        default: []
+        // Array de tipos de contenido (referencia a la colección content-class)
+    }],
     studentMood: {
         type: String,
         trim: true,
@@ -57,6 +57,38 @@ const ClassRegistrySchema = new mongoose.Schema({
         trim: true,
         default: null
         // token
+    },
+    reschedule: {
+        type: Number,
+        enum: [0, 1, 2],
+        default: 0
+        // Estado de reschedule de la clase
+        // 0 = No es una clase en reschedule (por defecto al crear el enrollment)
+        // 1 = La clase está en modo reschedule
+        // 2 = La clase en reschedule ya se vio
+    },
+    originalClassId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ClassRegistry',
+        default: null
+        // ID de la clase original cuando esta clase es un reschedule (reschedule = 1 o 2)
+        // null para clases normales (reschedule = 0)
+        // Contiene el _id de la clase original que se reprogramó
+    },
+    classViewed: {
+        type: Number,
+        enum: [0, 1, 2],
+        default: 0
+        // Estado de visualización de la clase
+        // 0 = Clase no vista (por defecto al crear el enrollment)
+        // 1 = Clase vista
+        // 2 = Clase parcialmente vista
+    },
+    minutesClassDefault: {
+        type: Number,
+        default: 60
+        // Duración por defecto de la clase en minutos
+        // Valor por defecto: 60 minutos (1 hora)
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

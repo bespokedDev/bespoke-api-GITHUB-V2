@@ -16,6 +16,10 @@ router.post('/', verifyToken, studentCtrl.create);
 // GET /api/students - Lista todos los estudiantes
 router.get('/', verifyToken, studentCtrl.list);
 
+// GET /api/students/info/:id - Obtiene información del saldo del estudiante
+// Esta ruta debe estar antes de /:id para evitar conflictos
+router.get('/info/:id', verifyToken, studentCtrl.studentInfo);
+
 // GET /api/students/:id - Obtiene un estudiante por su ID
 router.get('/:id', verifyToken, studentCtrl.getById);
 
