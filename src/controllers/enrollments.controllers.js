@@ -360,13 +360,25 @@ enrollmentCtrl.create = async (req, res) => {
             const savedEnrollment = await newEnrollment.save();
 
             // Crear registros de clase para cada fecha calculada
-            classRegistries = classDates.map(classDate => ({
-                enrollmentId: savedEnrollment._id,
-                classDate: classDate,
-                reschedule: 0, // Por defecto, no es una clase en reschedule
-                classViewed: 0, // Por defecto, 0 clase no vista
-                minutesClassDefault: 60 // Duración por defecto de la clase en minutos
-            }));
+            // Formatear classDate como string YYYY-MM-DD (solo año, mes y día) y dejar classTime en null
+            classRegistries = classDates.map(classDate => {
+                // Convertir la fecha a string en formato YYYY-MM-DD
+                const dateObj = new Date(classDate);
+                const year = dateObj.getUTCFullYear();
+                const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(dateObj.getUTCDate()).padStart(2, '0');
+                const dateString = `${year}-${month}-${day}`;
+                
+                return {
+                    enrollmentId: savedEnrollment._id,
+                    classDate: dateString, // Solo año, mes y día en formato YYYY-MM-DD
+                    classTime: null, // Hora en null, el profesor la asignará manualmente
+                    reschedule: 0, // Por defecto, no es una clase en reschedule
+                    classViewed: 0, // Por defecto, 0 clase no vista
+                    minutesClassDefault: 60, // Duración por defecto de la clase en minutos
+                    vocabularyContent: null // Contenido de vocabulario (null por defecto al crear)
+                };
+            });
 
             if (classRegistries.length > 0) {
                 await ClassRegistry.insertMany(classRegistries);
@@ -428,13 +440,24 @@ enrollmentCtrl.create = async (req, res) => {
             classDates = calculateClassDatesByWeeks(savedEnrollment.startDate, plan.weeks, savedEnrollment.scheduledDays, plan.weeklyClasses);
             
             // Crear registros de clase para cada fecha calculada
-            classRegistries = classDates.map(classDate => ({
-                enrollmentId: savedEnrollment._id,
-                classDate: classDate,
-                reschedule: 0, // Por defecto, no es una clase en reschedule
-                classViewed: 0, // Por defecto, clase no vista
-                minutesClassDefault: 60 // Duración por defecto de la clase en minutos
-            }));
+            // Formatear classDate como string YYYY-MM-DD (solo año, mes y día) y dejar classTime en null
+            classRegistries = classDates.map(classDate => {
+                // Convertir la fecha a string en formato YYYY-MM-DD
+                const dateObj = new Date(classDate);
+                const year = dateObj.getUTCFullYear();
+                const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(dateObj.getUTCDate()).padStart(2, '0');
+                const dateString = `${year}-${month}-${day}`;
+                
+                return {
+                    enrollmentId: savedEnrollment._id,
+                    classDate: dateString, // Solo año, mes y día en formato YYYY-MM-DD
+                    classTime: null, // Hora en null, el profesor la asignará manualmente
+                    reschedule: 0, // Por defecto, no es una clase en reschedule
+                    classViewed: 0, // Por defecto, clase no vista
+                    minutesClassDefault: 60 // Duración por defecto de la clase en minutos
+                };
+            });
 
             if (classRegistries.length > 0) {
                 await ClassRegistry.insertMany(classRegistries);

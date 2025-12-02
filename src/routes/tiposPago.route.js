@@ -3,26 +3,33 @@ const express = require('express');
 const router = express.Router();
 const tipoPagoCtrl = require('../controllers/tiposPago.controller');
 const verifyToken = require('../middlewares/verifyToken');
+const verifyRole = require('../middlewares/verifyRole');
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/payment-types - Crea un nuevo tipo de pago
-router.post('/', verifyToken, tipoPagoCtrl.create);
+// Acceso: Solo admin
+router.post('/', verifyToken, verifyRole('admin'), tipoPagoCtrl.create);
 
 // GET /api/payment-types - Lista todos los tipos de pago
-router.get('/', verifyToken, tipoPagoCtrl.list);
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), tipoPagoCtrl.list);
 
 // GET /api/payment-types/:id - Obtiene un tipo de pago por su ID
-router.get('/:id', verifyToken, tipoPagoCtrl.getById);
+// Acceso: Solo admin
+router.get('/:id', verifyToken, verifyRole('admin'), tipoPagoCtrl.getById);
 
 // PUT /api/payment-types/:id - Actualiza los datos de un tipo de pago por su ID
-router.put('/:id', verifyToken, tipoPagoCtrl.update);
+// Acceso: Solo admin
+router.put('/:id', verifyToken, verifyRole('admin'), tipoPagoCtrl.update);
 
 // PATCH /api/payment-types/:id/activate - Activa un tipo de pago
-router.patch('/:id/activate', verifyToken, tipoPagoCtrl.activate);
+// Acceso: Solo admin
+router.patch('/:id/activate', verifyToken, verifyRole('admin'), tipoPagoCtrl.activate);
 
 // PATCH /api/payment-types/:id/anular - Anula un tipo de pago
-router.patch('/:id/anular', verifyToken, tipoPagoCtrl.anular);
+// Acceso: Solo admin
+router.patch('/:id/anular', verifyToken, verifyRole('admin'), tipoPagoCtrl.anular);
 
 module.exports = router;
 

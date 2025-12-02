@@ -2,23 +2,29 @@
 const express = require('express');
 const router = express.Router();
 const divisaCtrl = require('../controllers/divisas.controller');
-const verifyToken = require('../middlewares/verifyToken'); // Asumo que tienes este middleware de autenticación
+const verifyToken = require('../middlewares/verifyToken');
+const verifyRole = require('../middlewares/verifyRole');
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/divisas - Crea una nueva divisa
-router.post('/', verifyToken, divisaCtrl.create);
+// Acceso: Solo admin
+router.post('/', verifyToken, verifyRole('admin'), divisaCtrl.create);
 
 // GET /api/divisas - Lista todas las divisas
-router.get('/', verifyToken, divisaCtrl.list);
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), divisaCtrl.list);
 
 // GET /api/divisas/:id - Obtiene una divisa por su ID
-router.get('/:id', verifyToken, divisaCtrl.getById);
+// Acceso: Solo admin
+router.get('/:id', verifyToken, verifyRole('admin'), divisaCtrl.getById);
 
 // PUT /api/divisas/:id - Actualiza una divisa por su ID
-router.put('/:id', verifyToken, divisaCtrl.update);
+// Acceso: Solo admin
+router.put('/:id', verifyToken, verifyRole('admin'), divisaCtrl.update);
 
 // DELETE /api/divisas/:id - Elimina una divisa por su ID
-router.delete('/:id', verifyToken, divisaCtrl.remove);
+// Acceso: Solo admin
+router.delete('/:id', verifyToken, verifyRole('admin'), divisaCtrl.remove);
 
 module.exports = router;

@@ -54,11 +54,12 @@ const StudentSchema = new mongoose.Schema({
         default: null
         // contraseña del estudiante (debe ser hasheada antes de guardar)
     },
-    role: {
-        type: String,
-        enum: ['student', 'admin', 'professor'],
-        default: 'student'
-        // rol del usuario en el sistema
+    idRol: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Role',
+        default: null
+        // ID del rol (referencia a la colección roles)
+        // Para student, debe referenciar el rol con name: 'student'
     },
     phone: {
         type: String,

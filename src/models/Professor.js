@@ -66,11 +66,12 @@ const ProfessorSchema = new mongoose.Schema({
         default: null
         // contraseña del profesor (debe ser hasheada antes de guardar)
     },
-    role: {
-        type: String,
-        enum: ['student', 'admin', 'professor'],
-        default: 'professor'
-        // rol del usuario en el sistema
+    idRol: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Role',
+        default: null
+        // ID del rol (referencia a la colección roles)
+        // Para professor, debe referenciar el rol con name: 'professor'
     },
     phone: {
         type: String,

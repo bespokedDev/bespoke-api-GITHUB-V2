@@ -6,7 +6,19 @@
 - **Tipo**: JWT (JSON Web Token)
 - **Header**: `Authorization: Bearer <token>`
 - **Acceso**: Todas las rutas requieren autenticación
-- **Middleware**: `verifyToken`
+- **Middlewares**: `verifyToken` + `verifyRole`
+
+### **Control de Acceso por Roles**
+
+Cada endpoint tiene restricciones de acceso basadas en roles:
+
+| Endpoint | Método | Roles Permitidos |
+|----------|--------|------------------|
+| `/api/class-objectives` | `POST` | `admin` |
+| `/api/class-objectives` | `GET` | `admin`, `professor` |
+| `/api/class-objectives/:id` | `GET` | `admin`, `professor` |
+| `/api/class-objectives/:id` | `PUT` | `admin` |
+| `/api/class-objectives/:id/anular` | `PATCH` | `admin` |
 
 ### **Ejemplo de Headers**
 ```javascript
@@ -21,19 +33,36 @@ const headers = {
 2. Incluir el token en el header `Authorization` de todas las peticiones
 3. El token debe tener el formato: `Bearer <token>`
 4. Si el token es inválido o expirado, recibirás un error 401 o 403
+5. Si tu rol no tiene permisos para acceder a un endpoint, recibirás un error 403
+
+### **Errores de Autorización**
+
+**403 Forbidden - Rol no permitido**
+```json
+{
+  "message": "Acceso denegado: Se requiere uno de los siguientes roles: admin, professor"
+}
+```
+
+**403 Forbidden - Rol no encontrado en el token**
+```json
+{
+  "message": "Acceso denegado: Rol no encontrado en el token"
+}
+```
 
 ---
 
 ## 🚀 **Endpoints Disponibles**
 
 ### **📋 Resumen de Endpoints**
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `POST` | `/api/class-objectives` | Crear nuevo objetivo de clase |
-| `GET` | `/api/class-objectives` | Listar objetivos de clase (con información básica) |
-| `GET` | `/api/class-objectives/:id` | Obtener objetivo de clase por ID (con detalle completo) |
-| `PUT` | `/api/class-objectives/:id` | Actualizar objetivo de clase |
-| `PATCH` | `/api/class-objectives/:id/anular` | Anular objetivo de clase |
+| Método | Ruta | Descripción | Roles Permitidos |
+|--------|------|-------------|------------------|
+| `POST` | `/api/class-objectives` | Crear nuevo objetivo de clase | `admin` |
+| `GET` | `/api/class-objectives` | Listar objetivos de clase (con información básica) | `admin`, `professor` |
+| `GET` | `/api/class-objectives/:id` | Obtener objetivo de clase por ID (con detalle completo) | `admin`, `professor` |
+| `PUT` | `/api/class-objectives/:id` | Actualizar objetivo de clase | `admin` |
+| `PATCH` | `/api/class-objectives/:id/anular` | Anular objetivo de clase | `admin` |
 
 ---
 
@@ -90,6 +119,8 @@ const headers = {
 #### **POST** `/api/class-objectives`
 
 Crea un nuevo objetivo de clase asociado a un enrollment.
+
+**Roles permitidos:** `admin`
 
 #### **Headers**
 ```javascript
@@ -220,6 +251,8 @@ createClassObjective({
 
 Obtiene una lista de objetivos de clase con información básica. Permite filtrar por enrollmentId y opcionalmente incluir objetivos anulados.
 
+**Roles permitidos:** `admin`, `professor`
+
 #### **Headers**
 ```javascript
 {
@@ -341,6 +374,8 @@ listClassObjectives('692a1f4a5fa3f53b825ee53f');
 
 Obtiene un objetivo de clase específico por su ID con toda su información detallada, incluyendo datos completos del enrollment y la categoría.
 
+**Roles permitidos:** `admin`, `professor`
+
 #### **Headers**
 ```javascript
 {
@@ -432,6 +467,8 @@ const getClassObjectiveById = async (objectiveId) => {
 #### **PUT** `/api/class-objectives/:id`
 
 Actualiza los datos de un objetivo de clase existente. Puedes enviar solo los campos que deseas actualizar.
+
+**Roles permitidos:** `admin`
 
 #### **Headers**
 ```javascript
@@ -559,6 +596,8 @@ updateClassObjective('64f8a1b2c3d4e5f6a7b8c9d0', {
 #### **PATCH** `/api/class-objectives/:id/anular`
 
 Anula un objetivo de clase estableciendo `isActive` a `false`. Un objetivo anulado no se elimina, solo se marca como inactivo.
+
+**Roles permitidos:** `admin`
 
 #### **Headers**
 ```javascript

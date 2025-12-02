@@ -3,25 +3,32 @@ const express = require('express');
 const router = express.Router();
 const planCtrl = require('../controllers/plans.controllers'); // Importa el controlador de planes
 const verifyToken = require('../middlewares/verifyToken'); // Importa tu middleware de verificación de token
+const verifyRole = require('../middlewares/verifyRole'); // Importa el middleware de verificación de roles
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/plans - Crea un nuevo plan
-router.post('/', verifyToken, planCtrl.create);
+// Acceso: Solo admin
+router.post('/', verifyToken, verifyRole('admin'), planCtrl.create);
 
 // GET /api/plans - Lista todos los planes
-router.get('/', verifyToken, planCtrl.list);
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), planCtrl.list);
 
 // GET /api/plans/:id - Obtiene un plan por su ID
-router.get('/:id', verifyToken, planCtrl.getById);
+// Acceso: Solo admin
+router.get('/:id', verifyToken, verifyRole('admin'), planCtrl.getById);
 
 // PUT /api/plans/:id - Actualiza un plan por su ID
-router.put('/:id', verifyToken, planCtrl.update);
+// Acceso: Solo admin
+router.put('/:id', verifyToken, verifyRole('admin'), planCtrl.update);
 
 // PATCH /api/plans/:id/deactivate - Desactiva un plan
-router.patch('/:id/deactivate', verifyToken, planCtrl.deactivate);
+// Acceso: Solo admin
+router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), planCtrl.deactivate);
 
 // PATCH /api/plans/:id/activate - Activa un plan
-router.patch('/:id/activate', verifyToken, planCtrl.activate);
+// Acceso: Solo admin
+router.patch('/:id/activate', verifyToken, verifyRole('admin'), planCtrl.activate);
 
 module.exports = router;

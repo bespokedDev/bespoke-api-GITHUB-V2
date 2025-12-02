@@ -3,35 +3,45 @@ const express = require('express');
 const router = express.Router();
 const enrollmentCtrl = require('../controllers/enrollments.controllers'); // Importa el controlador de matrículas
 const verifyToken = require('../middlewares/verifyToken'); // Importa tu middleware de verificación de token
+const verifyRole = require('../middlewares/verifyRole'); // Importa el middleware de verificación de roles
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/enrollments - Crea una nueva matrícula
-router.post('/', verifyToken, enrollmentCtrl.create);
+// Acceso: Solo admin
+router.post('/', verifyToken, verifyRole('admin'), enrollmentCtrl.create);
 
 // GET /api/enrollments - Lista todas las matrículas
-router.get('/', verifyToken, enrollmentCtrl.list);
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), enrollmentCtrl.list);
 
-// ¡NUEVA RUTA! GET /api/enrollments/professor/:professorId - Obtiene matrículas por ID de profesor
+// GET /api/enrollments/professor/:professorId - Obtiene matrículas por ID de profesor
+// Acceso: Admin y profesor
 // Esta ruta específica debe ir ANTES de router.get('/:id')
-router.get('/professor/:professorId', verifyToken, enrollmentCtrl.getEnrollmentsByProfessorId);
+router.get('/professor/:professorId', verifyToken, verifyRole('admin', 'professor'), enrollmentCtrl.getEnrollmentsByProfessorId);
 
 // GET /api/enrollments/:id/detail - Obtiene el detalle completo de una matrícula
-router.get('/:id/detail', verifyToken, enrollmentCtrl.getDetail);
+// Acceso: Admin y profesor
+router.get('/:id/detail', verifyToken, verifyRole('admin', 'professor'), enrollmentCtrl.getDetail);
 
 // GET /api/enrollments/:id/classes - Obtiene los registros de clases de un enrollment
-router.get('/:id/classes', verifyToken, enrollmentCtrl.getClasses);
+// Acceso: Admin, profesor y estudiante
+router.get('/:id/classes', verifyToken, verifyRole('admin', 'professor', 'student'), enrollmentCtrl.getClasses);
 
 // GET /api/enrollments/:id - Obtiene una matrícula por su ID
-router.get('/:id', verifyToken, enrollmentCtrl.getById);
+// Acceso: Admin, profesor y estudiante
+router.get('/:id', verifyToken, verifyRole('admin', 'professor', 'student'), enrollmentCtrl.getById);
 
 // PUT /api/enrollments/:id - Actualiza una matrícula por su ID
-router.put('/:id', verifyToken, enrollmentCtrl.update);
+// Acceso: Admin y profesor
+router.put('/:id', verifyToken, verifyRole('admin', 'professor'), enrollmentCtrl.update);
 
 // PATCH /api/enrollments/:id/deactivate - Desactiva una matrícula
-router.patch('/:id/deactivate', verifyToken, enrollmentCtrl.deactivate);
+// Acceso: Solo admin
+router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), enrollmentCtrl.deactivate);
 
 // PATCH /api/enrollments/:id/activate - Activa una matrícula
-router.patch('/:id/activate', verifyToken, enrollmentCtrl.activate);
+// Acceso: Solo admin
+router.patch('/:id/activate', verifyToken, verifyRole('admin'), enrollmentCtrl.activate);
 
 module.exports = router;

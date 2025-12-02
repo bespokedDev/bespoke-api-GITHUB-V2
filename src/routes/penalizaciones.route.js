@@ -3,26 +3,33 @@ const express = require('express');
 const router = express.Router();
 const penalizacionCtrl = require('../controllers/penalizaciones.controller');
 const verifyToken = require('../middlewares/verifyToken');
+const verifyRole = require('../middlewares/verifyRole');
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/penalties - Crea una nueva penalización
-router.post('/', verifyToken, penalizacionCtrl.create);
+// Acceso: Solo admin
+router.post('/', verifyToken, verifyRole('admin'), penalizacionCtrl.create);
 
 // GET /api/penalties - Lista todas las penalizaciones
-router.get('/', verifyToken, penalizacionCtrl.list);
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), penalizacionCtrl.list);
 
 // GET /api/penalties/:id - Obtiene una penalización por su ID
-router.get('/:id', verifyToken, penalizacionCtrl.getById);
+// Acceso: Solo admin
+router.get('/:id', verifyToken, verifyRole('admin'), penalizacionCtrl.getById);
 
 // PUT /api/penalties/:id - Actualiza los datos de una penalización por su ID
-router.put('/:id', verifyToken, penalizacionCtrl.update);
+// Acceso: Solo admin
+router.put('/:id', verifyToken, verifyRole('admin'), penalizacionCtrl.update);
 
 // PATCH /api/penalties/:id/activate - Activa una penalización
-router.patch('/:id/activate', verifyToken, penalizacionCtrl.activate);
+// Acceso: Solo admin
+router.patch('/:id/activate', verifyToken, verifyRole('admin'), penalizacionCtrl.activate);
 
 // PATCH /api/penalties/:id/anular - Anula una penalización
-router.patch('/:id/anular', verifyToken, penalizacionCtrl.anular);
+// Acceso: Solo admin
+router.patch('/:id/anular', verifyToken, verifyRole('admin'), penalizacionCtrl.anular);
 
 module.exports = router;
 

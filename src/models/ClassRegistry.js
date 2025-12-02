@@ -8,9 +8,17 @@ const ClassRegistrySchema = new mongoose.Schema({
         required: true
     },
     classDate: {
-        type: Date,
-        required: true
-        // fecha de clase
+        type: String,
+        required: true,
+        match: /^\d{4}-\d{2}-\d{2}$/
+        // fecha de clase en formato YYYY-MM-DD (solo año, mes y día - no editable)
+    },
+    classTime: {
+        type: String,
+        default: null,
+        trim: true
+        // hora de la clase (formato HH:mm, editable por el profesor)
+        // null por defecto al crear el enrollment, el profesor debe asignarla manualmente
     },
     hoursViewed: {
         type: Number,
@@ -41,10 +49,37 @@ const ClassRegistrySchema = new mongoose.Schema({
         // Student Mood
     },
     note: {
-        type: String,
-        trim: true,
+        type: {
+            content: {
+                type: String,
+                trim: true,
+                default: null
+                // Contenido de la nota
+            },
+            visible: {
+                admin: {
+                    type: Number,
+                    enum: [0, 1],
+                    default: 1
+                    // 1 = visible para admin, 0 = no visible
+                },
+                student: {
+                    type: Number,
+                    enum: [0, 1],
+                    default: 0
+                    // 1 = visible para estudiante, 0 = no visible
+                },
+                professor: {
+                    type: Number,
+                    enum: [0, 1],
+                    default: 1
+                    // 1 = visible para profesor, 0 = no visible
+                }
+            }
+        },
         default: null
-        // Nota
+        // Nota con control de visibilidad por rol
+        // null por defecto, o objeto con content y visible
     },
     homework: {
         type: String,
@@ -89,6 +124,12 @@ const ClassRegistrySchema = new mongoose.Schema({
         default: 60
         // Duración por defecto de la clase en minutos
         // Valor por defecto: 60 minutos (1 hora)
+    },
+    vocabularyContent: {
+        type: String,
+        trim: true,
+        default: null
+        // Contenido de vocabulario de la clase
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

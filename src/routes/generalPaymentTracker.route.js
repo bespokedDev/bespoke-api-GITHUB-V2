@@ -2,19 +2,25 @@
 const express = require('express');
 const router = express.Router();
 const generalPaymentTrackerCtrl = require('../controllers/generalPaymentTracker.controller');
-const verifyToken = require('../middlewares/verifyToken'); // Asumo que tienes este middleware
+const verifyToken = require('../middlewares/verifyToken');
+const verifyRole = require('../middlewares/verifyRole');
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/general-payment-tracker - Guarda un reporte modificado
-router.post('/', verifyToken, generalPaymentTrackerCtrl.saveModifiedReport);
+// Acceso: Solo admin
+router.post('/', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.saveModifiedReport);
 
-// GET /api/general-payment-tracker - Lista todos los reportes guardados (opcional)
-router.get('/', verifyToken, generalPaymentTrackerCtrl.listAllSavedReports);
+// GET /api/general-payment-tracker - Lista todos los reportes guardados
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.listAllSavedReports);
 
-// GET /api/general-payment-tracker/special-reports
-router.get('/special-reports', verifyToken, generalPaymentTrackerCtrl.listSpecialSavedReports);
+// GET /api/general-payment-tracker/special-reports - Lista reportes especiales guardados
+// Acceso: Solo admin
+router.get('/special-reports', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.listSpecialSavedReports);
 
-router.get('/:id', verifyToken, generalPaymentTrackerCtrl.getReportById);
+// GET /api/general-payment-tracker/:id - Obtiene un reporte por su ID
+// Acceso: Solo admin
+router.get('/:id', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.getReportById);
 
 module.exports = router;

@@ -6,7 +6,7 @@
 - **Tipo**: JWT (JSON Web Token)
 - **Header**: `Authorization: Bearer <token>`
 - **Acceso**: Todas las rutas requieren autenticación
-- **Middleware**: `verifyToken`
+- **Middleware**: `verifyToken` y `verifyRole`
 
 ### **Ejemplo de Headers**
 ```javascript
@@ -16,11 +16,88 @@ const headers = {
 };
 ```
 
+### **Login y Autenticación**
+
+#### **Endpoint de Login**
+**POST** `/api/users/login`
+
+El sistema utiliza un **login inteligente** que busca automáticamente en las colecciones `User` (admin), `Professor` y `Student` para encontrar el usuario por su email.
+
+#### **Request Body**
+```json
+{
+  "email": "juan.perez@example.com",
+  "password": "1234567890"
+}
+```
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Login exitoso",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "email": "juan.perez@example.com",
+    "role": "professor",
+    "idRol": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "ciNumber": "12345678",
+    "phone": "+584121234567"
+  }
+}
+```
+
+#### **Campos del Token JWT**
+El token JWT incluye la siguiente información:
+- `id`: ID del profesor
+- `name`: Nombre del profesor
+- `email`: Email del profesor
+- `role`: Nombre del rol (`"admin"`, `"professor"`, `"student"`)
+- `userType`: Tipo de usuario (`"admin"`, `"professor"`, `"student"`)
+- `idRol`: ID del rol (ObjectId de la colección `roles`)
+
+#### **Ejemplo de Login con JavaScript**
+```javascript
+const login = async (email, password) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/users/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Guardar el token en localStorage o en el estado de la aplicación
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      console.log('Login exitoso:', data.user);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+login('juan.perez@example.com', '1234567890');
+```
+
 ### **Pasos para Autenticación**
 1. Obtener token JWT mediante el endpoint de login (`/api/users/login`)
 2. Incluir el token en el header `Authorization` de todas las peticiones
 3. El token debe tener el formato: `Bearer <token>`
 4. Si el token es inválido o expirado, recibirás un error 401 o 403
+5. Algunas rutas requieren roles específicos (ver sección de Roles y Permisos)
 
 ---
 
@@ -210,11 +287,61 @@ Todos los errores siguen este formato:
 
 ## 📌 **Notas Importantes**
 
+### **Email y Password**
+
+#### **Campo Email**
+- **Tipo**: String
+- **Requerido**: Sí (pero puede ser `null` inicialmente)
+- **Único**: Sí (no puede haber dos profesores con el mismo email)
+- **Formato**: Debe ser un email válido (se convierte automáticamente a minúsculas)
+- **Uso**: Se utiliza para el login del profesor
+
+#### **Campo Password**
+- **Tipo**: String
+- **Requerido**: No (puede ser `null` inicialmente)
+- **Almacenamiento**: Se guarda en texto plano (en producción, debe ser hasheado con bcrypt)
+- **Uso**: Se utiliza para el login del profesor junto con el email
+- **⚠️ Importante**: En producción, el password debe ser hasheado antes de guardarse en la base de datos
+
+#### **Generación de Credenciales de Prueba**
+Para generar credenciales de prueba (email y password) para profesores existentes, puedes usar el script:
+```bash
+node scripts/generate-test-credentials.js
+```
+
+Este script:
+- Genera emails únicos basados en el nombre del profesor (ej: `juan@test.com`)
+- Genera passwords de 10 dígitos numéricos (del 1 al 9)
+- Solo actualiza profesores que no tengan email o password
+
+### **Roles y Permisos**
+
+El sistema utiliza un sistema de roles basado en la colección `Role`. Cada profesor tiene un campo `idRol` que referencia a un rol en la colección `roles`.
+
+#### **Roles Disponibles**
+- `admin`: Administrador del sistema
+- `professor`: Profesor
+- `student`: Estudiante
+
+#### **Rutas por Rol**
+
+**Solo Admin:**
+- `POST /api/professors` - Crear profesor
+- `GET /api/professors` - Listar todos los profesores
+- `PATCH /api/professors/:id/deactivate` - Desactivar profesor
+- `PATCH /api/professors/:id/activate` - Activar profesor
+
+**Admin y Professor:**
+- `GET /api/professors/:id/enrollments` - Obtener enrollments del profesor
+- `GET /api/professors/:id` - Obtener profesor por ID
+- `PUT /api/professors/:id` - Actualizar profesor
+
 ### **Autenticación y Autorización**
 
 - Todas las rutas requieren autenticación JWT
 - El endpoint `/api/professors/:id/enrollments` requiere el ID del profesor como parámetro en la URL
 - Asegúrate de incluir el token en el header `Authorization` en todas las peticiones
+- El token JWT incluye el rol del usuario, que se utiliza para verificar permisos en las rutas
 
 ### **Optimización de Respuestas**
 

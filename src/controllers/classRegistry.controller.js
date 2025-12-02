@@ -28,7 +28,7 @@ classRegistryCtrl.list = async (req, res) => {
             .populate('enrollmentId', 'alias language enrollmentType')
             .populate('classType', 'name')
             .populate('contentType', 'name')
-            .sort({ classDate: -1, createdAt: -1 })
+            .sort({ classDate: 1, createdAt: 1 }) // Ordenar por fecha ascendente (más cercana primero)
             .lean();
 
         res.status(200).json({
@@ -66,6 +66,9 @@ classRegistryCtrl.getById = async (req, res) => {
             return res.status(404).json({ message: 'Registro de clase no encontrado.' });
         }
 
+        // Asegurar que vocabularyContent esté presente (incluido automáticamente con .lean())
+        // El objeto classRegistry incluye todos los campos del modelo, incluyendo vocabularyContent
+
         res.status(200).json({
             message: 'Registro de clase obtenido exitosamente',
             class: classRegistry
@@ -87,7 +90,7 @@ classRegistryCtrl.getById = async (req, res) => {
 classRegistryCtrl.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed } = req.body;
+        const { hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed, classTime, vocabularyContent } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID de registro de clase inválido.' });
@@ -147,7 +150,77 @@ classRegistryCtrl.update = async (req, res) => {
         }
 
         if (note !== undefined) {
-            updateFields.note = note === null || note === '' ? null : note.trim();
+            // Validar estructura de note
+            if (note !== null && typeof note !== 'object') {
+                return res.status(400).json({ message: 'El campo note debe ser un objeto con content y visible, o null.' });
+            }
+            
+            if (note === null) {
+                updateFields.note = null;
+            } else {
+                const noteUpdate = {};
+                
+                // Actualizar content si se proporciona
+                if (note.content !== undefined) {
+                    noteUpdate.content = note.content === null || note.content === '' ? null : note.content.trim();
+                }
+                
+                // Actualizar visible si se proporciona
+                if (note.visible !== undefined) {
+                    if (typeof note.visible !== 'object') {
+                        return res.status(400).json({ message: 'El campo note.visible debe ser un objeto con admin, student y professor.' });
+                    }
+                    
+                    noteUpdate.visible = {};
+                    
+                    if (note.visible.admin !== undefined) {
+                        if (![0, 1].includes(note.visible.admin)) {
+                            return res.status(400).json({ message: 'El campo note.visible.admin debe ser 0 o 1.' });
+                        }
+                        noteUpdate.visible.admin = note.visible.admin;
+                    }
+                    
+                    if (note.visible.student !== undefined) {
+                        if (![0, 1].includes(note.visible.student)) {
+                            return res.status(400).json({ message: 'El campo note.visible.student debe ser 0 o 1.' });
+                        }
+                        noteUpdate.visible.student = note.visible.student;
+                    }
+                    
+                    if (note.visible.professor !== undefined) {
+                        if (![0, 1].includes(note.visible.professor)) {
+                            return res.status(400).json({ message: 'El campo note.visible.professor debe ser 0 o 1.' });
+                        }
+                        noteUpdate.visible.professor = note.visible.professor;
+                    }
+                }
+                
+                // Si hay campos para actualizar, usar $set para actualizar parcialmente
+                if (Object.keys(noteUpdate).length > 0) {
+                    // Obtener el documento actual para hacer merge
+                    const currentClass = await ClassRegistry.findById(id).lean();
+                    if (currentClass && currentClass.note) {
+                        updateFields.note = {
+                            content: noteUpdate.content !== undefined ? noteUpdate.content : currentClass.note.content,
+                            visible: {
+                                admin: noteUpdate.visible?.admin !== undefined ? noteUpdate.visible.admin : currentClass.note.visible?.admin || 1,
+                                student: noteUpdate.visible?.student !== undefined ? noteUpdate.visible.student : currentClass.note.visible?.student || 0,
+                                professor: noteUpdate.visible?.professor !== undefined ? noteUpdate.visible.professor : currentClass.note.visible?.professor || 1
+                            }
+                        };
+                    } else {
+                        // Si no existe note, crear uno nuevo con valores por defecto
+                        updateFields.note = {
+                            content: noteUpdate.content !== undefined ? noteUpdate.content : null,
+                            visible: {
+                                admin: noteUpdate.visible?.admin !== undefined ? noteUpdate.visible.admin : 1,
+                                student: noteUpdate.visible?.student !== undefined ? noteUpdate.visible.student : 0,
+                                professor: noteUpdate.visible?.professor !== undefined ? noteUpdate.visible.professor : 1
+                            }
+                        };
+                    }
+                }
+            }
         }
 
         if (homework !== undefined) {
@@ -163,6 +236,21 @@ classRegistryCtrl.update = async (req, res) => {
                 return res.status(400).json({ message: 'El campo classViewed debe ser 0, 1 o 2.' });
             }
             updateFields.classViewed = classViewed;
+        }
+
+        if (classTime !== undefined) {
+            // Validar formato de hora (HH:mm) o permitir null
+            if (classTime !== null && classTime !== '') {
+                const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+                if (!timeRegex.test(classTime)) {
+                    return res.status(400).json({ message: 'El campo classTime debe tener el formato HH:mm (ej: 14:30) o ser null.' });
+                }
+            }
+            updateFields.classTime = classTime === null || classTime === '' ? null : classTime.trim();
+        }
+
+        if (vocabularyContent !== undefined) {
+            updateFields.vocabularyContent = vocabularyContent === null || vocabularyContent === '' ? null : vocabularyContent.trim();
         }
 
         const updatedClass = await ClassRegistry.findByIdAndUpdate(
@@ -201,7 +289,7 @@ classRegistryCtrl.update = async (req, res) => {
 classRegistryCtrl.createReschedule = async (req, res) => {
     try {
         const { id } = req.params; // ID de la clase original
-        const { classDate, hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed } = req.body;
+        const { classDate, classTime, hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID de registro de clase inválido.' });
@@ -226,9 +314,35 @@ classRegistryCtrl.createReschedule = async (req, res) => {
             return res.status(400).json({ message: 'El campo classDate es requerido para crear la clase de reschedule.' });
         }
 
-        const newClassDate = classDate instanceof Date ? classDate : new Date(classDate);
-        if (isNaN(newClassDate.getTime())) {
-            return res.status(400).json({ message: 'El campo classDate debe ser una fecha válida.' });
+        // Validar y formatear classDate como string YYYY-MM-DD
+        let dateString;
+        if (classDate instanceof Date) {
+            const year = classDate.getUTCFullYear();
+            const month = String(classDate.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(classDate.getUTCDate()).padStart(2, '0');
+            dateString = `${year}-${month}-${day}`;
+        } else if (typeof classDate === 'string') {
+            // Validar formato YYYY-MM-DD
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(classDate)) {
+                return res.status(400).json({ message: 'El campo classDate debe tener el formato YYYY-MM-DD (ej: 2024-01-22).' });
+            }
+            // Validar que sea una fecha válida
+            const testDate = new Date(classDate);
+            if (isNaN(testDate.getTime())) {
+                return res.status(400).json({ message: 'El campo classDate debe ser una fecha válida.' });
+            }
+            dateString = classDate;
+        } else {
+            return res.status(400).json({ message: 'El campo classDate debe ser una fecha válida (Date object o string YYYY-MM-DD).' });
+        }
+
+        // Validar classTime si se proporciona
+        if (classTime !== undefined && classTime !== null && classTime !== '') {
+            const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+            if (!timeRegex.test(classTime)) {
+                return res.status(400).json({ message: 'El campo classTime debe tener el formato HH:mm (ej: 14:30) o ser null.' });
+            }
         }
 
         // Actualizar la clase original: establecer reschedule a 1
@@ -237,7 +351,8 @@ classRegistryCtrl.createReschedule = async (req, res) => {
         // Crear la nueva clase de reschedule
         const rescheduleClassData = {
             enrollmentId: originalClass.enrollmentId._id || originalClass.enrollmentId,
-            classDate: newClassDate,
+            classDate: dateString, // Solo año, mes y día en formato YYYY-MM-DD
+            classTime: classTime || null, // Hora de la clase (puede ser null)
             originalClassId: id, // Referencia a la clase original
             reschedule: 1, // Clase en modo reschedule
             classViewed: 0, // Por defecto no vista
@@ -260,7 +375,32 @@ classRegistryCtrl.createReschedule = async (req, res) => {
             rescheduleClassData.contentType = contentType;
         }
         if (studentMood !== undefined) rescheduleClassData.studentMood = studentMood || null;
-        if (note !== undefined) rescheduleClassData.note = note || null;
+        if (note !== undefined) {
+            if (note !== null && typeof note !== 'object') {
+                return res.status(400).json({ message: 'El campo note debe ser un objeto con content y visible, o null.' });
+            }
+            
+            if (note === null) {
+                rescheduleClassData.note = null;
+            } else {
+                // Validar estructura de note
+                const noteData = {
+                    content: note.content !== undefined ? (note.content === null || note.content === '' ? null : note.content.trim()) : null,
+                    visible: {
+                        admin: note.visible?.admin !== undefined && [0, 1].includes(note.visible.admin) ? note.visible.admin : 1,
+                        student: note.visible?.student !== undefined && [0, 1].includes(note.visible.student) ? note.visible.student : 0,
+                        professor: note.visible?.professor !== undefined && [0, 1].includes(note.visible.professor) ? note.visible.professor : 1
+                    }
+                };
+                
+                // Validar visible si se proporciona
+                if (note.visible !== undefined && typeof note.visible !== 'object') {
+                    return res.status(400).json({ message: 'El campo note.visible debe ser un objeto con admin, student y professor.' });
+                }
+                
+                rescheduleClassData.note = noteData;
+            }
+        }
         if (homework !== undefined) rescheduleClassData.homework = homework || null;
         if (token !== undefined) rescheduleClassData.token = token || null;
         if (classViewed !== undefined) {

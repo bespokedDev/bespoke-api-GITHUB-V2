@@ -2,34 +2,42 @@ const express = require('express');
 const router = express.Router();
 const studentCtrl = require('../controllers/students.controllers'); // Importa el controlador de estudiantes
 const verifyToken = require('../middlewares/verifyToken'); // Importa tu middleware de verificación de token
+const verifyRole = require('../middlewares/verifyRole'); // Importa el middleware de verificación de roles
 
 // Middleware de validación para la creación de estudiantes (opcional, puedes crear uno similar a validateProfessor)
 // const { createStudentValidation } = require('../middlewares/validateStudent'); // Ejemplo si lo creas
 
-// Rutas protegidas con JWT
+// Rutas protegidas con JWT y validación de roles
 
 // POST /api/students - Crea un nuevo estudiante
+// Acceso: Solo admin
 // Si creas una validación específica, úsala aquí:
-// router.post('/', verifyToken, createStudentValidation, studentCtrl.create);
-router.post('/', verifyToken, studentCtrl.create);
+// router.post('/', verifyToken, verifyRole('admin'), createStudentValidation, studentCtrl.create);
+router.post('/', verifyToken, verifyRole('admin'), studentCtrl.create);
 
 // GET /api/students - Lista todos los estudiantes
-router.get('/', verifyToken, studentCtrl.list);
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin'), studentCtrl.list);
 
 // GET /api/students/info/:id - Obtiene información del saldo del estudiante
+// Acceso: Admin, estudiante y profesor
 // Esta ruta debe estar antes de /:id para evitar conflictos
-router.get('/info/:id', verifyToken, studentCtrl.studentInfo);
+router.get('/info/:id', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.studentInfo);
 
 // GET /api/students/:id - Obtiene un estudiante por su ID
-router.get('/:id', verifyToken, studentCtrl.getById);
+// Acceso: Admin, estudiante y profesor
+router.get('/:id', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.getById);
 
 // PUT /api/students/:id - Actualiza un estudiante por su ID
-router.put('/:id', verifyToken, studentCtrl.update);
+// Acceso: Solo admin
+router.put('/:id', verifyToken, verifyRole('admin'), studentCtrl.update);
 
 // PATCH /api/students/:id/deactivate - Desactiva un estudiante
-router.patch('/:id/deactivate', verifyToken, studentCtrl.deactivate);
+// Acceso: Solo admin
+router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), studentCtrl.deactivate);
 
 // PATCH /api/students/:id/activate - Activa un estudiante
-router.patch('/:id/activate', verifyToken, studentCtrl.activate);
+// Acceso: Solo admin
+router.patch('/:id/activate', verifyToken, verifyRole('admin'), studentCtrl.activate);
 
 module.exports = router;

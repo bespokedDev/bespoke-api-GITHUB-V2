@@ -6,7 +6,7 @@
 - **Tipo**: JWT (JSON Web Token)
 - **Header**: `Authorization: Bearer <token>`
 - **Acceso**: Todas las rutas requieren autenticación
-- **Middleware**: `verifyToken`
+- **Middleware**: `verifyToken` y `verifyRole`
 
 ### **Ejemplo de Headers**
 ```javascript
@@ -16,11 +16,88 @@ const headers = {
 };
 ```
 
+### **Login y Autenticación**
+
+#### **Endpoint de Login**
+**POST** `/api/users/login`
+
+El sistema utiliza un **login inteligente** que busca automáticamente en las colecciones `User` (admin), `Professor` y `Student` para encontrar el usuario por su email.
+
+#### **Request Body**
+```json
+{
+  "email": "juan.perez@example.com",
+  "password": "1234567890"
+}
+```
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Login exitoso",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Juan Pérez",
+    "email": "juan.perez@example.com",
+    "role": "student",
+    "idRol": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "studentCode": "BES-0001",
+    "phone": "+584121234567"
+  }
+}
+```
+
+#### **Campos del Token JWT**
+El token JWT incluye la siguiente información:
+- `id`: ID del estudiante
+- `name`: Nombre del estudiante
+- `email`: Email del estudiante
+- `role`: Nombre del rol (`"admin"`, `"professor"`, `"student"`)
+- `userType`: Tipo de usuario (`"admin"`, `"professor"`, `"student"`)
+- `idRol`: ID del rol (ObjectId de la colección `roles`)
+
+#### **Ejemplo de Login con JavaScript**
+```javascript
+const login = async (email, password) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/users/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Guardar el token en localStorage o en el estado de la aplicación
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      console.log('Login exitoso:', data.user);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+login('juan.perez@example.com', '1234567890');
+```
+
 ### **Pasos para Autenticación**
 1. Obtener token JWT mediante el endpoint de login (`/api/users/login`)
 2. Incluir el token en el header `Authorization` de todas las peticiones
 3. El token debe tener el formato: `Bearer <token>`
 4. Si el token es inválido o expirado, recibirás un error 401 o 403
+5. Algunas rutas requieren roles específicos (ver sección de Roles y Permisos)
 
 ---
 
@@ -31,7 +108,7 @@ const headers = {
 |--------|------|-------------|
 | `POST` | `/api/students` | Crear nuevo estudiante |
 | `GET` | `/api/students` | Listar todos los estudiantes |
-| `GET` | `/api/students/:id/info/studentInfo` | Obtener información del saldo del estudiante |
+| `GET` | `/api/students/info/:id` | Obtener información del saldo del estudiante |
 | `GET` | `/api/students/:id` | Obtener estudiante por ID |
 | `PUT` | `/api/students/:id` | Actualizar estudiante por ID |
 | `PATCH` | `/api/students/:id/activate` | Activar estudiante |
@@ -85,9 +162,9 @@ const headers = {
 #### **Campos Opcionales**
 - `studentCode` (String): Código único del estudiante. **Se genera automáticamente** con formato `BES-XXXX` (no enviar en el request)
 - `representativeName` (String): Nombre del representante (útil para menores de edad)
-- `email` (String): Correo electrónico del estudiante (único, puede ser null)
-- `password` (String): Contraseña del estudiante (debe ser hasheada antes de guardar)
-- `role` (String): Rol del usuario en el sistema. Valores permitidos: `"student"`, `"admin"`, `"professor"`. Por defecto: `"student"`
+- `email` (String): Correo electrónico del estudiante (único, puede ser null). **Se utiliza para el login**
+- `password` (String): Contraseña del estudiante (debe ser hasheada antes de guardar). **Se utiliza para el login junto con el email**
+- `idRol` (ObjectId): ID del rol (referencia a la colección `roles`). Por defecto: referencia al rol `"student"`
 - `address` (String): Dirección del estudiante
 - `city` (String): Ciudad del estudiante
 - `country` (String): País del estudiante
@@ -358,9 +435,23 @@ const listStudents = async () => {
 
 ### **3. Obtener Información del Saldo del Estudiante**
 
-#### **GET** `/api/students/:id/info/studentInfo`
+#### **GET** `/api/students/info/:id`
 
 Obtiene información detallada del saldo disponible del estudiante especificado por su ID.
+
+**⚠️ IMPORTANTE - Ruta Correcta:**
+- ✅ **Ruta correcta**: `GET /api/students/info/:id`
+- ❌ **Ruta incorrecta (antigua)**: `GET /api/students/:id/info/studentInfo`
+
+**Ejemplo de URL correcta:**
+```
+http://localhost:3000/api/students/info/6858c84b1b114315ccdf65d0
+```
+
+**Ejemplo de URL incorrecta (no usar):**
+```
+http://localhost:3000/api/students/6858c84b1b114315ccdf65d0/info/studentInfo
+```
 
 #### **Headers**
 ```javascript
@@ -463,7 +554,7 @@ No requiere body.
 
 #### **Ejemplo con cURL**
 ```bash
-curl -X GET http://localhost:3000/api/students/64f8a1b2c3d4e5f6a7b8c9d0/info/studentInfo \
+curl -X GET http://localhost:3000/api/students/info/64f8a1b2c3d4e5f6a7b8c9d0 \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
@@ -471,7 +562,7 @@ curl -X GET http://localhost:3000/api/students/64f8a1b2c3d4e5f6a7b8c9d0/info/stu
 ```javascript
 const getStudentInfo = async (studentId) => {
   try {
-    const response = await fetch(`http://localhost:3000/api/students/${studentId}/info/studentInfo`, {
+    const response = await fetch(`http://localhost:3000/api/students/info/${studentId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -1023,17 +1114,66 @@ En algunos casos, también puede incluir:
 - Al crear un estudiante, si envías `notes`, se generarán `_id` automáticamente para cada nota
 - Al actualizar, las notas existentes se actualizan si tienen `_id`, y las nuevas se crean si no lo tienen
 
+### **Email y Password**
+
+#### **Campo Email**
+- **Tipo**: String
+- **Requerido**: No (puede ser `null` inicialmente)
+- **Único**: Sí (no puede haber dos estudiantes con el mismo email)
+- **Formato**: Debe ser un email válido (se convierte automáticamente a minúsculas)
+- **Uso**: Se utiliza para el login del estudiante
+
+#### **Campo Password**
+- **Tipo**: String
+- **Requerido**: No (puede ser `null` inicialmente)
+- **Almacenamiento**: Se guarda en texto plano (en producción, debe ser hasheado con bcrypt)
+- **Uso**: Se utiliza para el login del estudiante junto con el email
+- **⚠️ Importante**: En producción, el password debe ser hasheado antes de guardarse en la base de datos
+
+#### **Generación de Credenciales de Prueba**
+Para generar credenciales de prueba (email y password) para estudiantes existentes, puedes usar el script:
+```bash
+node scripts/generate-test-credentials.js
+```
+
+Este script:
+- Genera emails únicos basados en el nombre del estudiante (ej: `juan@test.com`)
+- Genera passwords de 10 dígitos numéricos (del 1 al 9)
+- Solo actualiza estudiantes que no tengan email o password
+
+### **Roles y Permisos**
+
+El sistema utiliza un sistema de roles basado en la colección `Role`. Cada estudiante tiene un campo `idRol` que referencia a un rol en la colección `roles`.
+
+#### **Roles Disponibles**
+- `admin`: Administrador del sistema
+- `professor`: Profesor
+- `student`: Estudiante
+
+#### **Rutas por Rol**
+
+**Solo Admin:**
+- `POST /api/students` - Crear estudiante
+- `GET /api/students` - Listar todos los estudiantes
+- `PUT /api/students/:id` - Actualizar estudiante
+- `PATCH /api/students/:id/deactivate` - Desactivar estudiante
+- `PATCH /api/students/:id/activate` - Activar estudiante
+
+**Admin, Student y Professor:**
+- `GET /api/students/info/:id` - Obtener información del saldo del estudiante
+- `GET /api/students/:id` - Obtener estudiante por ID
+
 ### **Autenticación y Autorización**
 
 - Todas las rutas requieren autenticación JWT
-- El endpoint `/api/students/:id/info/studentInfo` requiere el ID del estudiante como parámetro en la URL
+- El endpoint `/api/students/info/:id` requiere el ID del estudiante como parámetro en la URL (no confundir con `/api/students/:id`)
 - Asegúrate de incluir el token en el header `Authorization` en todas las peticiones
+- El token JWT incluye el rol del usuario, que se utiliza para verificar permisos en las rutas
 
 ### **Validaciones**
 
 - `email`: Debe ser único si se proporciona (puede ser `null`)
 - `gender`: Solo acepta `"Male"`, `"Female"` o `"Other"`
-- `role`: Solo acepta `"student"`, `"admin"` o `"professor"`
 - `status`: Solo acepta `1` (activo) o `0` (inactivo)
 - `phone`: Campo requerido
 

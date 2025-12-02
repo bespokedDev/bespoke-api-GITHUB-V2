@@ -6,7 +6,18 @@
 - **Tipo**: JWT (JSON Web Token)
 - **Header**: `Authorization: Bearer <token>`
 - **Acceso**: Todas las rutas requieren autenticación
-- **Middleware**: `verifyToken`
+- **Middlewares**: `verifyToken` + `verifyRole`
+
+### **Control de Acceso por Roles**
+
+Cada endpoint tiene restricciones de acceso basadas en roles:
+
+| Endpoint | Método | Roles Permitidos |
+|----------|--------|------------------|
+| `/api/class-registry` | `GET` | `admin`, `professor`, `student` |
+| `/api/class-registry/:id` | `GET` | `admin`, `professor` |
+| `/api/class-registry/:id` | `PUT` | `admin`, `professor` |
+| `/api/class-registry/:id/reschedule` | `POST` | `professor` |
 
 ### **Ejemplo de Headers**
 ```javascript
@@ -21,18 +32,35 @@ const headers = {
 2. Incluir el token en el header `Authorization` de todas las peticiones
 3. El token debe tener el formato: `Bearer <token>`
 4. Si el token es inválido o expirado, recibirás un error 401 o 403
+5. Si tu rol no tiene permisos para acceder a un endpoint, recibirás un error 403
+
+### **Errores de Autorización**
+
+**403 Forbidden - Rol no permitido**
+```json
+{
+  "message": "Acceso denegado: Se requiere uno de los siguientes roles: admin, professor"
+}
+```
+
+**403 Forbidden - Rol no encontrado en el token**
+```json
+{
+  "message": "Acceso denegado: Rol no encontrado en el token"
+}
+```
 
 ---
 
 ## 🚀 **Endpoints Disponibles**
 
 ### **📋 Resumen de Endpoints**
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/api/class-registry` | Listar registros de clase (con información básica) |
-| `GET` | `/api/class-registry/:id` | Obtener registro de clase por ID (con detalle completo) |
-| `PUT` | `/api/class-registry/:id` | Actualizar datos de un registro de clase |
-| `POST` | `/api/class-registry/:id/reschedule` | Crear una nueva clase de tipo reschedule |
+| Método | Ruta | Descripción | Roles Permitidos |
+|--------|------|-------------|------------------|
+| `GET` | `/api/class-registry` | Listar registros de clase (con información básica) | `admin`, `professor`, `student` |
+| `GET` | `/api/class-registry/:id` | Obtener registro de clase por ID (con detalle completo) | `admin`, `professor` |
+| `PUT` | `/api/class-registry/:id` | Actualizar datos de un registro de clase | `admin`, `professor` |
+| `POST` | `/api/class-registry/:id/reschedule` | Crear una nueva clase de tipo reschedule | `professor` |
 
 ---
 
@@ -48,7 +76,8 @@ const headers = {
     "language": "English",
     "enrollmentType": "single"
   },
-  "classDate": "2024-01-22T00:00:00.000Z",
+  "classDate": "2024-01-22",
+  "classTime": "14:30",
   "hoursViewed": 1,
   "minutesViewed": 30,
   "classType": [
@@ -64,13 +93,21 @@ const headers = {
     }
   ],
   "studentMood": "Motivado",
-  "note": "Clase muy productiva, el estudiante mostró gran interés",
+  "note": {
+    "content": "Clase muy productiva, el estudiante mostró gran interés",
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
   "homework": "Ejercicios de gramática páginas 10-15",
   "token": "abc123xyz",
   "reschedule": 0,
   "classViewed": 1,
   "minutesClassDefault": 60,
   "originalClassId": null,
+  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-22T15:45:00.000Z"
 }
@@ -80,21 +117,28 @@ const headers = {
 
 #### **Campos Requeridos**
 - `enrollmentId` (ObjectId): ID del enrollment al que pertenece la clase (referencia a `Enrollment`)
-- `classDate` (Date): Fecha de la clase programada
+- `classDate` (String): Fecha de la clase programada en formato `YYYY-MM-DD` (solo año, mes y día - no editable)
 
 #### **Campos Opcionales**
+- `classTime` (String): Hora de la clase en formato `HH:mm` (ej: "14:30"). Por defecto: `null` (el profesor debe asignarla manualmente)
 - `hoursViewed` (Number): Tiempo visto en horas (puede ser null)
 - `minutesViewed` (Number): Tiempo visto en minutos (puede ser null)
 - `classType` (Array[ObjectId]): Array de tipos de clase (referencia a `ClassType`). Por defecto: `[]`
 - `contentType` (Array[ObjectId]): Array de tipos de contenido (referencia a `ContentClass`). Por defecto: `[]`
 - `studentMood` (String): Estado de ánimo del estudiante (puede ser null)
-- `note` (String): Nota sobre la clase (puede ser null)
+- `note` (Object): Nota sobre la clase con control de visibilidad por rol. Estructura:
+  - `content` (String): Contenido de la nota (puede ser null)
+  - `visible` (Object): Control de visibilidad por rol
+    - `admin` (Number): `1` = visible para admin, `0` = no visible. Por defecto: `1`
+    - `student` (Number): `1` = visible para estudiante, `0` = no visible. Por defecto: `0`
+    - `professor` (Number): `1` = visible para profesor, `0` = no visible. Por defecto: `1`
 - `homework` (String): Tarea asignada (puede ser null)
 - `token` (String): Token de la clase (puede ser null)
 - `reschedule` (Number): Estado de reschedule. Valores: `0` (normal), `1` (en reschedule), `2` (reschedule visto). Por defecto: `0`
 - `classViewed` (Number): Estado de visualización. Valores: `0` (no vista), `1` (vista), `2` (parcialmente vista). Por defecto: `0`
 - `minutesClassDefault` (Number): Duración por defecto de la clase en minutos. Por defecto: `60`
 - `originalClassId` (ObjectId): ID de la clase original cuando esta clase es un reschedule. Por defecto: `null`
+- `vocabularyContent` (String): Contenido de vocabulario de la clase (puede ser null). Por defecto: `null` al crear el enrollment
 
 #### **Campos Generados Automáticamente**
 - `_id` (ObjectId): Identificador único del registro de clase
@@ -110,6 +154,8 @@ const headers = {
 #### **GET** `/api/class-registry`
 
 Obtiene una lista de registros de clase con información básica. Permite filtrar por enrollmentId.
+
+**Roles permitidos:** `admin`, `professor`, `student`
 
 #### **Headers**
 ```javascript
@@ -137,7 +183,8 @@ No requiere body.
         "language": "English",
         "enrollmentType": "single"
       },
-      "classDate": "2024-01-22T00:00:00.000Z",
+      "classDate": "2024-01-22",
+      "classTime": "14:30",
       "hoursViewed": 1,
       "minutesViewed": 30,
       "classType": [
@@ -153,13 +200,21 @@ No requiere body.
         }
       ],
       "studentMood": "Motivado",
-      "note": "Clase muy productiva",
+      "note": {
+        "content": "Clase muy productiva",
+        "visible": {
+          "admin": 1,
+          "student": 0,
+          "professor": 1
+        }
+      },
       "homework": "Ejercicios de gramática",
       "token": "abc123xyz",
       "reschedule": 0,
       "classViewed": 1,
       "minutesClassDefault": 60,
       "originalClassId": null,
+      "vocabularyContent": null,
       "createdAt": "2024-01-15T10:30:00.000Z",
       "updatedAt": "2024-01-22T15:45:00.000Z"
     }
@@ -169,9 +224,10 @@ No requiere body.
 ```
 
 #### **Notas Importantes**
-- Los registros se ordenan por fecha de clase descendente (más recientes primero)
+- Los registros se ordenan por fecha de clase ascendente (más cercana primero, para facilitar listas en el frontend)
 - Los campos `classType` y `contentType` se populan automáticamente con sus nombres
 - Puedes filtrar por `enrollmentId` usando query parameters
+- `classDate` contiene solo el día (sin hora), la hora se maneja en `classTime`
 
 #### **Errores Posibles**
 
@@ -230,6 +286,8 @@ const listClassRegistries = async (enrollmentId = null) => {
 
 Obtiene un registro de clase específico por su ID con toda su información detallada.
 
+**Roles permitidos:** `admin`, `professor`
+
 #### **Headers**
 ```javascript
 {
@@ -257,7 +315,7 @@ No requiere body.
       "startDate": "2024-01-22T00:00:00.000Z",
       "endDate": "2024-02-21T23:59:59.999Z"
     },
-    "classDate": "2024-01-22T00:00:00.000Z",
+    "classDate": "2024-01-22",
     "hoursViewed": 1,
     "minutesViewed": 30,
     "classType": [
@@ -272,14 +330,22 @@ No requiere body.
         "name": "Conversación"
       }
     ],
-    "studentMood": "Motivado",
-    "note": "Clase muy productiva, el estudiante mostró gran interés",
-    "homework": "Ejercicios de gramática páginas 10-15",
+  "studentMood": "Motivado",
+  "note": {
+    "content": "Clase muy productiva, el estudiante mostró gran interés",
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
+  "homework": "Ejercicios de gramática páginas 10-15",
     "token": "abc123xyz",
     "reschedule": 0,
     "classViewed": 1,
     "minutesClassDefault": 60,
     "originalClassId": null,
+    "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-22T15:45:00.000Z"
   }
@@ -335,6 +401,8 @@ const getClassRegistryById = async (classId) => {
 
 Actualiza los datos de un registro de clase. Solo se pueden actualizar los campos permitidos.
 
+**Roles permitidos:** `admin`, `professor`
+
 #### **Headers**
 ```javascript
 {
@@ -349,28 +417,44 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
 #### **Request Body**
 ```json
 {
+  "classTime": "14:30",
   "hoursViewed": 1,
   "minutesViewed": 30,
   "classType": ["64f8a1b2c3d4e5f6a7b8c9d1"],
   "contentType": ["64f8a1b2c3d4e5f6a7b8c9d2"],
   "studentMood": "Motivado",
-  "note": "Clase muy productiva",
+  "note": {
+    "content": "Clase muy productiva",
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
   "homework": "Ejercicios de gramática",
   "token": "abc123xyz",
-  "classViewed": 1
+  "classViewed": 1,
+  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please"
 }
 ```
 
 **Campos Actualizables (todos opcionales):**
+- `classTime` (String/null): Hora de la clase en formato `HH:mm` (ej: "14:30"). Puede ser null o string vacío
 - `hoursViewed` (Number/null): Tiempo visto en horas (puede ser null)
 - `minutesViewed` (Number/null): Tiempo visto en minutos (puede ser null)
 - `classType` (Array[String]): Array de IDs de tipos de clase (ObjectIds válidos)
 - `contentType` (Array[String]): Array de IDs de tipos de contenido (ObjectIds válidos)
 - `studentMood` (String/null): Estado de ánimo del estudiante (puede ser null o string vacío)
-- `note` (String/null): Nota sobre la clase (puede ser null o string vacío)
+- `note` (Object/null): Nota sobre la clase. Puede ser `null` o un objeto con:
+  - `content` (String/null): Contenido de la nota (puede ser null o string vacío)
+  - `visible` (Object, opcional): Control de visibilidad por rol. Si no se proporciona, se mantienen los valores actuales o se usan los valores por defecto
+    - `admin` (Number): `1` = visible para admin, `0` = no visible
+    - `student` (Number): `1` = visible para estudiante, `0` = no visible
+    - `professor` (Number): `1` = visible para profesor, `0` = no visible
 - `homework` (String/null): Tarea asignada (puede ser null o string vacío)
 - `token` (String/null): Token de la clase (puede ser null o string vacío)
 - `classViewed` (Number): Estado de visualización. Valores: `0` (no vista), `1` (vista), `2` (parcialmente vista)
+- `vocabularyContent` (String/null): Contenido de vocabulario de la clase (puede ser null o string vacío)
 
 **⚠️ Nota:** El campo `reschedule` se maneja de forma especial mediante el endpoint de reschedule y no se puede actualizar directamente.
 
@@ -386,7 +470,7 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
       "language": "English",
       "enrollmentType": "single"
     },
-    "classDate": "2024-01-22T00:00:00.000Z",
+    "classDate": "2024-01-22",
     "hoursViewed": 1,
     "minutesViewed": 30,
     "classType": [
@@ -402,13 +486,21 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
       }
     ],
     "studentMood": "Motivado",
-    "note": "Clase muy productiva",
-    "homework": "Ejercicios de gramática",
-    "token": "abc123xyz",
+  "note": {
+    "content": "Clase muy productiva",
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
+  "homework": "Ejercicios de gramática",
+  "token": "abc123xyz",
     "reschedule": 0,
     "classViewed": 1,
     "minutesClassDefault": 60,
     "originalClassId": null,
+    "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-22T16:00:00.000Z"
   }
@@ -419,6 +511,7 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
 
 **400 Bad Request**
 - ID de registro inválido
+- `classTime` no tiene el formato `HH:mm` válido (si se proporciona)
 - `hoursViewed` o `minutesViewed` no son números positivos o null
 - `classType` o `contentType` no son arrays
 - IDs de `classType` o `contentType` inválidos
@@ -436,13 +529,22 @@ curl -X PUT http://localhost:3000/api/class-registry/64f8a1b2c3d4e5f6a7b8c9d0 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -d '{
+    "classTime": "14:30",
     "hoursViewed": 1,
     "minutesViewed": 30,
     "classType": ["64f8a1b2c3d4e5f6a7b8c9d1"],
     "contentType": ["64f8a1b2c3d4e5f6a7b8c9d2"],
     "studentMood": "Motivado",
-    "note": "Clase muy productiva",
-    "classViewed": 1
+    "note": {
+      "content": "Clase muy productiva",
+      "visible": {
+        "admin": 1,
+        "student": 0,
+        "professor": 1
+      }
+    },
+    "classViewed": 1,
+    "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please"
   }'
 ```
 
@@ -473,13 +575,22 @@ const updateClassRegistry = async (classId, updateData) => {
 
 // Uso
 updateClassRegistry('64f8a1b2c3d4e5f6a7b8c9d0', {
+  classTime: "14:30",
   hoursViewed: 1,
   minutesViewed: 30,
   classType: ["64f8a1b2c3d4e5f6a7b8c9d1"],
   contentType: ["64f8a1b2c3d4e5f6a7b8c9d2"],
   studentMood: "Motivado",
-  note: "Clase muy productiva",
-  classViewed: 1
+  note: {
+    content: "Clase muy productiva",
+    visible: {
+      admin: 1,
+      student: 0,
+      professor: 1
+    }
+  },
+  classViewed: 1,
+  vocabularyContent: "Palabras nuevas: hello, goodbye, thank you, please"
 });
 ```
 
@@ -492,6 +603,8 @@ updateClassRegistry('64f8a1b2c3d4e5f6a7b8c9d0', {
 Crea una nueva clase de tipo reschedule basada en una clase existente. Este endpoint:
 1. Actualiza la clase original estableciendo `reschedule: 1`
 2. Crea una nueva clase con `reschedule: 1` y `originalClassId` apuntando a la clase original
+
+**Roles permitidos:** `professor`
 
 #### **Headers**
 ```javascript
@@ -508,12 +621,20 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
 ```json
 {
   "classDate": "2024-02-05T00:00:00.000Z",
+  "classTime": "15:00",
   "hoursViewed": null,
   "minutesViewed": null,
   "classType": ["64f8a1b2c3d4e5f6a7b8c9d1"],
   "contentType": ["64f8a1b2c3d4e5f6a7b8c9d2"],
   "studentMood": null,
-  "note": null,
+  "note": {
+    "content": null,
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
   "homework": null,
   "token": null,
   "classViewed": 0
@@ -523,15 +644,21 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
 **Campos del Request Body:**
 
 **Requeridos:**
-- `classDate` (Date/String): Fecha de la nueva clase de reschedule (debe ser una fecha válida)
+- `classDate` (Date/String): Fecha de la nueva clase de reschedule en formato `YYYY-MM-DD` (ej: "2024-02-05"). Puede enviarse como Date object o string, se normaliza automáticamente a formato YYYY-MM-DD
 
 **Opcionales:**
+- `classTime` (String/null): Hora de la clase en formato `HH:mm` (ej: "14:30"). Puede ser null
 - `hoursViewed` (Number/null): Tiempo visto en horas (puede ser null)
 - `minutesViewed` (Number/null): Tiempo visto en minutos (puede ser null)
 - `classType` (Array[String]): Array de IDs de tipos de clase (ObjectIds válidos)
 - `contentType` (Array[String]): Array de IDs de tipos de contenido (ObjectIds válidos)
 - `studentMood` (String/null): Estado de ánimo del estudiante (puede ser null)
-- `note` (String/null): Nota sobre la clase (puede ser null)
+- `note` (Object/null): Nota sobre la clase. Puede ser `null` o un objeto con:
+  - `content` (String/null): Contenido de la nota (puede ser null)
+  - `visible` (Object): Control de visibilidad por rol
+    - `admin` (Number): `1` = visible para admin, `0` = no visible. Por defecto: `1`
+    - `student` (Number): `1` = visible para estudiante, `0` = no visible. Por defecto: `0`
+    - `professor` (Number): `1` = visible para profesor, `0` = no visible. Por defecto: `1`
 - `homework` (String/null): Tarea asignada (puede ser null)
 - `token` (String/null): Token de la clase (puede ser null)
 - `classViewed` (Number): Estado de visualización. Valores: `0` (no vista), `1` (vista), `2` (parcialmente vista). Por defecto: `0`
@@ -552,7 +679,8 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
       "language": "English",
       "enrollmentType": "single"
     },
-    "classDate": "2024-02-05T00:00:00.000Z",
+    "classDate": "2024-02-05",
+    "classTime": "15:00",
     "hoursViewed": null,
     "minutesViewed": null,
     "classType": [
@@ -568,7 +696,14 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
       }
     ],
     "studentMood": null,
-    "note": null,
+    "note": {
+    "content": null,
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
     "homework": null,
     "token": null,
     "reschedule": 1,
@@ -576,9 +711,10 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
     "minutesClassDefault": 60,
     "originalClassId": {
       "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-      "classDate": "2024-01-22T00:00:00.000Z",
+      "classDate": "2024-01-22",
       "enrollmentId": "692a1f4a5fa3f53b825ee53f"
     },
+    "vocabularyContent": null,
     "createdAt": "2024-01-25T10:30:00.000Z",
     "updatedAt": "2024-01-25T10:30:00.000Z"
   }
@@ -608,6 +744,7 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
 **400 Bad Request**
 - ID de clase original inválido
 - Campo `classDate` no proporcionado o fecha inválida
+- `classTime` no tiene el formato `HH:mm` válido (si se proporciona)
 - La clase original ya es un reschedule
 - `classType` o `contentType` no son arrays
 - IDs de `classType` o `contentType` inválidos
@@ -625,7 +762,8 @@ curl -X POST http://localhost:3000/api/class-registry/64f8a1b2c3d4e5f6a7b8c9d0/r
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -d '{
-    "classDate": "2024-02-05T00:00:00.000Z",
+    "classDate": "2024-02-05",
+    "classTime": "15:00",
     "classType": ["64f8a1b2c3d4e5f6a7b8c9d1"],
     "contentType": ["64f8a1b2c3d4e5f6a7b8c9d2"],
     "classViewed": 0
@@ -660,7 +798,8 @@ const createRescheduleClass = async (originalClassId, rescheduleData) => {
 
 // Uso
 createRescheduleClass('64f8a1b2c3d4e5f6a7b8c9d0', {
-  classDate: "2024-02-05T00:00:00.000Z",
+  classDate: "2024-02-05",
+  classTime: "15:00",
   classType: ["64f8a1b2c3d4e5f6a7b8c9d1"],
   contentType: ["64f8a1b2c3d4e5f6a7b8c9d2"],
   classViewed: 0
@@ -717,16 +856,21 @@ En algunos casos, también puede incluir:
 - `classType` y `contentType`: Deben ser arrays de ObjectIds válidos
 - `hoursViewed` y `minutesViewed`: Deben ser números positivos o null
 - `classViewed`: Solo acepta valores `0`, `1` o `2`
-- `classDate`: Debe ser una fecha válida (puede enviarse como Date object o string ISO)
+- `classDate`: Debe ser una fecha válida en formato `YYYY-MM-DD` (puede enviarse como Date object o string, se normaliza a YYYY-MM-DD)
 
 ### **Campos No Actualizables**
 
 Los siguientes campos **NO** se pueden actualizar mediante el endpoint de actualización:
 - `enrollmentId`: No se puede cambiar el enrollment de una clase
-- `classDate`: No se puede cambiar la fecha de una clase existente (usa reschedule para crear una nueva)
+- `classDate`: No se puede cambiar la fecha de una clase existente (formato YYYY-MM-DD - usa reschedule para crear una nueva)
 - `reschedule`: Se maneja de forma especial mediante el endpoint de reschedule
 - `originalClassId`: Se establece automáticamente al crear una clase de reschedule
 - `minutesClassDefault`: Se establece al crear la clase
+
+### **Separación de Día y Hora**
+
+- `classDate`: Contiene solo el día de la clase en formato `YYYY-MM-DD` (ej: "2024-01-22"). Se establece al crear el enrollment y **no se puede editar**. No incluye hora, minutos ni segundos.
+- `classTime`: Contiene la hora de la clase en formato `HH:mm` (ej: "14:30"). Por defecto es `null` al crear el enrollment, y el profesor debe asignarla manualmente mediante el endpoint de actualización.
 
 ### **Reschedule**
 
@@ -741,7 +885,7 @@ Los siguientes campos **NO** se pueden actualizar mediante el endpoint de actual
 ### **Filtrado y Búsqueda**
 
 - El endpoint de listado permite filtrar por `enrollmentId` usando query parameters
-- Los resultados se ordenan por fecha de clase descendente (más recientes primero)
+- Los resultados se ordenan por fecha de clase ascendente (más cercana primero, para facilitar listas en el frontend)
 - Los campos `classType` y `contentType` se populan automáticamente con sus nombres
 
 ---
@@ -759,18 +903,28 @@ console.log('Total de clases:', classes.total);
 const classDetail = await getClassRegistryById(classes.classes[0]._id);
 console.log('Detalle completo:', classDetail.class);
 
-// 3. Actualizar datos de la clase
+// 3. Actualizar datos de la clase (incluyendo la hora y vocabulario)
 await updateClassRegistry(classes.classes[0]._id, {
+  classTime: "14:30",
   hoursViewed: 1,
   minutesViewed: 30,
   studentMood: "Motivado",
-  note: "Clase muy productiva",
-  classViewed: 1
+  note: {
+    content: "Clase muy productiva",
+    visible: {
+      admin: 1,
+      student: 0,
+      professor: 1
+    }
+  },
+  classViewed: 1,
+  vocabularyContent: "Palabras nuevas: hello, goodbye, thank you, please"
 });
 
 // 4. Crear reschedule de una clase
 await createRescheduleClass(classes.classes[0]._id, {
   classDate: "2024-02-05T00:00:00.000Z",
+  classTime: "15:00",
   classType: ["64f8a1b2c3d4e5f6a7b8c9d1"],
   contentType: ["64f8a1b2c3d4e5f6a7b8c9d2"],
   classViewed: 0
