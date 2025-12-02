@@ -112,12 +112,13 @@ const ClassRegistrySchema = new mongoose.Schema({
     },
     classViewed: {
         type: Number,
-        enum: [0, 1, 2],
+        enum: [0, 1, 2, 3],
         default: 0
         // Estado de visualización de la clase
         // 0 = Clase no vista (por defecto al crear el enrollment)
         // 1 = Clase vista
         // 2 = Clase parcialmente vista
+        // 3 = Clase no show
     },
     minutesClassDefault: {
         type: Number,

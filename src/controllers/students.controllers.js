@@ -2,6 +2,8 @@
 const Student = require('../models/Student');
 const StudentCounter = require('../models/StudentCounter');
 const Enrollment = require('../models/Enrollment');
+const ClassRegistry = require('../models/ClassRegistry');
+const Income = require('../models/Income');
 const Plan = require('../models/Plans');
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
 const mongoose = require('mongoose');
@@ -319,7 +321,221 @@ studentCtrl.studentInfo = async (req, res) => {
 
         console.log('📊 Total calculado:', totalAmount);
         console.log('📋 Detalles de enrollments:', enrollmentDetails.length);
+
+        // Obtener todos los IDs de enrollments del estudiante
+        const enrollmentIds = enrollments.map(enrollment => enrollment._id);
+        console.log('📋 Enrollment IDs encontrados:', enrollmentIds.length);
+
+        // Obtener el rol del usuario desde el token (req.user viene del middleware verifyToken)
+        const userRole = req.user?.role || null;
+        console.log('👤 Rol del usuario:', userRole);
+
+        // Buscar TODAS las ClassRegistry que pertenezcan a estos enrollments
+        const allClasses = await ClassRegistry.find({
+            enrollmentId: { $in: enrollmentIds }
+        })
+        .populate('enrollmentId', 'endDate planId')
+        .lean();
         
+        console.log('✅ Total de clases encontradas:', allClasses.length);
+
+        // 1. Calcular tiempo disponible de reschedules (solo clases con reschedule = 1)
+        console.log('🔎 Calculando tiempo disponible de reschedules...');
+        const rescheduleClasses = allClasses.filter(classRecord => classRecord.reschedule === 1);
+        console.log('✅ Clases en reschedule encontradas:', rescheduleClasses.length);
+
+        // Calcular el tiempo disponible para cada clase y el total
+        let totalRescheduleMinutes = 0;
+        const rescheduleDetails = [];
+
+        rescheduleClasses.forEach(classRecord => {
+            // Calcular tiempo disponible: minutesClassDefault - minutesViewed
+            const minutesClassDefault = classRecord.minutesClassDefault || 60; // Por defecto 60 minutos
+            const minutesViewed = classRecord.minutesViewed || 0; // Si no tiene, es 0
+            const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed); // No permitir valores negativos
+
+            totalRescheduleMinutes += availableMinutes;
+
+            // Agregar información detallada de la clase
+            rescheduleDetails.push({
+                classRegistryId: classRecord._id,
+                enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime,
+                minutesClassDefault: minutesClassDefault,
+                minutesViewed: minutesViewed,
+                availableMinutes: availableMinutes,
+                availableHours: (availableMinutes / 60).toFixed(2) // Convertir a horas con 2 decimales
+            });
+        });
+
+        // Convertir minutos totales a horas (con 2 decimales)
+        const totalRescheduleHours = (totalRescheduleMinutes / 60).toFixed(2);
+        
+        console.log('⏱️ Tiempo total disponible de reschedules:', totalRescheduleMinutes, 'minutos (', totalRescheduleHours, 'horas)');
+        console.log('📋 Detalles de reschedules:', rescheduleDetails.length);
+
+        // 1. Contar clases con reschedule = 1
+        console.log('🔎 Contando clases con reschedule = 1...');
+        const classesWithReschedule = allClasses.filter(classRecord => classRecord.reschedule === 1);
+        const rescheduleCountDetails = classesWithReschedule.map(classRecord => ({
+            classRegistryId: classRecord._id,
+            enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+            classDate: classRecord.classDate,
+            classTime: classRecord.classTime,
+            reschedule: classRecord.reschedule
+        }));
+
+        // 2. Contar clases vistas (classViewed = 1)
+        console.log('🔎 Contando clases vistas (classViewed = 1)...');
+        const viewedClasses = allClasses.filter(classRecord => classRecord.classViewed === 1);
+        const viewedClassesDetails = viewedClasses.map(classRecord => ({
+            classRegistryId: classRecord._id,
+            enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+            classDate: classRecord.classDate,
+            classTime: classRecord.classTime
+        }));
+
+        // 3. Contar clases por ver (classViewed = 0)
+        console.log('🔎 Contando clases por ver (classViewed = 0)...');
+        const pendingClasses = allClasses.filter(classRecord => classRecord.classViewed === 0);
+        const pendingClassesDetails = pendingClasses.map(classRecord => ({
+            classRegistryId: classRecord._id,
+            enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+            classDate: classRecord.classDate,
+            classTime: classRecord.classTime
+        }));
+
+        // 4. Contar clases perdidas (classViewed = 0 y classDate > endDate del enrollment) - SOLO ADMIN
+        let lostClassesCount = 0;
+        let lostClassesDetails = [];
+        if (userRole === 'admin') {
+            console.log('🔎 Contando clases perdidas (solo admin)...');
+            const currentDate = new Date();
+            currentDate.setUTCHours(0, 0, 0, 0); // Normalizar a medianoche UTC
+
+            const lostClasses = allClasses.filter(classRecord => {
+                if (classRecord.classViewed !== 0) return false;
+                
+                // Verificar si la clase tiene enrollmentId y endDate
+                if (!classRecord.enrollmentId || !classRecord.enrollmentId.endDate) return false;
+                
+                // Convertir classDate a Date para comparar
+                const classDateObj = new Date(classRecord.classDate + 'T00:00:00.000Z');
+                const endDateObj = new Date(classRecord.enrollmentId.endDate);
+                endDateObj.setUTCHours(0, 0, 0, 0);
+                
+                // La clase está perdida si classDate > endDate
+                return classDateObj > endDateObj;
+            });
+
+            lostClassesCount = lostClasses.length;
+            lostClassesDetails = lostClasses.map(classRecord => ({
+                classRegistryId: classRecord._id,
+                enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime,
+                enrollmentEndDate: classRecord.enrollmentId ? classRecord.enrollmentId.endDate : null
+            }));
+            console.log('✅ Clases perdidas encontradas:', lostClassesCount);
+        }
+
+        // 5. Contar clases no show (classViewed = 3) - SOLO ADMIN Y PROFESSOR
+        let noShowClassesCount = 0;
+        let noShowClassesDetails = [];
+        if (userRole === 'admin' || userRole === 'professor') {
+            console.log('🔎 Contando clases no show (classViewed = 3)...');
+            const noShowClasses = allClasses.filter(classRecord => classRecord.classViewed === 3);
+            noShowClassesCount = noShowClasses.length;
+            noShowClassesDetails = noShowClasses.map(classRecord => ({
+                classRegistryId: classRecord._id,
+                enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime
+            }));
+            console.log('✅ Clases no show encontradas:', noShowClassesCount);
+        }
+
+        // 6. Historial de incomes - SOLO STUDENT Y ADMIN
+        let incomeHistory = [];
+        if (userRole === 'student' || userRole === 'admin') {
+            console.log('🔎 Buscando historial de incomes...');
+            
+            // Buscar todos los incomes que pertenezcan a los enrollments del estudiante
+            const incomes = await Income.find({
+                idEnrollment: { $in: enrollmentIds }
+            })
+            .populate('idDivisa', 'name')
+            .populate('idPaymentMethod', 'name type')
+            .populate('idProfessor', 'name ciNumber')
+            .sort({ income_date: -1, createdAt: -1 }) // Ordenar por fecha más reciente primero
+            .lean();
+            
+            console.log('✅ Incomes encontrados:', incomes.length);
+
+            // Agrupar incomes por enrollment
+            const incomesByEnrollment = {};
+            
+            enrollments.forEach(enrollment => {
+                const enrollmentIdStr = enrollment._id.toString();
+                incomesByEnrollment[enrollmentIdStr] = {
+                    enrollment: {
+                        _id: enrollment._id,
+                        planId: enrollment.planId ? {
+                            _id: enrollment.planId._id,
+                            name: enrollment.planId.name
+                        } : null,
+                        enrollmentType: enrollment.enrollmentType,
+                        purchaseDate: enrollment.purchaseDate,
+                        startDate: enrollment.startDate,
+                        endDate: enrollment.endDate
+                    },
+                    incomes: []
+                };
+            });
+
+            // Asignar cada income a su enrollment correspondiente
+            incomes.forEach(income => {
+                if (income.idEnrollment) {
+                    const enrollmentIdStr = income.idEnrollment.toString();
+                    if (incomesByEnrollment[enrollmentIdStr]) {
+                        incomesByEnrollment[enrollmentIdStr].incomes.push({
+                            _id: income._id,
+                            income_date: income.income_date,
+                            deposit_name: income.deposit_name,
+                            amount: income.amount,
+                            amountInDollars: income.amountInDollars,
+                            tasa: income.tasa,
+                            note: income.note,
+                            idDivisa: income.idDivisa ? {
+                                _id: income.idDivisa._id,
+                                name: income.idDivisa.name
+                            } : null,
+                            idPaymentMethod: income.idPaymentMethod ? {
+                                _id: income.idPaymentMethod._id,
+                                name: income.idPaymentMethod.name,
+                                type: income.idPaymentMethod.type
+                            } : null,
+                            idProfessor: income.idProfessor ? {
+                                _id: income.idProfessor._id,
+                                name: income.idProfessor.name,
+                                ciNumber: income.idProfessor.ciNumber
+                            } : null,
+                            createdAt: income.createdAt,
+                            updatedAt: income.updatedAt
+                        });
+                    }
+                }
+            });
+
+            // Convertir el objeto a array y filtrar solo los enrollments que tienen incomes
+            incomeHistory = Object.values(incomesByEnrollment)
+                .filter(item => item.incomes.length > 0);
+            
+            console.log('✅ Enrollments con incomes:', incomeHistory.length);
+        }
+        
+        // Construir la respuesta base
         const response = {
             message: 'Información del estudiante obtenida exitosamente',
             student: {
@@ -329,8 +545,46 @@ studentCtrl.studentInfo = async (req, res) => {
                 studentCode: student.studentCode
             },
             totalAvailableBalance: totalAmount,
-            enrollmentDetails: enrollmentDetails
+            enrollmentDetails: enrollmentDetails,
+            rescheduleTime: {
+                totalAvailableMinutes: totalRescheduleMinutes,
+                totalAvailableHours: parseFloat(totalRescheduleHours),
+                details: rescheduleDetails
+            },
+            rescheduleClasses: {
+                total: classesWithReschedule.length,
+                details: rescheduleCountDetails
+            },
+            viewedClasses: {
+                total: viewedClasses.length,
+                details: viewedClassesDetails
+            },
+            pendingClasses: {
+                total: pendingClasses.length,
+                details: pendingClassesDetails
+            }
         };
+
+        // Agregar información sensible solo si el rol es admin
+        if (userRole === 'admin') {
+            response.lostClasses = {
+                total: lostClassesCount,
+                details: lostClassesDetails
+            };
+        }
+
+        // Agregar información sensible solo si el rol es admin o professor
+        if (userRole === 'admin' || userRole === 'professor') {
+            response.noShowClasses = {
+                total: noShowClassesCount,
+                details: noShowClassesDetails
+            };
+        }
+
+        // Agregar historial de incomes solo si el rol es student o admin
+        if (userRole === 'student' || userRole === 'admin') {
+            response.incomeHistory = incomeHistory;
+        }
         
         console.log('✅ Enviando respuesta...');
         res.status(200).json(response);

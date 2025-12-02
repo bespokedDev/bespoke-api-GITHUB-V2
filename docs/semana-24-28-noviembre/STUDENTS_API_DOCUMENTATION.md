@@ -467,6 +467,8 @@ http://localhost:3000/api/students/6858c84b1b114315ccdf65d0/info/studentInfo
 No requiere body.
 
 #### **Response Exitosa (200 OK)**
+
+**Respuesta para todos los roles:**
 ```json
 {
   "message": "Información del estudiante obtenida exitosamente",
@@ -487,16 +489,138 @@ No requiere body.
       "startDate": "2024-01-22T00:00:00.000Z",
       "endDate": "2024-02-21T23:59:59.999Z",
       "status": 1
-    },
+    }
+  ],
+  "rescheduleTime": {
+    "totalAvailableMinutes": 120,
+    "totalAvailableHours": 2.00,
+    "details": [
+      {
+        "classRegistryId": "692a1f4a5fa3f53b825ee53f",
+        "enrollmentId": "692a1f4a5fa3f53b825ee540",
+        "classDate": "2024-01-22",
+        "classTime": "10:00",
+        "minutesClassDefault": 60,
+        "minutesViewed": 30,
+        "availableMinutes": 30,
+        "availableHours": "0.50"
+      }
+    ]
+  },
+  "rescheduleClasses": {
+    "total": 5,
+    "details": [
+      {
+        "classRegistryId": "692a1f4a5fa3f53b825ee53f",
+        "enrollmentId": "692a1f4a5fa3f53b825ee540",
+        "classDate": "2024-01-22",
+        "classTime": "10:00",
+        "reschedule": 1
+      }
+    ]
+  },
+  "viewedClasses": {
+    "total": 10,
+    "details": [
+      {
+        "classRegistryId": "692a1f4a5fa3f53b825ee541",
+        "enrollmentId": "692a1f4a5fa3f53b825ee542",
+        "classDate": "2024-01-20",
+        "classTime": "14:00"
+      }
+    ]
+  },
+  "pendingClasses": {
+    "total": 8,
+    "details": [
+      {
+        "classRegistryId": "692a1f4a5fa3f53b825ee543",
+        "enrollmentId": "692a1f4a5fa3f53b825ee544",
+        "classDate": "2024-01-25",
+        "classTime": "16:00"
+      }
+    ]
+  }
+}
+```
+
+**Respuesta adicional para rol ADMIN:**
+```json
+{
+  // ... todos los campos anteriores ...
+  "lostClasses": {
+    "total": 2,
+    "details": [
+      {
+        "classRegistryId": "692a1f4a5fa3f53b825ee545",
+        "enrollmentId": "692a1f4a5fa3f53b825ee546",
+        "classDate": "2024-01-25",
+        "classTime": "18:00",
+        "enrollmentEndDate": "2024-01-24T23:59:59.999Z"
+      }
+    ]
+  }
+}
+```
+
+**Respuesta adicional para roles ADMIN y PROFESSOR:**
+```json
+{
+  // ... todos los campos anteriores ...
+  "noShowClasses": {
+    "total": 1,
+    "details": [
+      {
+        "classRegistryId": "692a1f4a5fa3f53b825ee547",
+        "enrollmentId": "692a1f4a5fa3f53b825ee548",
+        "classDate": "2024-01-23",
+        "classTime": "12:00"
+      }
+    ]
+  }
+}
+```
+
+**Respuesta adicional para roles STUDENT y ADMIN:**
+```json
+{
+  // ... todos los campos anteriores ...
+  "incomeHistory": [
     {
-      "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d4",
-      "planName": "Plan Semanal Intensivo",
-      "amount": 1000,
-      "rescheduleHours": 0,
-      "enrollmentType": "couple",
-      "startDate": "2024-02-01T00:00:00.000Z",
-      "endDate": "2024-02-29T23:59:59.999Z",
-      "status": 1
+      "enrollment": {
+        "_id": "692a1f4a5fa3f53b825ee53f",
+        "planId": {
+          "_id": "6928fce9c1bb37a1d4b9ff07",
+          "name": "Panda_W"
+        },
+        "enrollmentType": "couple",
+        "purchaseDate": "2025-11-15T10:30:00.000Z",
+        "startDate": "2024-01-22T00:00:00.000Z",
+        "endDate": "2024-02-16T23:59:59.999Z"
+      },
+      "incomes": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee540",
+          "income_date": "2025-11-15T10:30:00.000Z",
+          "deposit_name": "Pago inicial",
+          "amount": 130,
+          "amountInDollars": 130,
+          "tasa": 1,
+          "note": "Pago completo del enrollment",
+          "idDivisa": {
+            "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+            "name": "USD"
+          },
+          "idPaymentMethod": {
+            "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+            "name": "Transferencia Bancaria",
+            "type": "bank_transfer"
+          },
+          "idProfessor": null,
+          "createdAt": "2025-11-15T10:30:00.000Z",
+          "updatedAt": "2025-11-15T10:30:00.000Z"
+        }
+      ]
     }
   ]
 }
@@ -524,22 +648,151 @@ No requiere body.
   - `endDate` (Date): Fecha de fin del enrollment
   - `status` (Number): Estado del enrollment (`1` = activo, `0` = inactivo)
 
+**rescheduleTime:**
+- `totalAvailableMinutes` (Number): Total de minutos disponibles de reschedules (suma de `minutesClassDefault - minutesViewed` de todas las clases con `reschedule: 1`)
+- `totalAvailableHours` (Number): Total de horas disponibles de reschedules (convertido de minutos, con 2 decimales)
+- `details` (Array): Desglose de cada clase en reschedule con:
+  - `classRegistryId` (String): ID del registro de clase
+  - `enrollmentId` (String): ID del enrollment al que pertenece la clase
+  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+  - `minutesClassDefault` (Number): Duración por defecto de la clase en minutos
+  - `minutesViewed` (Number): Minutos ya vistos de la clase
+  - `availableMinutes` (Number): Minutos disponibles (`minutesClassDefault - minutesViewed`)
+  - `availableHours` (String): Horas disponibles (convertido de minutos, con 2 decimales)
+
+**rescheduleClasses:**
+- `total` (Number): Total de clases con `reschedule: 1`
+- `details` (Array): Desglose de cada clase con reschedule:
+  - `classRegistryId` (String): ID del registro de clase
+  - `enrollmentId` (String): ID del enrollment al que pertenece la clase
+  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+  - `reschedule` (Number): Valor de reschedule (siempre `1`)
+
+**viewedClasses:**
+- `total` (Number): Total de clases vistas (`classViewed: 1`)
+- `details` (Array): Desglose de cada clase vista:
+  - `classRegistryId` (String): ID del registro de clase
+  - `enrollmentId` (String): ID del enrollment al que pertenece la clase
+  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+
+**pendingClasses:**
+- `total` (Number): Total de clases por ver (`classViewed: 0`)
+- `details` (Array): Desglose de cada clase pendiente:
+  - `classRegistryId` (String): ID del registro de clase
+  - `enrollmentId` (String): ID del enrollment al que pertenece la clase
+  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+
+**lostClasses** (Solo visible para rol `admin`):
+- `total` (Number): Total de clases perdidas (clases con `classViewed: 0` y `classDate > endDate` del enrollment)
+- `details` (Array): Desglose de cada clase perdida:
+  - `classRegistryId` (String): ID del registro de clase
+  - `enrollmentId` (String): ID del enrollment al que pertenece la clase
+  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+  - `enrollmentEndDate` (Date): Fecha de fin del enrollment (para referencia)
+
+**noShowClasses** (Solo visible para roles `admin` y `professor`):
+- `total` (Number): Total de clases marcadas como "no show" (`classViewed: 3`)
+- `details` (Array): Desglose de cada clase no show:
+  - `classRegistryId` (String): ID del registro de clase
+  - `enrollmentId` (String): ID del enrollment al que pertenece la clase
+  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+
+**incomeHistory** (Solo visible para roles `student` y `admin`):
+- Array de objetos agrupados por enrollment, cada uno contiene:
+  - `enrollment` (Object): Información del enrollment:
+    - `_id` (String): ID del enrollment
+    - `planId` (Object): Información del plan:
+      - `_id` (String): ID del plan
+      - `name` (String): Nombre del plan
+    - `enrollmentType` (String): Tipo de enrollment (`"single"`, `"couple"` o `"group"`)
+    - `purchaseDate` (Date): Fecha de compra del enrollment
+    - `startDate` (Date): Fecha de inicio del enrollment
+    - `endDate` (Date): Fecha de fin del enrollment
+  - `incomes` (Array): Array de incomes asociados a ese enrollment, cada uno contiene:
+    - `_id` (String): ID del income
+    - `income_date` (Date): Fecha del ingreso
+    - `deposit_name` (String): Nombre del depósito
+    - `amount` (Number): Monto del ingreso
+    - `amountInDollars` (Number): Monto en dólares
+    - `tasa` (Number): Tasa de cambio
+    - `note` (String): Nota adicional (puede ser `null`)
+    - `idDivisa` (Object): Información de la divisa:
+      - `_id` (String): ID de la divisa
+      - `name` (String): Nombre de la divisa
+    - `idPaymentMethod` (Object): Información del método de pago:
+      - `_id` (String): ID del método de pago
+      - `name` (String): Nombre del método de pago
+      - `type` (String): Tipo de método de pago
+    - `idProfessor` (Object): Información del profesor (puede ser `null`):
+      - `_id` (String): ID del profesor
+      - `name` (String): Nombre del profesor
+      - `ciNumber` (String): Número de cédula del profesor
+    - `createdAt` (Date): Fecha de creación del registro
+    - `updatedAt` (Date): Fecha de última actualización
+
 #### **Lógica de Cálculo**
 
 1. **Búsqueda de Enrollments:**
    - Se buscan todos los enrollments donde el estudiante esté en `studentIds`
    - Solo se consideran enrollments con `status: 1` (activos)
 
-2. **Cálculo del Total:**
+2. **Cálculo del Saldo Total:**
    - Se suman todos los `amount` del estudiante en cada enrollment
    - El `amount` de cada estudiante se encuentra en `enrollment.studentIds[].amount`
 
-3. **Información Detallada:**
-   - Para cada enrollment activo, se incluye:
-     - El `amount` específico del estudiante
-     - El nombre del plan (populado desde `planId`)
-     - Las horas de reschedule disponibles
-     - Información adicional del enrollment
+3. **Cálculo de Tiempo Disponible de Reschedules:**
+   - Se buscan todas las clases con `reschedule: 1` de los enrollments del estudiante
+   - Para cada clase, se calcula: `minutesClassDefault - minutesViewed`
+   - Se suman todos los minutos disponibles y se convierten a horas
+
+4. **Conteo de Clases:**
+   - **Clases con reschedule**: Se cuentan todas las clases con `reschedule: 1`
+   - **Clases vistas**: Se cuentan todas las clases con `classViewed: 1`
+   - **Clases por ver**: Se cuentan todas las clases con `classViewed: 0`
+   - **Clases perdidas** (solo admin): Se cuentan clases con `classViewed: 0` y `classDate > endDate` del enrollment
+   - **Clases no show** (solo admin y professor): Se cuentan todas las clases con `classViewed: 3`
+
+5. **Historial de Incomes** (solo student y admin):
+   - Se buscan todos los incomes con `idEnrollment` en los enrollments del estudiante
+   - Los incomes se agrupan por enrollment
+   - Se ordenan por fecha más reciente primero
+   - Solo se incluyen enrollments que tienen al menos un income
+
+6. **Control de Acceso por Rol:**
+   - **Todos los roles**: `rescheduleTime`, `rescheduleClasses`, `viewedClasses`, `pendingClasses`
+   - **Solo admin**: `lostClasses`
+   - **Solo admin y professor**: `noShowClasses`
+   - **Solo student y admin**: `incomeHistory`
+
+#### **Control de Acceso por Rol**
+
+El endpoint retorna información diferente según el rol del usuario autenticado:
+
+**Todos los roles (admin, professor, student):**
+- `student`: Información básica del estudiante
+- `totalAvailableBalance`: Saldo total disponible
+- `enrollmentDetails`: Detalles de enrollments activos
+- `rescheduleTime`: Tiempo disponible de reschedules (minutos y horas)
+- `rescheduleClasses`: Clases con reschedule = 1
+- `viewedClasses`: Clases vistas (classViewed = 1)
+- `pendingClasses`: Clases por ver (classViewed = 0)
+
+**Solo Admin:**
+- `lostClasses`: Clases perdidas (classViewed = 0 y classDate > endDate del enrollment)
+
+**Solo Admin y Professor:**
+- `noShowClasses`: Clases marcadas como "no show" (classViewed = 3)
+
+**Solo Student y Admin:**
+- `incomeHistory`: Historial de pagos agrupado por enrollment
+
+**Nota importante:** El rol se obtiene automáticamente del token JWT (`req.user.role`). No es necesario enviarlo en el request.
 
 #### **Errores Posibles**
 
@@ -577,6 +830,30 @@ const getStudentInfo = async (studentId) => {
       console.log('Detalles de enrollments:', data.enrollmentDetails);
       
       // Ejemplo de uso
+      console.log('Saldo total disponible:', data.totalAvailableBalance);
+      console.log('Tiempo disponible de reschedules:', data.rescheduleTime.totalAvailableHours, 'horas');
+      console.log('Clases con reschedule:', data.rescheduleClasses.total);
+      console.log('Clases vistas:', data.viewedClasses.total);
+      console.log('Clases por ver:', data.pendingClasses.total);
+      
+      // Información solo para admin
+      if (data.lostClasses) {
+        console.log('Clases perdidas:', data.lostClasses.total);
+      }
+      
+      // Información solo para admin y professor
+      if (data.noShowClasses) {
+        console.log('Clases no show:', data.noShowClasses.total);
+      }
+      
+      // Información solo para student y admin
+      if (data.incomeHistory) {
+        console.log('Historial de incomes:', data.incomeHistory.length, 'enrollments con pagos');
+        data.incomeHistory.forEach(item => {
+          console.log(`Enrollment: ${item.enrollment.planId.name} - ${item.incomes.length} pagos`);
+        });
+      }
+      
       data.enrollmentDetails.forEach(enrollment => {
         console.log(`Plan: ${enrollment.planName}`);
         console.log(`Saldo en este plan: ${enrollment.amount}`);
