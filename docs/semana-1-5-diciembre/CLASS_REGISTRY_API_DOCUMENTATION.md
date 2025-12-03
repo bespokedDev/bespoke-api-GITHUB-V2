@@ -108,10 +108,13 @@ const headers = {
   "minutesClassDefault": 60,
   "originalClassId": null,
   "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+  "evaluations": [],
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-22T15:45:00.000Z"
 }
 ```
+
+**Nota sobre `evaluations`:** El campo `evaluations` se populan automáticamente con todos sus detalles cuando se obtiene el registro por ID mediante `GET /api/class-registry/:id`. En el listado (`GET /api/class-registry`), este campo aparece como un array vacío `[]` o con los ObjectIds sin popular.
 
 ### **Campos del Modelo**
 
@@ -139,6 +142,7 @@ const headers = {
 - `minutesClassDefault` (Number): Duración por defecto de la clase en minutos. Por defecto: `60`
 - `originalClassId` (ObjectId): ID de la clase original cuando esta clase es un reschedule. Por defecto: `null`
 - `vocabularyContent` (String): Contenido de vocabulario de la clase (puede ser null). Por defecto: `null` al crear el enrollment
+- `evaluations` (Array[Object]): Array de evaluaciones asociadas a esta clase (referencia a `Evaluation`). Se populan automáticamente con todos sus detalles cuando se obtiene el registro por ID. Por defecto: `[]`
 
 #### **Campos Generados Automáticamente**
 - `_id` (ObjectId): Identificador único del registro de clase
@@ -228,6 +232,7 @@ No requiere body.
 - Los campos `classType` y `contentType` se populan automáticamente con sus nombres
 - Puedes filtrar por `enrollmentId` usando query parameters
 - `classDate` contiene solo el día (sin hora), la hora se maneja en `classTime`
+- El array `evaluations` se incluye solo en el endpoint de detalle (`GET /api/class-registry/:id`), no en el listado
 
 #### **Errores Posibles**
 
@@ -346,11 +351,66 @@ No requiere body.
     "minutesClassDefault": 60,
     "originalClassId": null,
     "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+    "evaluations": [
+      {
+        "_id": "692a1f4a5fa3f53b825ee53f",
+        "classRegistryId": "64f8a1b2c3d4e5f6a7b8c9d0",
+        "fecha": "07/01/2025",
+        "temasEvaluados": "Presente simple, vocabulario básico",
+        "skillEvaluada": "Speaking",
+        "linkMaterial": "https://example.com/material.pdf",
+        "capturePrueba": "data:image/png;base64,iVBORw0KGgoAAAANS...",
+        "puntuacion": "85/100",
+        "comentario": "El estudiante mostró buen progreso en la pronunciación",
+        "isActive": true,
+        "createdAt": "2025-01-07T10:30:00.000Z",
+        "updatedAt": "2025-01-07T10:30:00.000Z"
+      },
+      {
+        "_id": "692a1f4a5fa3f53b825ee541",
+        "classRegistryId": "64f8a1b2c3d4e5f6a7b8c9d0",
+        "fecha": "14/01/2025",
+        "temasEvaluados": "Pasado simple",
+        "skillEvaluada": "Writing",
+        "linkMaterial": null,
+        "capturePrueba": null,
+        "puntuacion": "90/100",
+        "comentario": "Excelente escritura",
+        "isActive": true,
+        "createdAt": "2025-01-14T10:30:00.000Z",
+        "updatedAt": "2025-01-14T10:30:00.000Z"
+      }
+    ],
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-22T15:45:00.000Z"
   }
 }
 ```
+
+#### **Campos de la Response**
+
+- `message` (String): Mensaje de confirmación
+- `class` (Object): Objeto con los detalles completos del registro de clase, incluyendo:
+  - Todos los campos del modelo `ClassRegistry`
+  - `evaluations` (Array): Array de evaluaciones asociadas a esta clase, populadas con todos sus detalles. Incluye todas las evaluaciones (activas e inactivas). Cada evaluación contiene:
+    - `_id` (ObjectId): ID de la evaluación
+    - `classRegistryId` (ObjectId): ID del registro de clase al que pertenece
+    - `fecha` (String): Fecha de la evaluación en formato `DD/MM/YYYY`
+    - `temasEvaluados` (String/null): Temas evaluados
+    - `skillEvaluada` (String/null): Skill evaluada
+    - `linkMaterial` (String/null): Link del material usado
+    - `capturePrueba` (String/null): Captura en base64
+    - `puntuacion` (String/null): Puntuación de la evaluación
+    - `comentario` (String/null): Comentario sobre la evaluación
+    - `isActive` (Boolean): Estado de la evaluación (true = activa, false = anulada)
+    - `createdAt` (Date): Fecha de creación
+    - `updatedAt` (Date): Fecha de última actualización
+
+#### **Notas Importantes**
+- El array `evaluations` se incluye automáticamente cuando se obtiene el detalle de una clase
+- Las evaluaciones se populan con todos sus campos completos
+- El array puede estar vacío `[]` si no hay evaluaciones asociadas a la clase
+- Las evaluaciones incluyen tanto las activas (`isActive: true`) como las anuladas (`isActive: false`)
 
 #### **Errores Posibles**
 

@@ -131,7 +131,14 @@ const ClassRegistrySchema = new mongoose.Schema({
         trim: true,
         default: null
         // Contenido de vocabulario de la clase
-    }
+    },
+    evaluations: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Evaluation',
+        default: []
+        // Array de IDs de evaluaciones asociadas a esta clase
+        // Se usa para acortar las búsquedas de evaluaciones por clase
+    }]
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt
 });

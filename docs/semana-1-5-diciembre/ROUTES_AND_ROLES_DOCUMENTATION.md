@@ -22,20 +22,21 @@ Todas las rutas requieren:
 5. [Class Registry (Registros de Clase)](#5-class-registry-registros-de-clase)
 6. [Class Types (Tipos de Clase)](#6-class-types-tipos-de-clase)
 7. [Content Class (Contenido de Clase)](#7-content-class-contenido-de-clase)
-8. [Divisas (Monedas)](#8-divisas-monedas)
-9. [Enrollments (Matrículas)](#9-enrollments-matrículas)
-10. [General Payment Tracker (Rastreador de Pagos)](#10-general-payment-tracker-rastreador-de-pagos)
-11. [Incomes (Ingresos)](#11-incomes-ingresos)
-12. [Payment Methods (Métodos de Pago)](#12-payment-methods-métodos-de-pago)
-13. [Payouts (Pagos a Profesores)](#13-payouts-pagos-a-profesores)
-14. [Penalizaciones (Penalizaciones)](#14-penalizaciones-penalizaciones)
-15. [Plans (Planes)](#15-plans-planes)
-16. [Professors (Profesores)](#16-professors-profesores)
-17. [Roles (Roles)](#17-roles-roles)
-18. [Special Professor Report (Reporte Especial de Profesor)](#18-special-professor-report-reporte-especial-de-profesor)
-19. [Students (Estudiantes)](#19-students-estudiantes)
-20. [Tipos Pago (Tipos de Pago)](#20-tipos-pago-tipos-de-pago)
-21. [Users (Usuarios)](#21-users-usuarios)
+8. [Evaluations (Evaluaciones)](#8-evaluations-evaluaciones)
+9. [Divisas (Monedas)](#9-divisas-monedas)
+10. [Enrollments (Matrículas)](#10-enrollments-matrículas)
+11. [General Payment Tracker (Rastreador de Pagos)](#11-general-payment-tracker-rastreador-de-pagos)
+12. [Incomes (Ingresos)](#12-incomes-ingresos)
+13. [Payment Methods (Métodos de Pago)](#13-payment-methods-métodos-de-pago)
+14. [Payouts (Pagos a Profesores)](#14-payouts-pagos-a-profesores)
+15. [Penalizaciones (Penalizaciones)](#15-penalizaciones-penalizaciones)
+16. [Plans (Planes)](#16-plans-planes)
+17. [Professors (Profesores)](#17-professors-profesores)
+18. [Roles (Roles)](#18-roles-roles)
+19. [Special Professor Report (Reporte Especial de Profesor)](#19-special-professor-report-reporte-especial-de-profesor)
+20. [Students (Estudiantes)](#20-students-estudiantes)
+21. [Tipos Pago (Tipos de Pago)](#21-tipos-pago-tipos-de-pago)
+22. [Users (Usuarios)](#22-users-usuarios)
 
 ---
 
@@ -140,7 +141,24 @@ Todas las rutas requieren:
 
 ---
 
-## 8. **Divisas (Monedas)**
+## 8. **Evaluations (Evaluaciones)**
+
+**Base URL:** `/api/evaluations`
+
+| Método | Ruta | Descripción | Roles Permitidos |
+|--------|------|-------------|------------------|
+| `POST` | `/` | Crea una nueva evaluación | `professor` |
+| `GET` | `/class/:classRegistryId` | Lista evaluaciones por registro de clase | `admin`, `professor`*, `student` |
+| `GET` | `/:id` | Obtiene una evaluación por su ID | `admin`, `professor`*, `student` |
+| `PUT` | `/:id` | Actualiza una evaluación | `admin`, `professor`* |
+| `PATCH` | `/:id/anular` | Anula una evaluación | `admin`, `professor`* |
+| `PATCH` | `/:id/activate` | Activa una evaluación | `admin`, `professor`* |
+
+**Nota:** Los profesores (`professor`*) solo pueden ver y modificar evaluaciones de registros de clase de enrollments donde están asignados.
+
+---
+
+## 9. **Divisas (Monedas)**
 
 **Base URL:** `/api/divisas`
 
@@ -154,7 +172,7 @@ Todas las rutas requieren:
 
 ---
 
-## 9. **Enrollments (Matrículas)**
+## 10. **Enrollments (Matrículas)**
 
 **Base URL:** `/api/enrollments`
 
@@ -172,7 +190,7 @@ Todas las rutas requieren:
 
 ---
 
-## 10. **General Payment Tracker (Rastreador de Pagos)**
+## 11. **General Payment Tracker (Rastreador de Pagos)**
 
 **Base URL:** `/api/general-payment-tracker`
 
@@ -185,7 +203,7 @@ Todas las rutas requieren:
 
 ---
 
-## 11. **Incomes (Ingresos)**
+## 12. **Incomes (Ingresos)**
 
 **Base URL:** `/api/incomes`
 
@@ -201,7 +219,7 @@ Todas las rutas requieren:
 
 ---
 
-## 12. **Payment Methods (Métodos de Pago)**
+## 13. **Payment Methods (Métodos de Pago)**
 
 **Base URL:** `/api/payment-methods`
 
@@ -217,7 +235,7 @@ Todas las rutas requieren:
 
 ---
 
-## 13. **Payouts (Pagos a Profesores)**
+## 14. **Payouts (Pagos a Profesores)**
 
 **Base URL:** `/api/payouts`
 
@@ -233,7 +251,7 @@ Todas las rutas requieren:
 
 ---
 
-## 14. **Penalizaciones (Penalizaciones)**
+## 15. **Penalizaciones (Penalizaciones)**
 
 **Base URL:** `/api/penalties`
 
@@ -248,7 +266,7 @@ Todas las rutas requieren:
 
 ---
 
-## 15. **Plans (Planes)**
+## 16. **Plans (Planes)**
 
 **Base URL:** `/api/plans`
 
@@ -263,7 +281,7 @@ Todas las rutas requieren:
 
 ---
 
-## 16. **Professors (Profesores)**
+## 17. **Professors (Profesores)**
 
 **Base URL:** `/api/professors`
 
@@ -281,7 +299,7 @@ Todas las rutas requieren:
 
 ---
 
-## 17. **Roles (Roles)**
+## 18. **Roles (Roles)**
 
 **Base URL:** `/api/roles`
 
@@ -293,7 +311,7 @@ Todas las rutas requieren:
 
 ---
 
-## 18. **Special Professor Report (Reporte Especial de Profesor)**
+## 19. **Special Professor Report (Reporte Especial de Profesor)**
 
 **Base URL:** `/api/special-professor-report`
 
@@ -303,7 +321,7 @@ Todas las rutas requieren:
 
 ---
 
-## 19. **Students (Estudiantes)**
+## 20. **Students (Estudiantes)**
 
 **Base URL:** `/api/students`
 
@@ -319,7 +337,7 @@ Todas las rutas requieren:
 
 ---
 
-## 20. **Tipos Pago (Tipos de Pago)**
+## 21. **Tipos Pago (Tipos de Pago)**
 
 **Base URL:** `/api/payment-types`
 
@@ -334,7 +352,7 @@ Todas las rutas requieren:
 
 ---
 
-## 21. **Users (Usuarios)**
+## 22. **Users (Usuarios)**
 
 **Base URL:** `/api/users`
 

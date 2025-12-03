@@ -277,12 +277,28 @@ studentCtrl.studentInfo = async (req, res) => {
         }
         console.log('✅ Estudiante encontrado:', student.name);
 
-        // Buscar todos los enrollments donde el estudiante esté en studentIds
-        console.log('🔎 Buscando enrollments...');
-        const enrollments = await Enrollment.find({
+        // Obtener el rol y el ID del usuario desde el token (req.user viene del middleware verifyToken)
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null; // ID del usuario autenticado (puede ser admin, professor o student)
+        console.log('👤 Rol del usuario:', userRole);
+        console.log('👤 ID del usuario:', userId);
+
+        // Construir la query base para buscar enrollments
+        const enrollmentQuery = {
             'studentIds.studentId': studentObjectId,
             status: 1 // Solo enrollments activos
-        })
+        };
+
+        // Si el rol es professor, filtrar solo los enrollments donde el profesor está asignado
+        if (userRole === 'professor' && userId) {
+            const professorObjectId = new mongoose.Types.ObjectId(userId);
+            enrollmentQuery.professorId = professorObjectId;
+            console.log('🔒 Filtro aplicado: Solo enrollments del profesor:', professorObjectId);
+        }
+
+        // Buscar todos los enrollments donde el estudiante esté en studentIds
+        console.log('🔎 Buscando enrollments...');
+        const enrollments = await Enrollment.find(enrollmentQuery)
         .populate('planId', 'name')
         .lean();
         console.log('✅ Enrollments encontrados:', enrollments.length);
@@ -326,9 +342,7 @@ studentCtrl.studentInfo = async (req, res) => {
         const enrollmentIds = enrollments.map(enrollment => enrollment._id);
         console.log('📋 Enrollment IDs encontrados:', enrollmentIds.length);
 
-        // Obtener el rol del usuario desde el token (req.user viene del middleware verifyToken)
-        const userRole = req.user?.role || null;
-        console.log('👤 Rol del usuario:', userRole);
+        // Nota: userRole y userId ya están declarados arriba, no redeclarar
 
         // Buscar TODAS las ClassRegistry que pertenezcan a estos enrollments
         const allClasses = await ClassRegistry.find({

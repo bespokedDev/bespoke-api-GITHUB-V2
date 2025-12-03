@@ -648,6 +648,11 @@ No requiere body.
   - `endDate` (Date): Fecha de fin del enrollment
   - `status` (Number): Estado del enrollment (`1` = activo, `0` = inactivo)
 
+**⚠️ IMPORTANTE - Control de Acceso para enrollmentDetails:**
+- **Admin y Student**: Ven **todos** los enrollments activos del estudiante
+- **Professor**: Ve **solo** los enrollments donde el profesor está asignado (`professorId` coincide con el ID del profesor autenticado)
+- Este filtro se aplica automáticamente basándose en el rol del usuario en el token JWT
+
 **rescheduleTime:**
 - `totalAvailableMinutes` (Number): Total de minutos disponibles de reschedules (suma de `minutesClassDefault - minutesViewed` de todas las clases con `reschedule: 1`)
 - `totalAvailableHours` (Number): Total de horas disponibles de reschedules (convertido de minutos, con 2 decimales)
@@ -741,6 +746,7 @@ No requiere body.
 1. **Búsqueda de Enrollments:**
    - Se buscan todos los enrollments donde el estudiante esté en `studentIds`
    - Solo se consideran enrollments con `status: 1` (activos)
+   - **Filtro adicional para profesores**: Si el rol es `professor`, solo se incluyen enrollments donde `professorId` coincide con el ID del profesor autenticado (obtenido del token JWT)
 
 2. **Cálculo del Saldo Total:**
    - Se suman todos los `amount` del estudiante en cada enrollment
@@ -776,12 +782,16 @@ El endpoint retorna información diferente según el rol del usuario autenticado
 
 **Todos los roles (admin, professor, student):**
 - `student`: Información básica del estudiante
-- `totalAvailableBalance`: Saldo total disponible
-- `enrollmentDetails`: Detalles de enrollments activos
+- `totalAvailableBalance`: Saldo total disponible (calculado solo con los enrollments visibles para el rol)
 - `rescheduleTime`: Tiempo disponible de reschedules (minutos y horas)
 - `rescheduleClasses`: Clases con reschedule = 1
 - `viewedClasses`: Clases vistas (classViewed = 1)
 - `pendingClasses`: Clases por ver (classViewed = 0)
+
+**enrollmentDetails - Control de Acceso Especial:**
+- **Admin y Student**: Ven **todos** los enrollments activos del estudiante
+- **Professor**: Ve **solo** los enrollments donde el profesor está asignado (`professorId` coincide con el ID del profesor autenticado)
+- ⚠️ **Importante**: Los profesores solo pueden ver información de enrollments donde están asignados como profesor. Esto es un control de seguridad para proteger la privacidad de los estudiantes.
 
 **Solo Admin:**
 - `lostClasses`: Clases perdidas (classViewed = 0 y classDate > endDate del enrollment)
@@ -792,7 +802,10 @@ El endpoint retorna información diferente según el rol del usuario autenticado
 **Solo Student y Admin:**
 - `incomeHistory`: Historial de pagos agrupado por enrollment
 
-**Nota importante:** El rol se obtiene automáticamente del token JWT (`req.user.role`). No es necesario enviarlo en el request.
+**Nota importante:** 
+- El rol se obtiene automáticamente del token JWT (`req.user.role`). No es necesario enviarlo en el request.
+- El ID del usuario se obtiene del token JWT (`req.user.id`) y se usa para filtrar enrollments cuando el rol es `professor`.
+- El filtro de enrollments por profesor se aplica automáticamente en la consulta a la base de datos, garantizando que los profesores solo vean información de sus propios enrollments.
 
 #### **Errores Posibles**
 

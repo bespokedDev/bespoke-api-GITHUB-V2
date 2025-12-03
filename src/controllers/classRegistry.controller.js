@@ -60,6 +60,7 @@ classRegistryCtrl.getById = async (req, res) => {
             .populate('classType', 'name')
             .populate('contentType', 'name')
             .populate('originalClassId', 'classDate enrollmentId')
+            .populate('evaluations') // Popula todas las evaluaciones asociadas a esta clase
             .lean();
 
         if (!classRegistry) {
