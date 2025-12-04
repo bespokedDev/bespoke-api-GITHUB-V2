@@ -784,11 +784,25 @@ GET /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
 ---
 
 ### **4. Obtener Enrollments por Profesor**
+
+⚠️ **IMPORTANTE - Ruta Recomendada:**
+El frontend está usando la ruta `/api/professors/:id/enrollments` que está documentada en la [documentación de PROFESSORS](../semana-24-28-noviembre/PROFESSORS_API_DOCUMENTATION.md). Esta ruta está optimizada para listas previas y devuelve solo enrollments activos con información simplificada.
+
+**Ruta recomendada (usada por el frontend):**
+- **Método**: `GET`
+- **Ruta**: `/api/professors/:id/enrollments`
+- **Descripción**: Obtiene la lista de enrollments activos del profesor con información optimizada para listas previas
+- **Response**: Objeto estructurado con `message`, `professor`, `enrollments` y `total`
+- **Filtro**: Solo enrollments con `status: 1` (activos)
+
+**Ruta alternativa (legacy):**
 - **Método**: `GET`
 - **Ruta**: `/api/enrollments/professor/:professorId`
-- **Descripción**: Obtiene todas las matrículas asignadas a un profesor específico
+- **Descripción**: Obtiene todas las matrículas asignadas a un profesor específico (incluye inactivos)
+- **Response**: Array directo de enrollments completos
+- **Filtro**: Todos los enrollments (activos e inactivos)
 
-#### **URL Completa**
+#### **URL Completa (Ruta Alternativa)**
 ```
 GET /api/enrollments/professor/64f8a1b2c3d4e5f6a7b8c9d3
 ```
@@ -803,7 +817,7 @@ GET /api/enrollments/professor/64f8a1b2c3d4e5f6a7b8c9d3
 #### **Parámetros de URL**
 - `professorId` (string): ID único del profesor
 
-#### **Response (200 - OK)**
+#### **Response (200 - OK) - Ruta Alternativa**
 ```json
 [
   {
@@ -821,9 +835,19 @@ GET /api/enrollments/professor/64f8a1b2c3d4e5f6a7b8c9d3
 ]
 ```
 
+#### **Diferencias entre las Rutas**
+
+| Característica | `/api/professors/:id/enrollments` (Recomendada) | `/api/enrollments/professor/:professorId` (Alternativa) |
+|----------------|------------------------------------------------|--------------------------------------------------------|
+| **Formato de respuesta** | Objeto estructurado con `message`, `professor`, `enrollments`, `total` | Array directo de enrollments |
+| **Filtro de status** | Solo enrollments activos (`status: 1`) | Todos los enrollments (activos e inactivos) |
+| **Información incluida** | Optimizada para listas previas (sin campos sensibles) | Información completa de enrollments |
+| **Uso en frontend** | ✅ Sí (usada en `src/app/payouts/page.tsx`) | ❌ No |
+| **Recomendación** | ✅ Usar esta ruta | ⚠️ Solo si necesitas enrollments inactivos o formato diferente |
+
 #### **Errores Posibles**
 - `400`: ID de profesor inválido
-- `404`: Profesor no encontrado
+- `404`: Profesor no encontrado o no se encontraron matrículas
 
 ---
 

@@ -24,6 +24,11 @@ router.get('/', verifyToken, verifyRole('admin'), studentCtrl.list);
 // Esta ruta debe estar antes de /:id para evitar conflictos
 router.get('/info/:id', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.studentInfo);
 
+// GET /api/students/:studentId/enrollment/:enrollmentId - Obtiene información detallada de un enrollment específico y todas sus clases
+// Acceso: Admin, estudiante y profesor
+// Esta ruta debe estar antes de /:id para evitar conflictos
+router.get('/:studentId/enrollment/:enrollmentId', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.getEnrollmentDetails);
+
 // GET /api/students/:id - Obtiene un estudiante por su ID
 // Acceso: Admin, estudiante y profesor
 router.get('/:id', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.getById);

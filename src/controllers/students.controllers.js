@@ -599,6 +599,169 @@ studentCtrl.studentInfo = async (req, res) => {
         if (userRole === 'student' || userRole === 'admin') {
             response.incomeHistory = incomeHistory;
         }
+
+        // 7. Calcular estadísticas por enrollment individual
+        console.log('🔎 Calculando estadísticas por enrollment...');
+        const enrollmentStatistics = [];
+
+        for (const enrollment of enrollments) {
+            const enrollmentId = enrollment._id;
+            const enrollmentIdStr = enrollmentId.toString();
+
+            // Filtrar clases de este enrollment específico
+            const enrollmentClasses = allClasses.filter(
+                classRecord => classRecord.enrollmentId && 
+                classRecord.enrollmentId._id.toString() === enrollmentIdStr
+            );
+
+            // Calcular reschedule time para este enrollment
+            const enrollmentRescheduleClasses = enrollmentClasses.filter(
+                classRecord => classRecord.reschedule === 1
+            );
+            let enrollmentRescheduleMinutes = 0;
+            const enrollmentRescheduleDetails = [];
+
+            enrollmentRescheduleClasses.forEach(classRecord => {
+                const minutesClassDefault = classRecord.minutesClassDefault || 60;
+                const minutesViewed = classRecord.minutesViewed || 0;
+                const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed);
+                enrollmentRescheduleMinutes += availableMinutes;
+
+                enrollmentRescheduleDetails.push({
+                    classRegistryId: classRecord._id,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime,
+                    minutesClassDefault: minutesClassDefault,
+                    minutesViewed: minutesViewed,
+                    availableMinutes: availableMinutes,
+                    availableHours: (availableMinutes / 60).toFixed(2)
+                });
+            });
+
+            const enrollmentRescheduleHours = (enrollmentRescheduleMinutes / 60).toFixed(2);
+
+            // Contar clases con reschedule = 1
+            const enrollmentClassesWithReschedule = enrollmentClasses.filter(
+                classRecord => classRecord.reschedule === 1
+            );
+
+            // Contar clases vistas (classViewed = 1)
+            const enrollmentViewedClasses = enrollmentClasses.filter(
+                classRecord => classRecord.classViewed === 1
+            );
+
+            // Contar clases pendientes (classViewed = 0)
+            const enrollmentPendingClasses = enrollmentClasses.filter(
+                classRecord => classRecord.classViewed === 0
+            );
+
+            // Contar clases perdidas (classViewed = 0 y classDate > endDate) - SOLO ADMIN
+            let enrollmentLostClassesCount = 0;
+            let enrollmentLostClassesDetails = [];
+            if (userRole === 'admin') {
+                const currentDate = new Date();
+                currentDate.setUTCHours(0, 0, 0, 0);
+
+                const enrollmentLostClasses = enrollmentClasses.filter(classRecord => {
+                    if (classRecord.classViewed !== 0) return false;
+                    if (!enrollment.endDate) return false;
+                    
+                    const classDateObj = new Date(classRecord.classDate + 'T00:00:00.000Z');
+                    const endDateObj = new Date(enrollment.endDate);
+                    endDateObj.setUTCHours(0, 0, 0, 0);
+                    
+                    return classDateObj > endDateObj;
+                });
+
+                enrollmentLostClassesCount = enrollmentLostClasses.length;
+                enrollmentLostClassesDetails = enrollmentLostClasses.map(classRecord => ({
+                    classRegistryId: classRecord._id,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime,
+                    enrollmentEndDate: enrollment.endDate
+                }));
+            }
+
+            // Contar clases no show (classViewed = 3) - SOLO ADMIN Y PROFESSOR
+            let enrollmentNoShowClassesCount = 0;
+            let enrollmentNoShowClassesDetails = [];
+            if (userRole === 'admin' || userRole === 'professor') {
+                const enrollmentNoShowClasses = enrollmentClasses.filter(
+                    classRecord => classRecord.classViewed === 3
+                );
+                enrollmentNoShowClassesCount = enrollmentNoShowClasses.length;
+                enrollmentNoShowClassesDetails = enrollmentNoShowClasses.map(classRecord => ({
+                    classRegistryId: classRecord._id,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime
+                }));
+            }
+
+            // Construir objeto de estadísticas para este enrollment
+            const enrollmentStats = {
+                enrollmentId: enrollmentId,
+                enrollmentInfo: {
+                    planName: enrollment.planId ? enrollment.planId.name : null,
+                    enrollmentType: enrollment.enrollmentType,
+                    startDate: enrollment.startDate,
+                    endDate: enrollment.endDate,
+                    status: enrollment.status
+                },
+                rescheduleTime: {
+                    totalAvailableMinutes: enrollmentRescheduleMinutes,
+                    totalAvailableHours: parseFloat(enrollmentRescheduleHours),
+                    details: enrollmentRescheduleDetails
+                },
+                rescheduleClasses: {
+                    total: enrollmentClassesWithReschedule.length,
+                    details: enrollmentClassesWithReschedule.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime,
+                        reschedule: classRecord.reschedule
+                    }))
+                },
+                viewedClasses: {
+                    total: enrollmentViewedClasses.length,
+                    details: enrollmentViewedClasses.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime
+                    }))
+                },
+                pendingClasses: {
+                    total: enrollmentPendingClasses.length,
+                    details: enrollmentPendingClasses.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime
+                    }))
+                }
+            };
+
+            // Agregar información sensible solo si el rol es admin
+            if (userRole === 'admin') {
+                enrollmentStats.lostClasses = {
+                    total: enrollmentLostClassesCount,
+                    details: enrollmentLostClassesDetails
+                };
+            }
+
+            // Agregar información sensible solo si el rol es admin o professor
+            if (userRole === 'admin' || userRole === 'professor') {
+                enrollmentStats.noShowClasses = {
+                    total: enrollmentNoShowClassesCount,
+                    details: enrollmentNoShowClassesDetails
+                };
+            }
+
+            enrollmentStatistics.push(enrollmentStats);
+        }
+
+        console.log('✅ Estadísticas por enrollment calculadas:', enrollmentStatistics.length);
+        
+        // Agregar estadísticas por enrollment a la respuesta
+        response.enrollmentStatistics = enrollmentStatistics;
         
         console.log('✅ Enviando respuesta...');
         res.status(200).json(response);
@@ -609,6 +772,311 @@ studentCtrl.studentInfo = async (req, res) => {
             return res.status(400).json({ message: 'ID de estudiante inválido' });
         }
         res.status(500).json({ message: 'Error interno al obtener información del estudiante', error: error.message });
+    }
+};
+
+/**
+ * @route GET /api/students/:studentId/enrollment/:enrollmentId
+ * @description Obtiene información detallada de un enrollment específico y todas sus clases
+ * @access Private (Requiere JWT) - Admin, estudiante y profesor
+ */
+studentCtrl.getEnrollmentDetails = async (req, res) => {
+    try {
+        console.log('🔍 getEnrollmentDetails - Iniciando...');
+        console.log('📥 Parámetros recibidos:', req.params);
+        
+        const { studentId, enrollmentId } = req.params;
+        
+        // Validar IDs
+        if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+            return res.status(400).json({ message: 'ID de estudiante inválido' });
+        }
+        
+        if (!enrollmentId || !mongoose.Types.ObjectId.isValid(enrollmentId)) {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+
+        const studentObjectId = new mongoose.Types.ObjectId(studentId);
+        const enrollmentObjectId = new mongoose.Types.ObjectId(enrollmentId);
+
+        // Obtener el rol y el ID del usuario desde el token
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
+        console.log('👤 Rol del usuario:', userRole);
+        console.log('👤 ID del usuario:', userId);
+
+        // Verificar que el estudiante existe
+        const student = await Student.findById(studentObjectId);
+        if (!student) {
+            return res.status(404).json({ message: 'Estudiante no encontrado' });
+        }
+
+        // Buscar el enrollment específico
+        const enrollmentQuery = {
+            _id: enrollmentObjectId,
+            'studentIds.studentId': studentObjectId,
+            status: 1 // Solo enrollments activos
+        };
+
+        // Si el rol es professor, verificar que el enrollment pertenezca a ese profesor
+        if (userRole === 'professor' && userId) {
+            const professorObjectId = new mongoose.Types.ObjectId(userId);
+            enrollmentQuery.professorId = professorObjectId;
+            console.log('🔒 Filtro aplicado: Solo enrollment del profesor:', professorObjectId);
+        }
+
+        const enrollment = await Enrollment.findOne(enrollmentQuery)
+            .populate('planId', 'name weeklyClasses pricing description')
+            .populate('professorId', 'name email phone occupation')
+            .populate('studentIds.studentId', 'name studentCode email phone')
+            .lean();
+
+        if (!enrollment) {
+            return res.status(404).json({ 
+                message: 'Enrollment no encontrado o no tienes permisos para acceder a este enrollment' 
+            });
+        }
+
+        // Verificar que el estudiante esté en el enrollment
+        const studentInfo = enrollment.studentIds.find(
+            si => si.studentId && si.studentId._id.toString() === studentObjectId.toString()
+        );
+
+        if (!studentInfo) {
+            return res.status(404).json({ message: 'El estudiante no está asociado a este enrollment' });
+        }
+
+        // Obtener todas las clases de este enrollment
+        const classes = await ClassRegistry.find({
+            enrollmentId: enrollmentObjectId
+        })
+        .populate('enrollmentId', 'endDate planId')
+        .populate('classType', 'name')
+        .populate('contentType', 'name')
+        .populate('originalClassId', 'classDate enrollmentId')
+        .populate('evaluations')
+        .sort({ classDate: 1, classTime: 1 }) // Ordenar por fecha y hora
+        .lean();
+
+        console.log('✅ Clases encontradas:', classes.length);
+
+        // Calcular estadísticas del enrollment
+        // 1. Reschedule time
+        const rescheduleClasses = classes.filter(classRecord => classRecord.reschedule === 1);
+        let totalRescheduleMinutes = 0;
+        const rescheduleDetails = [];
+
+        rescheduleClasses.forEach(classRecord => {
+            const minutesClassDefault = classRecord.minutesClassDefault || 60;
+            const minutesViewed = classRecord.minutesViewed || 0;
+            const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed);
+            totalRescheduleMinutes += availableMinutes;
+
+            rescheduleDetails.push({
+                classRegistryId: classRecord._id,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime,
+                minutesClassDefault: minutesClassDefault,
+                minutesViewed: minutesViewed,
+                availableMinutes: availableMinutes,
+                availableHours: (availableMinutes / 60).toFixed(2)
+            });
+        });
+
+        const totalRescheduleHours = (totalRescheduleMinutes / 60).toFixed(2);
+
+        // 2. Contar clases con reschedule = 1
+        const classesWithReschedule = classes.filter(classRecord => classRecord.reschedule === 1);
+
+        // 3. Contar clases vistas (classViewed = 1)
+        const viewedClasses = classes.filter(classRecord => classRecord.classViewed === 1);
+
+        // 4. Contar clases pendientes (classViewed = 0)
+        const pendingClasses = classes.filter(classRecord => classRecord.classViewed === 0);
+
+        // 5. Contar clases perdidas (classViewed = 0 y classDate > endDate) - SOLO ADMIN
+        let lostClassesCount = 0;
+        let lostClassesDetails = [];
+        if (userRole === 'admin') {
+            const lostClasses = classes.filter(classRecord => {
+                if (classRecord.classViewed !== 0) return false;
+                if (!enrollment.endDate) return false;
+                
+                const classDateObj = new Date(classRecord.classDate + 'T00:00:00.000Z');
+                const endDateObj = new Date(enrollment.endDate);
+                endDateObj.setUTCHours(0, 0, 0, 0);
+                
+                return classDateObj > endDateObj;
+            });
+
+            lostClassesCount = lostClasses.length;
+            lostClassesDetails = lostClasses.map(classRecord => ({
+                classRegistryId: classRecord._id,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime,
+                enrollmentEndDate: enrollment.endDate
+            }));
+        }
+
+        // 6. Contar clases no show (classViewed = 3) - SOLO ADMIN Y PROFESSOR
+        let noShowClassesCount = 0;
+        let noShowClassesDetails = [];
+        if (userRole === 'admin' || userRole === 'professor') {
+            const noShowClasses = classes.filter(classRecord => classRecord.classViewed === 3);
+            noShowClassesCount = noShowClasses.length;
+            noShowClassesDetails = noShowClasses.map(classRecord => ({
+                classRegistryId: classRecord._id,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime
+            }));
+        }
+
+        // Construir respuesta
+        const response = {
+            message: 'Información detallada del enrollment obtenida exitosamente',
+            enrollment: {
+                _id: enrollment._id,
+                planId: enrollment.planId ? {
+                    _id: enrollment.planId._id,
+                    name: enrollment.planId.name,
+                    weeklyClasses: enrollment.planId.weeklyClasses,
+                    pricing: enrollment.planId.pricing,
+                    description: enrollment.planId.description
+                } : null,
+                professorId: enrollment.professorId ? {
+                    _id: enrollment.professorId._id,
+                    name: enrollment.professorId.name,
+                    email: enrollment.professorId.email,
+                    phone: enrollment.professorId.phone,
+                    occupation: enrollment.professorId.occupation
+                } : null,
+                studentIds: enrollment.studentIds.map(si => ({
+                    studentId: si.studentId ? {
+                        _id: si.studentId._id,
+                        name: si.studentId.name,
+                        studentCode: si.studentId.studentCode,
+                        email: si.studentId.email,
+                        phone: si.studentId.phone
+                    } : null,
+                    amount: si.amount,
+                    preferences: si.preferences,
+                    firstTimeLearningLanguage: si.firstTimeLearningLanguage,
+                    previousExperience: si.previousExperience,
+                    goals: si.goals,
+                    dailyLearningTime: si.dailyLearningTime,
+                    learningType: si.learningType,
+                    idealClassType: si.idealClassType,
+                    learningDifficulties: si.learningDifficulties,
+                    languageLevel: si.languageLevel
+                })),
+                enrollmentType: enrollment.enrollmentType,
+                classCalculationType: enrollment.classCalculationType,
+                alias: enrollment.alias,
+                language: enrollment.language,
+                scheduledDays: enrollment.scheduledDays,
+                purchaseDate: enrollment.purchaseDate,
+                startDate: enrollment.startDate,
+                endDate: enrollment.endDate,
+                monthlyClasses: enrollment.monthlyClasses,
+                pricePerStudent: enrollment.pricePerStudent,
+                totalAmount: enrollment.totalAmount,
+                available_balance: enrollment.available_balance,
+                rescheduleHours: enrollment.rescheduleHours,
+                substituteProfessor: enrollment.substituteProfessor,
+                cancellationPaymentsEnabled: enrollment.cancellationPaymentsEnabled,
+                graceDays: enrollment.graceDays,
+                latePaymentPenalty: enrollment.latePaymentPenalty,
+                extendedGraceDays: enrollment.extendedGraceDays,
+                status: enrollment.status,
+                createdAt: enrollment.createdAt,
+                updatedAt: enrollment.updatedAt
+            },
+            classes: classes.map(classRecord => ({
+                _id: classRecord._id,
+                enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+                classDate: classRecord.classDate,
+                classTime: classRecord.classTime,
+                classType: classRecord.classType ? {
+                    _id: classRecord.classType._id,
+                    name: classRecord.classType.name
+                } : null,
+                contentType: classRecord.contentType ? {
+                    _id: classRecord.contentType._id,
+                    name: classRecord.contentType.name
+                } : null,
+                classViewed: classRecord.classViewed,
+                reschedule: classRecord.reschedule,
+                minutesClassDefault: classRecord.minutesClassDefault,
+                minutesViewed: classRecord.minutesViewed,
+                vocabularyContent: classRecord.vocabularyContent,
+                originalClassId: classRecord.originalClassId,
+                evaluations: classRecord.evaluations || [],
+                createdAt: classRecord.createdAt,
+                updatedAt: classRecord.updatedAt
+            })),
+            statistics: {
+                totalClasses: classes.length,
+                rescheduleTime: {
+                    totalAvailableMinutes: totalRescheduleMinutes,
+                    totalAvailableHours: parseFloat(totalRescheduleHours),
+                    details: rescheduleDetails
+                },
+                rescheduleClasses: {
+                    total: classesWithReschedule.length,
+                    details: classesWithReschedule.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime,
+                        reschedule: classRecord.reschedule
+                    }))
+                },
+                viewedClasses: {
+                    total: viewedClasses.length,
+                    details: viewedClasses.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime
+                    }))
+                },
+                pendingClasses: {
+                    total: pendingClasses.length,
+                    details: pendingClasses.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime
+                    }))
+                }
+            }
+        };
+
+        // Agregar información sensible solo si el rol es admin
+        if (userRole === 'admin') {
+            response.statistics.lostClasses = {
+                total: lostClassesCount,
+                details: lostClassesDetails
+            };
+        }
+
+        // Agregar información sensible solo si el rol es admin o professor
+        if (userRole === 'admin' || userRole === 'professor') {
+            response.statistics.noShowClasses = {
+                total: noShowClassesCount,
+                details: noShowClassesDetails
+            };
+        }
+
+        console.log('✅ Enviando respuesta...');
+        res.status(200).json(response);
+    } catch (error) {
+        console.error('❌ Error al obtener detalles del enrollment:', error);
+        console.error('❌ Stack trace:', error.stack);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID inválido' });
+        }
+        res.status(500).json({ 
+            message: 'Error interno al obtener detalles del enrollment', 
+            error: error.message 
+        });
     }
 };
 

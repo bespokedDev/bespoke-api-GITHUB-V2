@@ -18,86 +18,13 @@ const headers = {
 
 ### **Login y Autenticación**
 
-#### **Endpoint de Login**
-**POST** `/api/users/login`
+Para información completa sobre el sistema de autenticación, login y tokens JWT, consulta la [Documentación de JWT y Roles](../semana-24-28-noviembre/JWT_TOKENS_AND_ROLES_DOCUMENTATION.md).
 
-El sistema utiliza un **login inteligente** que busca automáticamente en las colecciones `User` (admin), `Professor` y `Student` para encontrar el usuario por su email.
-
-#### **Request Body**
-```json
-{
-  "email": "juan.perez@example.com",
-  "password": "1234567890"
-}
-```
-
-#### **Response Exitosa (200 OK)**
-```json
-{
-  "message": "Login exitoso",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": "6832845ebb53229d9559459b",
-    "name": "Juan Pérez",
-    "email": "juan.perez@example.com",
-    "role": "professor",
-    "idRol": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "ciNumber": "12345678",
-    "phone": "+584121234567"
-  }
-}
-```
-
-#### **Campos del Token JWT**
-El token JWT incluye la siguiente información:
-- `id`: ID del profesor
-- `name`: Nombre del profesor
-- `email`: Email del profesor
-- `role`: Nombre del rol (`"admin"`, `"professor"`, `"student"`)
-- `userType`: Tipo de usuario (`"admin"`, `"professor"`, `"student"`)
-- `idRol`: ID del rol (ObjectId de la colección `roles`)
-
-#### **Ejemplo de Login con JavaScript**
-```javascript
-const login = async (email, password) => {
-  try {
-    const response = await fetch('http://localhost:3000/api/users/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await response.json();
-    
-    if (response.ok) {
-      // Guardar el token en localStorage o en el estado de la aplicación
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      
-      console.log('Login exitoso:', data.user);
-      return data;
-    } else {
-      console.error('Error:', data.message);
-      return null;
-    }
-  } catch (error) {
-    console.error('Error de red:', error);
-    return null;
-  }
-};
-
-// Uso
-login('juan.perez@example.com', '1234567890');
-```
-
-### **Pasos para Autenticación**
-1. Obtener token JWT mediante el endpoint de login (`/api/users/login`)
-2. Incluir el token en el header `Authorization` de todas las peticiones
-3. El token debe tener el formato: `Bearer <token>`
-4. Si el token es inválido o expirado, recibirás un error 401 o 403
-5. Algunas rutas requieren roles específicos (ver sección de Roles y Permisos)
+**Resumen rápido:**
+- **Endpoint de Login**: `POST /api/users/login`
+- **Sistema de Login Inteligente**: Busca automáticamente en `User`, `Professor` y `Student`
+- **Token JWT**: Incluye información del rol del usuario
+- **Header requerido**: `Authorization: Bearer <token>`
 
 ---
 
@@ -118,7 +45,769 @@ login('juan.perez@example.com', '1234567890');
 
 ## 📍 **Endpoints Detallados**
 
-### **1. Obtener Lista de Enrollments del Profesor**
+### **1. Crear Profesor**
+
+#### **POST** `/api/professors`
+
+Crea un nuevo profesor en el sistema.
+
+#### **Headers**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Request Body**
+```json
+{
+  "name": "Juan Pérez",
+  "ciNumber": "12345678",
+  "dob": "1990-05-15",
+  "email": "juan.perez@example.com",
+  "password": "password123",
+  "phone": "+584121234567",
+  "occupation": "Profesor de Inglés",
+  "startDate": "2024-01-15",
+  "address": "Calle Principal 123",
+  "emergencyContact": {
+    "name": "María Pérez",
+    "phone": "+584129876543"
+  },
+  "paymentData": [
+    {
+      "bankName": "Banco Nacional",
+      "accountType": "Ahorro",
+      "accountNumber": "1234567890",
+      "holderName": "Juan Pérez",
+      "holderCI": "12345678",
+      "holderEmail": "juan.perez@example.com",
+      "holderAddress": "Calle Principal 123",
+      "routingNumber": "123456"
+    }
+  ],
+  "typeId": "64f8a1b2c3d4e5f6a7b8c9d0",
+  "isActive": true
+}
+```
+
+#### **Campos del Request Body**
+
+**Requeridos:**
+- `name` (String): Nombre completo del profesor
+- `ciNumber` (String): Número de cédula/identificación (único)
+- `dob` (Date/String): Fecha de nacimiento (formato `YYYY-MM-DD` o Date)
+- `email` (String): Correo electrónico (único, se convierte a minúsculas)
+- `startDate` (Date/String): Fecha de inicio de trabajo (formato `YYYY-MM-DD` o Date)
+
+**Opcionales:**
+- `password` (String): Contraseña del profesor (debe ser hasheada antes de guardar)
+- `phone` (String): Número de teléfono
+- `occupation` (String): Ocupación del profesor
+- `address` (String): Dirección del profesor
+- `emergencyContact` (Object): Contacto de emergencia
+  - `name` (String): Nombre del contacto
+  - `phone` (String): Teléfono del contacto
+- `paymentData` (Array): Array de objetos con datos de pago
+  - `bankName` (String): Nombre del banco
+  - `accountType` (String): Tipo de cuenta
+  - `accountNumber` (String): Número de cuenta
+  - `holderName` (String): Nombre del titular
+  - `holderCI` (String): Cédula del titular
+  - `holderEmail` (String): Email del titular
+  - `holderAddress` (String): Dirección del titular
+  - `routingNumber` (String): Número de ruta
+- `typeId` (ObjectId): ID del tipo de profesor (referencia a `ProfessorTypes`)
+- `idRol` (ObjectId): ID del rol (referencia a `Role`)
+- `isActive` (Boolean): Estado activo/inactivo (por defecto: `true`)
+
+#### **Response Exitosa (201 Created)**
+```json
+{
+  "message": "Profesor creado exitosamente",
+  "professor": {
+    "_id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "ciNumber": "12345678",
+    "dob": "1990-05-15T00:00:00.000Z",
+    "email": "juan.perez@example.com",
+    "password": "hashed_password",
+    "phone": "+584121234567",
+    "occupation": "Profesor de Inglés",
+    "startDate": "2024-01-15T00:00:00.000Z",
+    "address": "Calle Principal 123",
+    "emergencyContact": {
+      "name": "María Pérez",
+      "phone": "+584129876543"
+    },
+    "paymentData": [
+      {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "bankName": "Banco Nacional",
+        "accountType": "Ahorro",
+        "accountNumber": "1234567890",
+        "holderName": "Juan Pérez",
+        "holderCI": "12345678",
+        "holderEmail": "juan.perez@example.com",
+        "holderAddress": "Calle Principal 123",
+        "routingNumber": "123456"
+      }
+    ],
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "name": "Profesor Regular",
+      "description": "Profesor con horario regular"
+    },
+    "isActive": true,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- Campos requeridos faltantes
+- Email o cédula duplicados
+- ID de tipo de profesor inválido
+- `isActive` no es booleano
+
+**409 Conflict**
+- Email ya registrado
+- Cédula ya registrada
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X POST http://localhost:3000/api/professors \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "name": "Juan Pérez",
+    "ciNumber": "12345678",
+    "dob": "1990-05-15",
+    "email": "juan.perez@example.com",
+    "phone": "+584121234567",
+    "startDate": "2024-01-15"
+  }'
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const createProfessor = async (professorData) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/professors', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(professorData)
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesor creado:', data.professor);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+createProfessor({
+  name: "Juan Pérez",
+  ciNumber: "12345678",
+  dob: "1990-05-15",
+  email: "juan.perez@example.com",
+  phone: "+584121234567",
+  startDate: "2024-01-15"
+});
+```
+
+---
+
+### **2. Listar Todos los Profesores**
+
+#### **GET** `/api/professors`
+
+Obtiene una lista de todos los profesores registrados en el sistema con sus datos de tipo de profesor.
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Request Body**
+No requiere body.
+
+#### **Response Exitosa (200 OK)**
+```json
+[
+  {
+    "_id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "ciNumber": "12345678",
+    "dob": "1990-05-15T00:00:00.000Z",
+    "email": "juan.perez@example.com",
+    "phone": "+584121234567",
+    "occupation": "Profesor de Inglés",
+    "startDate": "2024-01-15T00:00:00.000Z",
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "name": "Profesor Regular",
+      "rates": {
+        "single": 15,
+        "couple": 18,
+        "group": 20
+      }
+    },
+    "isActive": true,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  },
+  {
+    "_id": "6832845ebb53229d9559459c",
+    "name": "María García",
+    "ciNumber": "87654321",
+    "dob": "1985-08-20T00:00:00.000Z",
+    "email": "maria.garcia@example.com",
+    "phone": "+584129876543",
+    "occupation": "Profesora de Francés",
+    "startDate": "2023-12-01T00:00:00.000Z",
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+      "name": "Profesor Senior",
+      "rates": {
+        "single": 20,
+        "couple": 25,
+        "group": 30
+      }
+    },
+    "isActive": true,
+    "createdAt": "2023-12-01T10:30:00.000Z",
+    "updatedAt": "2023-12-01T10:30:00.000Z"
+  }
+]
+```
+
+#### **Campos de la Response**
+
+Cada objeto en el array contiene:
+- `_id` (String): ID único del profesor
+- `name` (String): Nombre completo
+- `ciNumber` (String): Número de cédula
+- `dob` (Date): Fecha de nacimiento
+- `email` (String): Correo electrónico
+- `phone` (String): Teléfono
+- `occupation` (String): Ocupación
+- `startDate` (Date): Fecha de inicio de trabajo
+- `typeId` (Object): Tipo de profesor populado con:
+  - `_id` (String): ID del tipo
+  - `name` (String): Nombre del tipo
+  - `rates` (Object): Tarifas por tipo de enrollment
+- `isActive` (Boolean): Estado activo/inactivo
+- `createdAt` (Date): Fecha de creación
+- `updatedAt` (Date): Fecha de última actualización
+
+#### **Errores Posibles**
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X GET http://localhost:3000/api/professors \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const listProfessors = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/professors', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const professors = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesores:', professors);
+      return professors;
+    } else {
+      console.error('Error:', professors.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+listProfessors();
+```
+
+---
+
+### **3. Obtener Profesor por ID**
+
+#### **GET** `/api/professors/:id`
+
+Obtiene la información completa de un profesor específico por su ID, incluyendo sus datos de tipo de profesor.
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del profesor (ObjectId de MongoDB)
+
+#### **Request Body**
+No requiere body.
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "_id": "6832845ebb53229d9559459b",
+  "name": "Juan Pérez",
+  "ciNumber": "12345678",
+  "dob": "1990-05-15T00:00:00.000Z",
+  "email": "juan.perez@example.com",
+  "password": "hashed_password",
+  "phone": "+584121234567",
+  "occupation": "Profesor de Inglés",
+  "startDate": "2024-01-15T00:00:00.000Z",
+  "address": "Calle Principal 123",
+  "emergencyContact": {
+    "name": "María Pérez",
+    "phone": "+584129876543"
+  },
+  "paymentData": [
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+      "bankName": "Banco Nacional",
+      "accountType": "Ahorro",
+      "accountNumber": "1234567890",
+      "holderName": "Juan Pérez",
+      "holderCI": "12345678",
+      "holderEmail": "juan.perez@example.com",
+      "holderAddress": "Calle Principal 123",
+      "routingNumber": "123456"
+    }
+  ],
+  "typeId": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Profesor Regular",
+    "rates": {
+      "single": 15,
+      "couple": 18,
+      "group": 20
+    }
+  },
+  "idRol": "64f8a1b2c3d4e5f6a7b8c9d2",
+  "isActive": true,
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "updatedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- ID de profesor inválido
+
+**404 Not Found**
+- Profesor no encontrado
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X GET http://localhost:3000/api/professors/6832845ebb53229d9559459b \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const getProfessorById = async (professorId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/professors/${professorId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const professor = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesor:', professor);
+      return professor;
+    } else {
+      console.error('Error:', professor.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+getProfessorById('6832845ebb53229d9559459b');
+```
+
+---
+
+### **4. Actualizar Profesor**
+
+#### **PUT** `/api/professors/:id`
+
+Actualiza la información de un profesor existente. Puedes enviar solo los campos que deseas actualizar.
+
+#### **Headers**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del profesor (ObjectId de MongoDB)
+
+#### **Request Body**
+Puedes enviar cualquier campo del modelo Professor que desees actualizar. Todos los campos son opcionales excepto los que son requeridos por el modelo.
+
+```json
+{
+  "name": "Juan Pérez Actualizado",
+  "phone": "+584129999999",
+  "occupation": "Profesor Senior de Inglés",
+  "address": "Nueva Dirección 456",
+  "emergencyContact": {
+    "name": "María Pérez",
+    "phone": "+584129876543"
+  },
+  "paymentData": [
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+      "bankName": "Banco Nacional",
+      "accountType": "Corriente",
+      "accountNumber": "9876543210"
+    }
+  ],
+  "typeId": "64f8a1b2c3d4e5f6a7b8c9d1",
+  "isActive": true
+}
+```
+
+**⚠️ Nota sobre `paymentData`:**
+- Si envías un array de `paymentData`, los elementos existentes se actualizarán si tienen `_id`
+- Los elementos sin `_id` se crearán como nuevos
+- Si no envías `paymentData`, los datos existentes se mantendrán
+
+**⚠️ Nota sobre fechas:**
+- Si envías `dob` o `startDate` como Date object, se convertirá automáticamente
+- Si envías como string, debe estar en formato `YYYY-MM-DD`
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Profesor actualizado",
+  "professor": {
+    "_id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez Actualizado",
+    "ciNumber": "12345678",
+    "dob": "1990-05-15T00:00:00.000Z",
+    "email": "juan.perez@example.com",
+    "phone": "+584129999999",
+    "occupation": "Profesor Senior de Inglés",
+    "startDate": "2024-01-15T00:00:00.000Z",
+    "address": "Nueva Dirección 456",
+    "emergencyContact": {
+      "name": "María Pérez",
+      "phone": "+584129876543"
+    },
+    "paymentData": [
+      {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "bankName": "Banco Nacional",
+        "accountType": "Corriente",
+        "accountNumber": "9876543210"
+      }
+    ],
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+      "name": "Profesor Senior",
+      "description": "Profesor con experiencia avanzada"
+    },
+    "isActive": true,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-20T15:45:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- ID de profesor inválido
+- Email o cédula duplicados (si intentas cambiar a valores que ya existen)
+- ID de tipo de profesor inválido
+- `isActive` no es booleano
+
+**404 Not Found**
+- Profesor no encontrado
+
+**409 Conflict**
+- Email duplicado (si intentas cambiar a un email que ya existe)
+- Cédula duplicada (si intentas cambiar a una cédula que ya existe)
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PUT http://localhost:3000/api/professors/6832845ebb53229d9559459b \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "name": "Juan Pérez Actualizado",
+    "phone": "+584129999999"
+  }'
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const updateProfessor = async (professorId, updateData) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/professors/${professorId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(updateData)
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesor actualizado:', data.professor);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+updateProfessor('6832845ebb53229d9559459b', {
+  name: "Juan Pérez Actualizado",
+  phone: "+584129999999"
+});
+```
+
+---
+
+### **5. Activar Profesor**
+
+#### **PATCH** `/api/professors/:id/activate`
+
+Activa un profesor que estaba desactivado. Establece `isActive` a `true`.
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del profesor (ObjectId de MongoDB)
+
+#### **Request Body**
+No requiere body.
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Profesor activado",
+  "professor": {
+    "_id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "isActive": true,
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "name": "Profesor Regular",
+      "description": "Profesor con horario regular"
+    },
+    "updatedAt": "2024-01-20T16:00:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- ID de profesor inválido
+
+**404 Not Found**
+- Profesor no encontrado
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PATCH http://localhost:3000/api/professors/6832845ebb53229d9559459b/activate \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const activateProfessor = async (professorId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/professors/${professorId}/activate`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesor activado:', data.professor);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+activateProfessor('6832845ebb53229d9559459b');
+```
+
+---
+
+### **6. Desactivar Profesor**
+
+#### **PATCH** `/api/professors/:id/deactivate`
+
+Desactiva un profesor. Establece `isActive` a `false`.
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del profesor (ObjectId de MongoDB)
+
+#### **Request Body**
+No requiere body.
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Profesor desactivado",
+  "professor": {
+    "_id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "isActive": false,
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "name": "Profesor Regular",
+      "description": "Profesor con horario regular"
+    },
+    "updatedAt": "2024-01-20T16:00:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- ID de profesor inválido
+
+**404 Not Found**
+- Profesor no encontrado
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PATCH http://localhost:3000/api/professors/6832845ebb53229d9559459b/deactivate \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const deactivateProfessor = async (professorId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/professors/${professorId}/deactivate`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesor desactivado:', data.professor);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+deactivateProfessor('6832845ebb53229d9559459b');
+```
+
+---
+
+### **7. Obtener Lista de Enrollments del Profesor**
 
 #### **GET** `/api/professors/:id/enrollments`
 
@@ -335,6 +1024,8 @@ El sistema utiliza un sistema de roles basado en la colección `Role`. Cada prof
 - `GET /api/professors/:id/enrollments` - Obtener enrollments del profesor
 - `GET /api/professors/:id` - Obtener profesor por ID
 - `PUT /api/professors/:id` - Actualizar profesor
+
+**Nota importante:** Los profesores solo pueden ver y actualizar su propia información. El sistema verifica que el ID del profesor en la URL coincida con el ID del profesor autenticado (obtenido del token JWT) para las rutas de `GET /api/professors/:id` y `PUT /api/professors/:id`.
 
 ### **Autenticación y Autorización**
 

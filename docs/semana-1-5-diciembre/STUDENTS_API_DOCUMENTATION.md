@@ -109,6 +109,7 @@ login('juan.perez@example.com', '1234567890');
 | `POST` | `/api/students` | Crear nuevo estudiante |
 | `GET` | `/api/students` | Listar todos los estudiantes |
 | `GET` | `/api/students/info/:id` | Obtener información del saldo del estudiante |
+| `GET` | `/api/students/:studentId/enrollment/:enrollmentId` | Obtener información detallada de un enrollment específico y todas sus clases |
 | `GET` | `/api/students/:id` | Obtener estudiante por ID |
 | `PUT` | `/api/students/:id` | Actualizar estudiante por ID |
 | `PATCH` | `/api/students/:id/activate` | Activar estudiante |
@@ -540,7 +541,65 @@ No requiere body.
         "classTime": "16:00"
       }
     ]
-  }
+  },
+  "enrollmentStatistics": [
+    {
+      "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d3",
+      "enrollmentInfo": {
+        "planName": "Plan Mensual Básico",
+        "enrollmentType": "single",
+        "startDate": "2024-01-22T00:00:00.000Z",
+        "endDate": "2024-02-21T23:59:59.999Z",
+        "status": 1
+      },
+      "rescheduleTime": {
+        "totalAvailableMinutes": 60,
+        "totalAvailableHours": 1.00,
+        "details": [
+          {
+            "classRegistryId": "692a1f4a5fa3f53b825ee53f",
+            "classDate": "2024-01-22",
+            "classTime": "10:00",
+            "minutesClassDefault": 60,
+            "minutesViewed": 0,
+            "availableMinutes": 60,
+            "availableHours": "1.00"
+          }
+        ]
+      },
+      "rescheduleClasses": {
+        "total": 2,
+        "details": [
+          {
+            "classRegistryId": "692a1f4a5fa3f53b825ee53f",
+            "classDate": "2024-01-22",
+            "classTime": "10:00",
+            "reschedule": 1
+          }
+        ]
+      },
+      "viewedClasses": {
+        "total": 5,
+        "details": [
+          {
+            "classRegistryId": "692a1f4a5fa3f53b825ee541",
+            "classDate": "2024-01-20",
+            "classTime": "14:00"
+          }
+        ]
+      },
+      "pendingClasses": {
+        "total": 3,
+        "details": [
+          {
+            "classRegistryId": "692a1f4a5fa3f53b825ee543",
+            "classDate": "2024-01-25",
+            "classTime": "16:00"
+          }
+        ]
+      }
+    }
+  ]
 }
 ```
 
@@ -559,7 +618,51 @@ No requiere body.
         "enrollmentEndDate": "2024-01-24T23:59:59.999Z"
       }
     ]
-  }
+  },
+  "enrollmentStatistics": [
+    {
+      "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d3",
+      "enrollmentInfo": {
+        "planName": "Plan Mensual Básico",
+        "enrollmentType": "single",
+        "startDate": "2024-01-22T00:00:00.000Z",
+        "endDate": "2024-02-21T23:59:59.999Z",
+        "status": 1
+      },
+      "rescheduleTime": {
+        "totalAvailableMinutes": 60,
+        "totalAvailableHours": 1.00,
+        "details": [...]
+      },
+      "rescheduleClasses": {
+        "total": 2,
+        "details": [...]
+      },
+      "viewedClasses": {
+        "total": 5,
+        "details": [...]
+      },
+      "pendingClasses": {
+        "total": 3,
+        "details": [...]
+      },
+      "lostClasses": {
+        "total": 1,
+        "details": [
+          {
+            "classRegistryId": "692a1f4a5fa3f53b825ee545",
+            "classDate": "2024-01-25",
+            "classTime": "18:00",
+            "enrollmentEndDate": "2024-01-24T23:59:59.999Z"
+          }
+        ]
+      },
+      "noShowClasses": {
+        "total": 0,
+        "details": []
+      }
+    }
+  ]
 }
 ```
 
@@ -707,6 +810,40 @@ No requiere body.
   - `enrollmentId` (String): ID del enrollment al que pertenece la clase
   - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
   - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+
+**enrollmentStatistics** (Visible para todos los roles):
+- Array de objetos con estadísticas detalladas por cada enrollment individual:
+  - `enrollmentId` (String): ID del enrollment
+  - `enrollmentInfo` (Object): Información básica del enrollment:
+    - `planName` (String): Nombre del plan
+    - `enrollmentType` (String): Tipo de enrollment (`"single"`, `"couple"` o `"group"`)
+    - `startDate` (Date): Fecha de inicio del enrollment
+    - `endDate` (Date): Fecha de fin del enrollment
+    - `status` (Number): Estado del enrollment (`1` = activo, `0` = inactivo)
+  - `rescheduleTime` (Object): Tiempo disponible de reschedules para este enrollment:
+    - `totalAvailableMinutes` (Number): Total de minutos disponibles
+    - `totalAvailableHours` (Number): Total de horas disponibles (con 2 decimales)
+    - `details` (Array): Desglose de cada clase en reschedule
+  - `rescheduleClasses` (Object): Clases con reschedule = 1 para este enrollment:
+    - `total` (Number): Total de clases con reschedule
+    - `details` (Array): Desglose de cada clase
+  - `viewedClasses` (Object): Clases vistas para este enrollment:
+    - `total` (Number): Total de clases vistas
+    - `details` (Array): Desglose de cada clase vista
+  - `pendingClasses` (Object): Clases pendientes para este enrollment:
+    - `total` (Number): Total de clases pendientes
+    - `details` (Array): Desglose de cada clase pendiente
+  - `lostClasses` (Object, solo admin): Clases perdidas para este enrollment:
+    - `total` (Number): Total de clases perdidas
+    - `details` (Array): Desglose de cada clase perdida
+  - `noShowClasses` (Object, solo admin y professor): Clases no show para este enrollment:
+    - `total` (Number): Total de clases no show
+    - `details` (Array): Desglose de cada clase no show
+
+**⚠️ IMPORTANTE - Control de Acceso para enrollmentStatistics:**
+- **Admin y Student**: Ven estadísticas de **todos** los enrollments activos del estudiante
+- **Professor**: Ve estadísticas **solo** de los enrollments donde el profesor está asignado (`professorId` coincide con el ID del profesor autenticado)
+- Este filtro se aplica automáticamente basándose en el rol del usuario en el token JWT
 
 **incomeHistory** (Solo visible para roles `student` y `admin`):
 - Array de objetos agrupados por enrollment, cada uno contiene:
@@ -886,7 +1023,340 @@ getStudentInfo('64f8a1b2c3d4e5f6a7b8c9d0');
 
 ---
 
-### **4. Obtener Estudiante por ID**
+### **4. Obtener Información Detallada de un Enrollment Específico**
+
+#### **GET** `/api/students/:studentId/enrollment/:enrollmentId`
+
+Obtiene información detallada de un enrollment específico y todas sus clases asociadas. Este endpoint proporciona información más específica que el endpoint general `studentInfo`, enfocándose en un enrollment individual.
+
+**⚠️ IMPORTANTE - Control de Acceso:**
+- **Admin y Student**: Pueden ver cualquier enrollment del estudiante especificado
+- **Professor**: Solo puede ver enrollments donde el profesor está asignado (`professorId` coincide con el ID del profesor autenticado)
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `studentId` (String, requerido): ID del estudiante (ObjectId de MongoDB)
+- `enrollmentId` (String, requerido): ID del enrollment (ObjectId de MongoDB)
+
+#### **Request Body**
+No requiere body.
+
+#### **Response Exitosa (200 OK)**
+
+**Respuesta para todos los roles:**
+```json
+{
+  "message": "Información detallada del enrollment obtenida exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d3",
+    "planId": {
+      "_id": "6928fce9c1bb37a1d4b9ff07",
+      "name": "Plan Mensual Básico",
+      "weeklyClasses": 2,
+      "pricing": {
+        "single": 100,
+        "couple": 180,
+        "group": 250
+      },
+      "description": "Plan básico mensual"
+    },
+    "professorId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+      "name": "Profesor Ejemplo",
+      "email": "profesor@example.com",
+      "phone": "+584121234567",
+      "occupation": "Profesor de Inglés"
+    },
+    "studentIds": [
+      {
+        "studentId": {
+          "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+          "name": "Juan Pérez",
+          "studentCode": "BES-0001",
+          "email": "juan.perez@example.com",
+          "phone": "+584121234567"
+        },
+        "amount": 500,
+        "preferences": "Preferencia de horario matutino",
+        "firstTimeLearningLanguage": "No",
+        "previousExperience": "Básico",
+        "goals": "Mejorar conversación",
+        "dailyLearningTime": "1 hora",
+        "learningType": "Visual",
+        "idealClassType": "Conversacional",
+        "learningDifficulties": "Pronunciación",
+        "languageLevel": "Intermedio"
+      }
+    ],
+    "enrollmentType": "single",
+    "classCalculationType": 1,
+    "alias": "Enrollment de Juan",
+    "language": "English",
+    "scheduledDays": [
+      {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d5",
+        "day": "Lunes"
+      },
+      {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
+        "day": "Miércoles"
+      }
+    ],
+    "purchaseDate": "2024-01-15T10:30:00.000Z",
+    "startDate": "2024-01-22T00:00:00.000Z",
+    "endDate": "2024-02-21T23:59:59.999Z",
+    "monthlyClasses": 8,
+    "pricePerStudent": 500,
+    "totalAmount": 500,
+    "available_balance": 400,
+    "rescheduleHours": 2,
+    "substituteProfessor": null,
+    "cancellationPaymentsEnabled": false,
+    "graceDays": 0,
+    "latePaymentPenalty": 0,
+    "extendedGraceDays": 0,
+    "status": 1,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  },
+  "classes": [
+    {
+      "_id": "692a1f4a5fa3f53b825ee53f",
+      "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d3",
+      "classDate": "2024-01-22",
+      "classTime": "10:00",
+      "classType": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d7",
+        "name": "Clase Regular"
+      },
+      "contentType": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d8",
+        "name": "Gramática"
+      },
+      "classViewed": 1,
+      "reschedule": 0,
+      "minutesClassDefault": 60,
+      "minutesViewed": 60,
+      "vocabularyContent": "Vocabulario de la clase",
+      "originalClassId": null,
+      "evaluations": [],
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-22T10:30:00.000Z"
+    }
+  ],
+  "statistics": {
+    "totalClasses": 8,
+    "rescheduleTime": {
+      "totalAvailableMinutes": 120,
+      "totalAvailableHours": 2.00,
+      "details": [
+        {
+          "classRegistryId": "692a1f4a5fa3f53b825ee53f",
+          "classDate": "2024-01-22",
+          "classTime": "10:00",
+          "minutesClassDefault": 60,
+          "minutesViewed": 0,
+          "availableMinutes": 60,
+          "availableHours": "1.00"
+        }
+      ]
+    },
+    "rescheduleClasses": {
+      "total": 2,
+      "details": [
+        {
+          "classRegistryId": "692a1f4a5fa3f53b825ee53f",
+          "classDate": "2024-01-22",
+          "classTime": "10:00",
+          "reschedule": 1
+        }
+      ]
+    },
+    "viewedClasses": {
+      "total": 5,
+      "details": [
+        {
+          "classRegistryId": "692a1f4a5fa3f53b825ee541",
+          "classDate": "2024-01-20",
+          "classTime": "14:00"
+        }
+      ]
+    },
+    "pendingClasses": {
+      "total": 3,
+      "details": [
+        {
+          "classRegistryId": "692a1f4a5fa3f53b825ee543",
+          "classDate": "2024-01-25",
+          "classTime": "16:00"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Respuesta adicional para rol ADMIN:**
+```json
+{
+  // ... todos los campos anteriores ...
+  "statistics": {
+    // ... campos anteriores ...
+    "lostClasses": {
+      "total": 1,
+      "details": [
+        {
+          "classRegistryId": "692a1f4a5fa3f53b825ee545",
+          "classDate": "2024-01-25",
+          "classTime": "18:00",
+          "enrollmentEndDate": "2024-01-24T23:59:59.999Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Respuesta adicional para roles ADMIN y PROFESSOR:**
+```json
+{
+  // ... todos los campos anteriores ...
+  "statistics": {
+    // ... campos anteriores ...
+    "noShowClasses": {
+      "total": 1,
+      "details": [
+        {
+          "classRegistryId": "692a1f4a5fa3f53b825ee547",
+          "classDate": "2024-01-23",
+          "classTime": "12:00"
+        }
+      ]
+    }
+  }
+}
+```
+
+#### **Campos de la Response**
+
+**enrollment:**
+- Objeto completo con toda la información del enrollment, incluyendo:
+  - `planId`: Información completa del plan
+  - `professorId`: Información completa del profesor
+  - `studentIds`: Array con información detallada de todos los estudiantes en el enrollment
+  - Todos los campos del modelo Enrollment
+
+**classes:**
+- Array de todas las clases del enrollment, cada una con:
+  - `_id`: ID del registro de clase
+  - `enrollmentId`: ID del enrollment
+  - `classDate`: Fecha de la clase
+  - `classTime`: Hora de la clase
+  - `classType`: Tipo de clase (populado)
+  - `contentType`: Tipo de contenido (populado)
+  - `classViewed`: Estado de visualización (0 = pendiente, 1 = vista, 3 = no show)
+  - `reschedule`: Si la clase está en reschedule (1) o no (0)
+  - `minutesClassDefault`: Duración por defecto en minutos
+  - `minutesViewed`: Minutos ya vistos
+  - `vocabularyContent`: Contenido de vocabulario
+  - `originalClassId`: ID de la clase original (si es reschedule)
+  - `evaluations`: Array de evaluaciones asociadas (populado)
+  - `createdAt` y `updatedAt`: Fechas de creación y actualización
+
+**statistics:**
+- Objeto con estadísticas del enrollment:
+  - `totalClasses`: Total de clases del enrollment
+  - `rescheduleTime`: Tiempo disponible de reschedules (minutos, horas y detalles)
+  - `rescheduleClasses`: Clases con reschedule = 1
+  - `viewedClasses`: Clases vistas (classViewed = 1)
+  - `pendingClasses`: Clases pendientes (classViewed = 0)
+  - `lostClasses` (solo admin): Clases perdidas
+  - `noShowClasses` (solo admin y professor): Clases no show
+
+#### **Control de Acceso por Rol**
+
+**Todos los roles (admin, professor, student):**
+- `enrollment`: Información completa del enrollment
+- `classes`: Lista completa de clases del enrollment
+- `statistics`: Estadísticas básicas (rescheduleTime, rescheduleClasses, viewedClasses, pendingClasses)
+
+**Solo Admin:**
+- `statistics.lostClasses`: Clases perdidas
+
+**Solo Admin y Professor:**
+- `statistics.noShowClasses`: Clases no show
+
+**⚠️ IMPORTANTE - Filtro de Seguridad para Profesores:**
+- Los profesores solo pueden ver enrollments donde están asignados como profesor (`professorId` coincide con el ID del profesor autenticado)
+- Si un profesor intenta acceder a un enrollment donde no está asignado, recibirá un error 404
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- ID de estudiante o enrollment inválido
+
+**404 Not Found**
+- Estudiante no encontrado
+- Enrollment no encontrado o no tienes permisos para acceder a este enrollment
+- El estudiante no está asociado a este enrollment
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X GET http://localhost:3000/api/students/64f8a1b2c3d4e5f6a7b8c9d0/enrollment/64f8a1b2c3d4e5f6a7b8c9d3 \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const getEnrollmentDetails = async (studentId, enrollmentId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/students/${studentId}/enrollment/${enrollmentId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Enrollment:', data.enrollment);
+      console.log('Total de clases:', data.statistics.totalClasses);
+      console.log('Clases vistas:', data.statistics.viewedClasses.total);
+      console.log('Clases pendientes:', data.statistics.pendingClasses.total);
+      
+      // Mostrar información de cada clase
+      data.classes.forEach(classRecord => {
+        console.log(`Clase ${classRecord.classDate} ${classRecord.classTime}:`, {
+          viewed: classRecord.classViewed === 1,
+          reschedule: classRecord.reschedule === 1,
+          evaluations: classRecord.evaluations.length
+        });
+      });
+    } else {
+      console.error('Error:', data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso
+getEnrollmentDetails('64f8a1b2c3d4e5f6a7b8c9d0', '64f8a1b2c3d4e5f6a7b8c9d3');
+```
+
+---
+
+### **5. Obtener Estudiante por ID**
 
 #### **GET** `/api/students/:id`
 
@@ -1451,6 +1921,7 @@ El sistema utiliza un sistema de roles basado en la colección `Role`. Cada estu
 
 **Admin, Student y Professor:**
 - `GET /api/students/info/:id` - Obtener información del saldo del estudiante
+- `GET /api/students/:studentId/enrollment/:enrollmentId` - Obtener información detallada de un enrollment específico y todas sus clases
 - `GET /api/students/:id` - Obtener estudiante por ID
 
 ### **Autenticación y Autorización**
