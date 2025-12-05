@@ -8,8 +8,8 @@ const verifyRole = require('../middlewares/verifyRole');
 // Rutas protegidas con JWT y validación de roles
 
 // POST /api/class-objectives - Crea un nuevo objetivo de clase
-// Acceso: admin
-router.post('/', verifyToken, verifyRole('admin'), classObjectiveCtrl.create);
+// Acceso: admin, professor
+router.post('/', verifyToken, verifyRole('admin', 'professor'), classObjectiveCtrl.create);
 
 // GET /api/class-objectives - Lista todos los objetivos de clase (con información básica)
 // Acceso: admin, professor

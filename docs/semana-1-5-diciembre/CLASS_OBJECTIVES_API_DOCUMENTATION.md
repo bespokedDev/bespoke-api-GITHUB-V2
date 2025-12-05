@@ -14,7 +14,7 @@ Cada endpoint tiene restricciones de acceso basadas en roles:
 
 | Endpoint | Método | Roles Permitidos |
 |----------|--------|------------------|
-| `/api/class-objectives` | `POST` | `admin` |
+| `/api/class-objectives` | `POST` | `admin`, `professor` |
 | `/api/class-objectives` | `GET` | `admin`, `professor` |
 | `/api/class-objectives/:id` | `GET` | `admin`, `professor` |
 | `/api/class-objectives/:id` | `PUT` | `admin`, `professor` |
@@ -58,7 +58,7 @@ const headers = {
 ### **📋 Resumen de Endpoints**
 | Método | Ruta | Descripción | Roles Permitidos |
 |--------|------|-------------|------------------|
-| `POST` | `/api/class-objectives` | Crear nuevo objetivo de clase | `admin` |
+| `POST` | `/api/class-objectives` | Crear nuevo objetivo de clase | `admin`, `professor` |
 | `GET` | `/api/class-objectives` | Listar objetivos de clase (con información básica) | `admin`, `professor` |
 | `GET` | `/api/class-objectives/:id` | Obtener objetivo de clase por ID (con detalle completo) | `admin`, `professor` |
 | `PUT` | `/api/class-objectives/:id` | Actualizar objetivo de clase | `admin`, `professor` |
@@ -120,7 +120,7 @@ const headers = {
 
 Crea un nuevo objetivo de clase asociado a un enrollment.
 
-**Roles permitidos:** `admin`
+**Roles permitidos:** `admin`, `professor`
 
 #### **Headers**
 ```javascript
