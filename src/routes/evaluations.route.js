@@ -11,6 +11,10 @@ const verifyRole = require('../middlewares/verifyRole');
 // Acceso: Solo profesor
 router.post('/', verifyToken, verifyRole('professor'), evaluationCtrl.create);
 
+// GET /api/evaluations/enrollment/:enrollmentId - Lista todas las evaluaciones de un enrollment específico
+// Acceso: Profesor, admin y estudiante
+router.get('/enrollment/:enrollmentId', verifyToken, verifyRole('admin', 'professor', 'student'), evaluationCtrl.listByEnrollment);
+
 // GET /api/evaluations/class/:classRegistryId - Lista todas las evaluaciones de un registro de clase
 // Acceso: Profesor, admin y estudiante
 router.get('/class/:classRegistryId', verifyToken, verifyRole('admin', 'professor', 'student'), evaluationCtrl.listByClass);

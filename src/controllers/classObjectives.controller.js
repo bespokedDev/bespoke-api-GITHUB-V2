@@ -92,7 +92,7 @@ classObjectiveCtrl.create = async (req, res) => {
 classObjectiveCtrl.list = async (req, res) => {
     try {
         // Opcional: filtrar por enrollmentId si se proporciona como query parameter
-        const { enrollmentId } = req.query;
+        const { enrollmentId, startDate, endDate } = req.query;
         const filter = {};
         
         if (enrollmentId) {
@@ -100,6 +100,34 @@ classObjectiveCtrl.list = async (req, res) => {
                 return res.status(400).json({ message: 'ID de enrollment inválido.' });
             }
             filter.enrollmentId = enrollmentId;
+        }
+
+        // Filtrar por periodo de fechas si se proporcionan
+        if (startDate || endDate) {
+            filter.objectiveDate = {};
+            
+            // Validar formato de fecha DD/MM/YYYY
+            const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+            
+            if (startDate) {
+                if (!dateRegex.test(startDate)) {
+                    return res.status(400).json({ message: 'La fecha de inicio debe estar en formato DD/MM/YYYY (ej: 31/12/2025)' });
+                }
+                // Convertir DD/MM/YYYY a Date
+                const [day, month, year] = startDate.split('/');
+                const startDateObj = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+                filter.objectiveDate.$gte = startDateObj;
+            }
+            
+            if (endDate) {
+                if (!dateRegex.test(endDate)) {
+                    return res.status(400).json({ message: 'La fecha de fin debe estar en formato DD/MM/YYYY (ej: 31/12/2025)' });
+                }
+                // Convertir DD/MM/YYYY a Date
+                const [day, month, year] = endDate.split('/');
+                const endDateObj = new Date(`${year}-${month}-${day}T23:59:59.999Z`);
+                filter.objectiveDate.$lte = endDateObj;
+            }
         }
 
         // Solo mostrar objetivos activos por defecto (a menos que se especifique lo contrario)

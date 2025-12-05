@@ -114,7 +114,7 @@ const headers = {
 }
 ```
 
-**Nota sobre `evaluations`:** El campo `evaluations` se populan automáticamente con todos sus detalles cuando se obtiene el registro por ID mediante `GET /api/class-registry/:id`. En el listado (`GET /api/class-registry`), este campo aparece como un array vacío `[]` o con los ObjectIds sin popular.
+**Nota sobre `evaluations`:** El campo `evaluations` se populan automáticamente con todos sus detalles tanto en el endpoint de detalle (`GET /api/class-registry/:id`) como en el listado (`GET /api/class-registry`). En ambos casos, se incluyen todas las evaluaciones asociadas a cada clase con todos sus campos completos.
 
 ### **Campos del Modelo**
 
@@ -219,6 +219,22 @@ No requiere body.
       "minutesClassDefault": 60,
       "originalClassId": null,
       "vocabularyContent": null,
+      "evaluations": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee53f",
+          "classRegistryId": "64f8a1b2c3d4e5f6a7b8c9d0",
+          "fecha": "07/01/2025",
+          "temasEvaluados": "Presente simple, vocabulario básico",
+          "skillEvaluada": "Speaking",
+          "linkMaterial": "https://example.com/material.pdf",
+          "capturePrueba": "data:image/png;base64,iVBORw0KGgoAAAANS...",
+          "puntuacion": "85/100",
+          "comentario": "El estudiante mostró buen progreso en la pronunciación",
+          "isActive": true,
+          "createdAt": "2025-01-07T10:30:00.000Z",
+          "updatedAt": "2025-01-07T10:30:00.000Z"
+        }
+      ],
       "createdAt": "2024-01-15T10:30:00.000Z",
       "updatedAt": "2024-01-22T15:45:00.000Z"
     }
@@ -230,9 +246,9 @@ No requiere body.
 #### **Notas Importantes**
 - Los registros se ordenan por fecha de clase ascendente (más cercana primero, para facilitar listas en el frontend)
 - Los campos `classType` y `contentType` se populan automáticamente con sus nombres
+- El campo `evaluations` se populan automáticamente con todos sus detalles (incluyendo todas las evaluaciones asociadas a cada clase)
 - Puedes filtrar por `enrollmentId` usando query parameters
 - `classDate` contiene solo el día (sin hora), la hora se maneja en `classTime`
-- El array `evaluations` se incluye solo en el endpoint de detalle (`GET /api/class-registry/:id`), no en el listado
 
 #### **Errores Posibles**
 

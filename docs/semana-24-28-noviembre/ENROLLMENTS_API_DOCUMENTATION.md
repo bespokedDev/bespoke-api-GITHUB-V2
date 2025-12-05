@@ -166,7 +166,8 @@ const headers = {
 - `status` (number): Estado de la matrícula
   - `1` = Activo
   - `2` = Inactivo
-  - `0` = Disuelto
+  - `0` = Disuelto (disolve)
+  - `3` = En pausa (temporalmente suspendido)
 - `createdAt` (date): Fecha de creación (generado automáticamente)
 - `updatedAt` (date): Fecha de última actualización (generado automáticamente)
 
@@ -1253,7 +1254,7 @@ PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/activate
 ### **9. Desactivar Enrollment**
 - **Método**: `PATCH`
 - **Ruta**: `/api/enrollments/:id/deactivate`
-- **Descripción**: Desactiva una matrícula (establece `status` a `0`)
+- **Descripción**: Desactiva una matrícula (establece `status` a `2` = inactivo)
 
 #### **URL Completa**
 ```
@@ -1276,7 +1277,7 @@ PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/deactivate
   "message": "Matrícula desactivada exitosamente",
   "enrollment": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "status": 0,
+    "status": 2,
     ...
   }
 }

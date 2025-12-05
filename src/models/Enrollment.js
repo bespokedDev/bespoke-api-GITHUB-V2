@@ -218,8 +218,13 @@ const EnrollmentSchema = new mongoose.Schema({
     },
     status: {
         type: Number,
-        enum: [1, 0, 2], // 1 para activo, 2 para inactivo y 0 para disolve
+        enum: [1, 0, 2, 3], // 1 = activo, 2 = inactivo, 0 = disolve, 3 = en pausa
         default: 1
+        // Estados del enrollment:
+        // 1 = Activo (por defecto)
+        // 2 = Inactivo (desactivado)
+        // 0 = Disuelto (disolve)
+        // 3 = En pausa (temporalmente suspendido)
     }
 }, {
     timestamps: true

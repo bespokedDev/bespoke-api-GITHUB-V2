@@ -90,6 +90,80 @@ evaluationCtrl.create = async (req, res) => {
 };
 
 /**
+ * @route GET /api/evaluations/enrollment/:enrollmentId
+ * @description Lista todas las evaluaciones de un enrollment específico
+ * @access Private (Requiere JWT) - Profesor, admin y estudiante
+ */
+evaluationCtrl.listByEnrollment = async (req, res) => {
+    try {
+        const { enrollmentId } = req.params;
+
+        if (!enrollmentId || !mongoose.Types.ObjectId.isValid(enrollmentId)) {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+
+        const enrollmentObjectId = new mongoose.Types.ObjectId(enrollmentId);
+
+        // Verificar que el enrollment existe
+        const enrollment = await Enrollment.findById(enrollmentObjectId);
+        if (!enrollment) {
+            return res.status(404).json({ message: 'Enrollment no encontrado' });
+        }
+
+        // Si el usuario es profesor, verificar que el enrollment pertenece al profesor
+        const userRole = req.user?.role;
+        const userId = req.user?.id;
+        
+        if (userRole === 'professor' && userId) {
+            const professorObjectId = new mongoose.Types.ObjectId(userId);
+            
+            // Verificar que el profesor está asignado a este enrollment
+            if (enrollment.professorId.toString() !== professorObjectId.toString()) {
+                return res.status(403).json({ message: 'No tienes permiso para ver evaluaciones de este enrollment' });
+            }
+        }
+
+        // Buscar todos los registros de clase del enrollment
+        const classRegistries = await ClassRegistry.find({
+            enrollmentId: enrollmentObjectId
+        }).select('_id').lean();
+
+        const classRegistryIds = classRegistries.map(cr => cr._id);
+
+        if (classRegistryIds.length === 0) {
+            return res.status(200).json({
+                message: 'Evaluaciones obtenidas exitosamente',
+                enrollmentId: enrollmentId,
+                total: 0,
+                evaluations: []
+            });
+        }
+
+        // Buscar todas las evaluaciones activas de estos registros de clase
+        const evaluations = await Evaluation.find({
+            classRegistryId: { $in: classRegistryIds },
+            isActive: { $ne: false } // Incluir evaluaciones activas o sin campo isActive
+        })
+        .populate('classRegistryId', 'classDate classTime enrollmentId')
+        .sort({ fecha: -1, createdAt: -1 }) // Ordenar por fecha más reciente primero
+        .lean();
+
+        res.status(200).json({
+            message: 'Evaluaciones obtenidas exitosamente',
+            enrollmentId: enrollmentId,
+            total: evaluations.length,
+            evaluations: evaluations
+        });
+    } catch (error) {
+        console.error('Error al listar evaluaciones por enrollment:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de enrollment inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al listar evaluaciones por enrollment', error: error.message });
+    }
+};
+
+/**
  * @route GET /api/evaluations/class/:classRegistryId
  * @description Lista todas las evaluaciones de un registro de clase
  * @access Private (Requiere JWT) - Profesor, admin y estudiante

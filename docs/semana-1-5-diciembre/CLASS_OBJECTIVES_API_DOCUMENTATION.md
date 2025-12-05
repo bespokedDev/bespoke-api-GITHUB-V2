@@ -262,7 +262,14 @@ Obtiene una lista de objetivos de clase con información básica. Permite filtra
 
 #### **Query Parameters (Opcionales)**
 - `enrollmentId` (String): Filtrar objetivos por ID de enrollment
+- `startDate` (String): Fecha de inicio del periodo en formato `DD/MM/YYYY` (ej: `31/12/2025`). Filtra objetivos con `objectiveDate` mayor o igual a esta fecha
+- `endDate` (String): Fecha de fin del periodo en formato `DD/MM/YYYY` (ej: `31/12/2025`). Filtra objetivos con `objectiveDate` menor o igual a esta fecha
 - `includeInactive` (String): Si es `"true"`, incluye objetivos anulados. Por defecto solo muestra activos
+
+**Nota sobre filtros de fecha:**
+- Puedes usar `startDate` solo, `endDate` solo, o ambos para definir un rango de fechas
+- El formato de fecha debe ser estrictamente `DD/MM/YYYY` (ej: `31/12/2025` para 31 de diciembre de 2025)
+- Si el formato es incorrecto, recibirás un error 400
 
 #### **Request Body**
 No requiere body.
@@ -301,12 +308,14 @@ No requiere body.
 - Por defecto, solo se muestran objetivos activos (`isActive: true`)
 - Los objetivos se ordenan por fecha descendente (más recientes primero)
 - Puedes filtrar por `enrollmentId` usando query parameters
+- Puedes filtrar por periodo de fechas usando `startDate` y/o `endDate` en formato `DD/MM/YYYY`
 - Para incluir objetivos anulados, usa `?includeInactive=true`
 
 #### **Errores Posibles**
 
 **400 Bad Request**
 - ID de enrollment inválido (si se proporciona en query)
+- Formato de fecha incorrecto para `startDate` o `endDate` (debe ser `DD/MM/YYYY`)
 
 **500 Internal Server Error**
 - Error interno del servidor
@@ -321,6 +330,14 @@ curl -X GET http://localhost:3000/api/class-objectives \
 curl -X GET "http://localhost:3000/api/class-objectives?enrollmentId=692a1f4a5fa3f53b825ee53f" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
+# Filtrar por periodo de fechas (desde 01/01/2025 hasta 31/12/2025)
+curl -X GET "http://localhost:3000/api/class-objectives?startDate=01/01/2025&endDate=31/12/2025" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+# Filtrar por enrollmentId y periodo de fechas
+curl -X GET "http://localhost:3000/api/class-objectives?enrollmentId=692a1f4a5fa3f53b825ee53f&startDate=01/01/2025&endDate=31/12/2025" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
 # Incluir objetivos anulados
 curl -X GET "http://localhost:3000/api/class-objectives?includeInactive=true" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -328,13 +345,19 @@ curl -X GET "http://localhost:3000/api/class-objectives?includeInactive=true" \
 
 #### **Ejemplo con JavaScript (Fetch)**
 ```javascript
-const listClassObjectives = async (enrollmentId = null, includeInactive = false) => {
+const listClassObjectives = async (enrollmentId = null, startDate = null, endDate = null, includeInactive = false) => {
   try {
     let url = 'http://localhost:3000/api/class-objectives?';
     const params = new URLSearchParams();
     
     if (enrollmentId) {
       params.append('enrollmentId', enrollmentId);
+    }
+    if (startDate) {
+      params.append('startDate', startDate); // Formato: DD/MM/YYYY
+    }
+    if (endDate) {
+      params.append('endDate', endDate); // Formato: DD/MM/YYYY
     }
     if (includeInactive) {
       params.append('includeInactive', 'true');
@@ -364,6 +387,8 @@ const listClassObjectives = async (enrollmentId = null, includeInactive = false)
 
 // Uso
 listClassObjectives('692a1f4a5fa3f53b825ee53f');
+// O con filtro de fechas
+listClassObjectives('692a1f4a5fa3f53b825ee53f', '01/01/2025', '31/12/2025');
 ```
 
 ---

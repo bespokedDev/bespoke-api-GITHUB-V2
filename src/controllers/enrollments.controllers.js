@@ -606,7 +606,7 @@ enrollmentCtrl.update = async (req, res) => {
 
 /**
  * @route PATCH /api/enrollments/:id/deactivate
- * @description Desactiva una matrícula (establece isActive a false y status a "No Active")
+ * @description Desactiva una matrícula (establece status a 2 = inactivo)
  * @access Private (Requiere JWT)
  */
 enrollmentCtrl.deactivate = async (req, res) => {
@@ -615,7 +615,7 @@ enrollmentCtrl.deactivate = async (req, res) => {
         
         const deactivatedEnrollment = await Enrollment.findByIdAndUpdate(
             req.params.id,
-            { status: 0},
+            { status: 2}, // 2 = inactivo (no 0 que es para disolve)
             { new: true }
         );
         if (!deactivatedEnrollment) {

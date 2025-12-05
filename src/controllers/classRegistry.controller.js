@@ -28,6 +28,7 @@ classRegistryCtrl.list = async (req, res) => {
             .populate('enrollmentId', 'alias language enrollmentType')
             .populate('classType', 'name')
             .populate('contentType', 'name')
+            .populate('evaluations') // Popula todas las evaluaciones asociadas a cada clase
             .sort({ classDate: 1, createdAt: 1 }) // Ordenar por fecha ascendente (más cercana primero)
             .lean();
 

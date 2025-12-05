@@ -30,6 +30,7 @@ const headers = {
 | Método | Ruta | Descripción | Roles Permitidos |
 |--------|------|-------------|------------------|
 | `POST` | `/api/evaluations` | Crear nueva evaluación | `professor` |
+| `GET` | `/api/evaluations/enrollment/:enrollmentId` | Listar evaluaciones por enrollment | `admin`, `professor`, `student` |
 | `GET` | `/api/evaluations/class/:classRegistryId` | Listar evaluaciones por registro de clase | `admin`, `professor`, `student` |
 | `GET` | `/api/evaluations/:id` | Obtener evaluación por ID | `admin`, `professor`, `student` |
 | `PUT` | `/api/evaluations/:id` | Actualizar evaluación | `admin`, `professor` |
@@ -222,7 +223,139 @@ createEvaluation({
 
 ---
 
-### **2. Listar Evaluaciones por Registro de Clase**
+### **2. Listar Evaluaciones por Enrollment**
+
+#### **GET** `/api/evaluations/enrollment/:enrollmentId`
+
+Obtiene todas las evaluaciones activas de un enrollment específico. Retorna todas las evaluaciones de todas las clases del enrollment.
+
+**⚠️ IMPORTANTE - Control de Acceso:**
+- **Admin y Student**: Ven todas las evaluaciones del enrollment
+- **Professor**: Ve solo las evaluaciones de enrollments donde está asignado
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `enrollmentId` (String, requerido): ID del enrollment (ObjectId de MongoDB)
+
+#### **Request Body**
+No requiere body.
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Evaluaciones obtenidas exitosamente",
+  "enrollmentId": "692a1f4a5fa3f53b825ee53f",
+  "total": 3,
+  "evaluations": [
+    {
+      "_id": "692a1f4a5fa3f53b825ee53f",
+      "classRegistryId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+        "classDate": "2025-01-07",
+        "classTime": "10:00",
+        "enrollmentId": "692a1f4a5fa3f53b825ee53f"
+      },
+      "fecha": "07/01/2025",
+      "temasEvaluados": "Presente simple, vocabulario básico",
+      "skillEvaluada": "Speaking",
+      "linkMaterial": "https://example.com/material.pdf",
+      "capturePrueba": "data:image/png;base64,iVBORw0KGgoAAAANS...",
+      "puntuacion": "85/100",
+      "comentario": "El estudiante mostró buen progreso en la pronunciación",
+      "isActive": true,
+      "createdAt": "2025-01-07T10:30:00.000Z",
+      "updatedAt": "2025-01-07T10:30:00.000Z"
+    },
+    {
+      "_id": "692a1f4a5fa3f53b825ee541",
+      "classRegistryId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "classDate": "2025-01-14",
+        "classTime": "10:00",
+        "enrollmentId": "692a1f4a5fa3f53b825ee53f"
+      },
+      "fecha": "14/01/2025",
+      "temasEvaluados": "Pasado simple",
+      "skillEvaluada": "Writing",
+      "linkMaterial": null,
+      "capturePrueba": null,
+      "puntuacion": "90/100",
+      "comentario": "Excelente escritura",
+      "isActive": true,
+      "createdAt": "2025-01-14T10:30:00.000Z",
+      "updatedAt": "2025-01-14T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### **Campos de la Response**
+
+- `message` (String): Mensaje de confirmación
+- `enrollmentId` (String): ID del enrollment consultado
+- `total` (Number): Total de evaluaciones activas encontradas
+- `evaluations` (Array): Array de objetos con las evaluaciones activas, ordenadas por fecha más reciente primero. Cada evaluación incluye información populada del `classRegistryId`
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+- ID de enrollment inválido
+
+**403 Forbidden**
+- No tienes permiso para ver evaluaciones de este enrollment (profesor intentando ver evaluaciones de enrollment de otro profesor)
+
+**404 Not Found**
+- Enrollment no encontrado
+
+**500 Internal Server Error**
+- Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X GET http://localhost:3000/api/evaluations/enrollment/692a1f4a5fa3f53b825ee53f \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const getEvaluationsByEnrollment = async (enrollmentId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/evaluations/enrollment/${enrollmentId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Total de evaluaciones:', data.total);
+      console.log('Evaluaciones:', data.evaluations);
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+getEvaluationsByEnrollment('692a1f4a5fa3f53b825ee53f');
+```
+
+---
+
+### **3. Listar Evaluaciones por Registro de Clase**
 
 #### **GET** `/api/evaluations/class/:classRegistryId`
 
@@ -345,7 +478,7 @@ getEvaluationsByClass('692a1f4a5fa3f53b825ee540');
 
 ---
 
-### **3. Obtener Evaluación por ID**
+### **4. Obtener Evaluación por ID**
 
 #### **GET** `/api/evaluations/:id`
 
@@ -452,7 +585,7 @@ getEvaluationById('692a1f4a5fa3f53b825ee53f');
 
 ---
 
-### **4. Actualizar Evaluación**
+### **5. Actualizar Evaluación**
 
 #### **PUT** `/api/evaluations/:id`
 
@@ -573,7 +706,7 @@ updateEvaluation('692a1f4a5fa3f53b825ee53f', {
 
 ---
 
-### **5. Anular Evaluación**
+### **6. Anular Evaluación**
 
 #### **PATCH** `/api/evaluations/:id/anular`
 
@@ -670,7 +803,7 @@ anularEvaluation('692a1f4a5fa3f53b825ee53f');
 
 ---
 
-### **6. Activar Evaluación**
+### **7. Activar Evaluación**
 
 #### **PATCH** `/api/evaluations/:id/activate`
 
@@ -774,6 +907,7 @@ activateEvaluation('692a1f4a5fa3f53b825ee53f');
 | Endpoint | Admin | Professor | Student |
 |----------|-------|-----------|---------|
 | `POST /api/evaluations` | ❌ | ✅ | ❌ |
+| `GET /api/evaluations/enrollment/:enrollmentId` | ✅ | ✅* | ✅ |
 | `GET /api/evaluations/class/:classRegistryId` | ✅ | ✅* | ✅ |
 | `GET /api/evaluations/:id` | ✅ | ✅* | ✅ |
 | `PUT /api/evaluations/:id` | ✅ | ✅* | ❌ |
