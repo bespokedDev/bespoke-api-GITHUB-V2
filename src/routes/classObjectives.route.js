@@ -20,12 +20,12 @@ router.get('/', verifyToken, verifyRole('admin', 'professor'), classObjectiveCtr
 router.get('/:id', verifyToken, verifyRole('admin', 'professor'), classObjectiveCtrl.getById);
 
 // PUT /api/class-objectives/:id - Actualiza los datos de un objetivo de clase
-// Acceso: admin
-router.put('/:id', verifyToken, verifyRole('admin'), classObjectiveCtrl.update);
+// Acceso: admin, professor
+router.put('/:id', verifyToken, verifyRole('admin', 'professor'), classObjectiveCtrl.update);
 
 // PATCH /api/class-objectives/:id/anular - Anula un objetivo de clase
-// Acceso: admin
-router.patch('/:id/anular', verifyToken, verifyRole('admin'), classObjectiveCtrl.anular);
+// Acceso: admin, professor
+router.patch('/:id/anular', verifyToken, verifyRole('admin', 'professor'), classObjectiveCtrl.anular);
 
 module.exports = router;
 

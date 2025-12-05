@@ -17,8 +17,8 @@ Cada endpoint tiene restricciones de acceso basadas en roles:
 | `/api/class-objectives` | `POST` | `admin` |
 | `/api/class-objectives` | `GET` | `admin`, `professor` |
 | `/api/class-objectives/:id` | `GET` | `admin`, `professor` |
-| `/api/class-objectives/:id` | `PUT` | `admin` |
-| `/api/class-objectives/:id/anular` | `PATCH` | `admin` |
+| `/api/class-objectives/:id` | `PUT` | `admin`, `professor` |
+| `/api/class-objectives/:id/anular` | `PATCH` | `admin`, `professor` |
 
 ### **Ejemplo de Headers**
 ```javascript
@@ -61,8 +61,8 @@ const headers = {
 | `POST` | `/api/class-objectives` | Crear nuevo objetivo de clase | `admin` |
 | `GET` | `/api/class-objectives` | Listar objetivos de clase (con información básica) | `admin`, `professor` |
 | `GET` | `/api/class-objectives/:id` | Obtener objetivo de clase por ID (con detalle completo) | `admin`, `professor` |
-| `PUT` | `/api/class-objectives/:id` | Actualizar objetivo de clase | `admin` |
-| `PATCH` | `/api/class-objectives/:id/anular` | Anular objetivo de clase | `admin` |
+| `PUT` | `/api/class-objectives/:id` | Actualizar objetivo de clase | `admin`, `professor` |
+| `PATCH` | `/api/class-objectives/:id/anular` | Anular objetivo de clase | `admin`, `professor` |
 
 ---
 
@@ -493,7 +493,7 @@ const getClassObjectiveById = async (objectiveId) => {
 
 Actualiza los datos de un objetivo de clase existente. Puedes enviar solo los campos que deseas actualizar.
 
-**Roles permitidos:** `admin`
+**Roles permitidos:** `admin`, `professor`
 
 #### **Headers**
 ```javascript
@@ -622,7 +622,7 @@ updateClassObjective('64f8a1b2c3d4e5f6a7b8c9d0', {
 
 Anula un objetivo de clase estableciendo `isActive` a `false`. Un objetivo anulado no se elimina, solo se marca como inactivo.
 
-**Roles permitidos:** `admin`
+**Roles permitidos:** `admin`, `professor`
 
 #### **Headers**
 ```javascript
