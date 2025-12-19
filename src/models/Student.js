@@ -91,6 +91,59 @@ const StudentSchema = new mongoose.Schema({
         enum: [1, 0], //1 para activo, 0 para inactivo
         default: 1
     },
+    kid: { // Tipo de cuenta de estudiante
+        type: Number,
+        enum: [0, 1], // 0 = cuenta de estudiante normal, 1 = cuenta de kid
+        required: true
+        // Campo obligatorio que indica si es una cuenta de estudiante normal (0) o de kid (1)
+    },
+    dislike: {
+        type: String,
+        trim: true,
+        default: null
+        // cosas que no le gustan
+    },
+    learningStyle: {
+        type: String,
+        trim: true,
+        default: null
+        // tipo de aprendizaje
+    },
+    academicPerformance: {
+        type: String,
+        trim: true,
+        default: null
+        // como son sus calificaciones y su desenvolvimiento académico
+    },
+    rutinePriorBespoke: {
+        type: String,
+        trim: true,
+        default: null
+        // cual su rutina antes de las clases en la plataforma
+    },
+    specialAssitance: {
+        type: Number,
+        enum: [0, 1, 2],
+        default: null
+        // representante durante clase: 1 = si, 0 = no, 2 = a veces
+    },
+    helpWithElectronicClassroom: {
+        type: Number,
+        enum: [0, 1],
+        default: null
+        // necesita ayuda durante la clase para usar la conexión: 1 = si, 0 = no
+    },
+    avatar: {
+        type: String,
+        default: null
+        // será un string para guardar la versión en base64 del avatar del estudiante en el registro
+    },
+    avatarPermission: {
+        type: Number,
+        enum: [0, 1],
+        default: null
+        // status 0 para no, 1 para si
+    },
     notes: [NoteSchema], // Array de subdocumentos de notas
     disenrollmentReason: { // Razón de desinscripción (si aplica)
         type: String,

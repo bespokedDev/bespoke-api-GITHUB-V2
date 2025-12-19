@@ -48,6 +48,20 @@ const generateUniqueStudentCode = async () => {
  */
 studentCtrl.create = async (req, res) => {
     try {
+        // Validar que el campo 'kid' sea obligatorio y tenga un valor válido
+        if (req.body.kid === undefined || req.body.kid === null) {
+            return res.status(400).json({ message: 'El campo kid es obligatorio y debe ser 0 (estudiante normal) o 1 (kid).' });
+        }
+        
+        // Validar que kid sea un número y esté en el enum [0, 1]
+        const kidValue = Number(req.body.kid);
+        if (isNaN(kidValue) || (kidValue !== 0 && kidValue !== 1)) {
+            return res.status(400).json({ message: 'El campo kid debe ser 0 (estudiante normal) o 1 (kid).' });
+        }
+        
+        // Asignar el valor validado
+        req.body.kid = kidValue;
+        
         // Generar código de estudiante único automáticamente
         const studentCode = await generateUniqueStudentCode();
         

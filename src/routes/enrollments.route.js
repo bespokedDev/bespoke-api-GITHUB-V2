@@ -44,4 +44,16 @@ router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), enrollmentCtrl
 // Acceso: Solo admin
 router.patch('/:id/activate', verifyToken, verifyRole('admin'), enrollmentCtrl.activate);
 
+// PATCH /api/enrollments/:id/disolve - Disuelve una matrícula
+// Acceso: Solo admin
+router.patch('/:id/disolve', verifyToken, verifyRole('admin'), enrollmentCtrl.disolve);
+
+// PATCH /api/enrollments/:id/pause - Pausa una matrícula
+// Acceso: Solo admin
+router.patch('/:id/pause', verifyToken, verifyRole('admin'), enrollmentCtrl.pause);
+
+// PATCH /api/enrollments/:id/resume - Reactiva una matrícula pausada
+// Acceso: Solo admin
+router.patch('/:id/resume', verifyToken, verifyRole('admin'), enrollmentCtrl.resume);
+
 module.exports = router;

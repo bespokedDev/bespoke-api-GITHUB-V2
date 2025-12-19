@@ -38,6 +38,9 @@ const headers = {
 | `PUT` | `/api/enrollments/:id` | Actualizar datos de la matrícula |
 | `PATCH` | `/api/enrollments/:id/activate` | Activar matrícula |
 | `PATCH` | `/api/enrollments/:id/deactivate` | Desactivar matrícula |
+| `PATCH` | `/api/enrollments/:id/disolve` | Disolver matrícula |
+| `PATCH` | `/api/enrollments/:id/pause` | Pausar matrícula |
+| `PATCH` | `/api/enrollments/:id/resume` | Reactivar matrícula pausada |
 
 ---
 
@@ -70,7 +73,13 @@ const headers = {
       "learningType": "Visual y auditivo",
       "idealClassType": "Clases individuales",
       "learningDifficulties": "Dificultad con la pronunciación",
-      "languageLevel": "Principiante"
+      "languageLevel": "Principiante",
+      "experiencePastClass": "Muy positiva, aprendió mucho",
+      "howWhereTheClasses": "Clases dinámicas y participativas",
+      "roleGroup": "Líder",
+      "willingHomework": 1,
+      "availabityToPractice": "2hr",
+      "learningDifficulty": 0
     }
   ],
   "professorId": {
@@ -93,12 +102,17 @@ const headers = {
   "totalAmount": 100,
   "available_balance": 100,
   "disolve_reason": null,
+  "disolve_user": null,
   "rescheduleHours": 0,
   "substituteProfessor": null,
   "cancellationPaymentsEnabled": false,
   "graceDays": 0,
   "latePaymentPenalty": 0,
   "extendedGraceDays": 0,
+  "suspensionDaysAfterEndDate": 3,
+  "lateFee": 2,
+  "penalizationMoney": 0,
+  "penalizationId": null,
   "classCalculationType": 1,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -125,6 +139,12 @@ const headers = {
   - `idealClassType` (string): Tipo de clase ideal (por defecto: null)
   - `learningDifficulties` (string): Dificultades de aprendizaje (por defecto: null)
   - `languageLevel` (string): Nivel de idioma (por defecto: null)
+  - `experiencePastClass` (string): Como ha sido la experiencia en clases pasadas (por defecto: null)
+  - `howWhereTheClasses` (string): Como fueron las clases anteriores (por defecto: null)
+  - `roleGroup` (string): Rol del grupo (lider, organizador...) (por defecto: null)
+  - `willingHomework` (number): Si quieren hacer tareas o no (status): `1` si quiere tareas, `0` si no (por defecto: null)
+  - `availabityToPractice` (string): Disponibilidad para practicar en horas (1hr, 2hr, 3hr) (por defecto: null)
+  - `learningDifficulty` (number): Si o no: `1` para si, `0` para no (por defecto: null)
 - `professorId` (ObjectId): Referencia al profesor asignado
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
 - `classCalculationType` (number): Tipo de cálculo de clases para el enrollment (por defecto: 1)
@@ -151,6 +171,9 @@ const headers = {
 - `totalAmount` (number): **Calculado automáticamente** - Monto total. Se calcula como `precio_del_plan × número_de_estudiantes`
 - `available_balance` (number): **Calculado automáticamente** - Balance disponible. Se inicializa con el mismo valor de `totalAmount` al crear el enrollment
 - `disolve_reason` (string): Razón de disolución del enrollment (por defecto: null)
+- `disolve_user` (ObjectId): Referencia al usuario que realizó el disolve del enrollment (por defecto: null)
+  - Se guarda automáticamente cuando se ejecuta el endpoint de disolución
+  - Referencia a la colección `User`
 - `rescheduleHours` (number): Horas de reschedule disponibles para el enrollment (por defecto: 0)
 - `substituteProfessor` (object): Profesor suplente asignado al enrollment (por defecto: null)
   - `professorId` (ObjectId): Referencia al profesor suplente
@@ -163,6 +186,13 @@ const headers = {
 - `graceDays` (number): Cantidad de días de gracia asignados al estudiante para pagar el enrollment nuevamente en caso de que `totalAmount` sea 0 o que la cancelación automática no esté disponible (por defecto: 0)
 - `latePaymentPenalty` (number): Penalización de dinero en caso de que se retrase el pago (por defecto: 0)
 - `extendedGraceDays` (number): Permite extender, de manera excepcional, los días de gracia cuando el administrador decide dar días adicionales al estudiante para que pague (por defecto: 0)
+- `suspensionDaysAfterEndDate` (number): **OBLIGATORIO** - Número de días que deben pasar después de `endDate` para suspender el servicio del enrollment.
+  - Ejemplo: Si `suspensionDaysAfterEndDate: 3` y `endDate: 2024-12-12`, el servicio se suspende el `2024-12-15`
+- `lateFee` (number): **OBLIGATORIO** - Número de días tolerables de retraso en los pagos. Si el `lateFee` es 2 y el enrollment tiene `endDate` del 12 de diciembre, el estudiante tiene hasta el 14 de diciembre para pagar antes de generar una penalización
+  - Ejemplo: Si `lateFee: 2` y `endDate: 2024-12-12`, la fecha límite de pago sin penalización es `2024-12-14`
+- `penalizationMoney` (number): Monto de dinero de la penalización aplicada por retraso en el pago (por defecto: 0)
+- `penalizationId` (ObjectId): Referencia al tipo de penalización aplicada (referencia a la colección `Penalizacion`, por defecto: null)
+  - Si se proporciona, debe ser un ObjectId válido de un registro existente en la colección `penalizaciones`
 - `status` (number): Estado de la matrícula
   - `1` = Activo
   - `2` = Inactivo
@@ -292,7 +322,13 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
       "learningType": "Visual y auditivo",
       "idealClassType": "Clases individuales",
       "learningDifficulties": "Dificultad con la pronunciación",
-      "languageLevel": "Principiante"
+      "languageLevel": "Principiante",
+      "experiencePastClass": "Muy positiva, aprendió mucho",
+      "howWhereTheClasses": "Clases dinámicas y participativas",
+      "roleGroup": "Líder",
+      "willingHomework": 1,
+      "availabityToPractice": "2hr",
+      "learningDifficulty": 0
     }
   ],
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
@@ -304,7 +340,9 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
     { "day": "Miércoles" }
   ],
   "purchaseDate": "2024-01-15T10:30:00.000Z",
-  "startDate": "2024-01-22T00:00:00.000Z"
+  "startDate": "2024-01-22T00:00:00.000Z",
+  "lateFee": 2,
+  "suspensionDaysAfterEndDate": 3
 }
 ```
 
@@ -326,7 +364,13 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
       "learningType": "Visual y auditivo",
       "idealClassType": "Clases individuales",
       "learningDifficulties": "Dificultad con la pronunciación",
-      "languageLevel": "Principiante"
+      "languageLevel": "Principiante",
+      "experiencePastClass": "Muy positiva, aprendió mucho",
+      "howWhereTheClasses": "Clases dinámicas y participativas",
+      "roleGroup": "Líder",
+      "willingHomework": 1,
+      "availabityToPractice": "2hr",
+      "learningDifficulty": 0
     }
   ],
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
@@ -339,6 +383,8 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
   ],
   "purchaseDate": "2024-01-15T10:30:00.000Z",
   "startDate": "2024-11-27T00:00:00.000Z",
+  "lateFee": 2,
+  "suspensionDaysAfterEndDate": 3,
   "pricePerStudent": 100,
   "totalAmount": 100
 }
@@ -368,11 +414,21 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
   - `idealClassType` (string): **OPCIONAL** - Tipo de clase ideal
   - `learningDifficulties` (string): **OPCIONAL** - Dificultades de aprendizaje
   - `languageLevel` (string): **OPCIONAL** - Nivel de idioma
+  - `experiencePastClass` (string): **OPCIONAL** - Como ha sido la experiencia en clases pasadas
+  - `howWhereTheClasses` (string): **OPCIONAL** - Como fueron las clases anteriores
+  - `roleGroup` (string): **OPCIONAL** - Rol del grupo (lider, organizador...)
+  - `willingHomework` (number): **OPCIONAL** - Si quieren hacer tareas o no: `1` si quiere tareas, `0` si no
+  - `availabityToPractice` (string): **OPCIONAL** - Disponibilidad para practicar en horas (1hr, 2hr, 3hr)
+  - `learningDifficulty` (number): **OPCIONAL** - Si o no: `1` para si, `0` para no
 - `professorId` (ObjectId): ID del profesor
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
 - `language` (string): Idioma (`English`, `French`)
 - `scheduledDays` (Array): **OBLIGATORIO** - Array de objetos con el campo `day`
 - `startDate` (date): **OBLIGATORIO** - Fecha de inicio de las clases
+- `lateFee` (number): **OBLIGATORIO** - Número de días tolerables de retraso en los pagos. Debe ser un número mayor o igual a 0
+  - Ejemplo: Si `lateFee: 2` y `endDate: 2024-12-12`, la fecha límite de pago sin penalización es `2024-12-14`
+- `suspensionDaysAfterEndDate` (number): **OBLIGATORIO** - Número de días que deben pasar después de `endDate` para suspender el servicio. Debe ser un número mayor a 0.
+  - Ejemplo: Si `suspensionDaysAfterEndDate: 3` y `endDate: 2024-12-12`, el servicio se suspende el `2024-12-15`
 - `pricePerStudent` (number): **CALCULADO AUTOMÁTICAMENTE** - No es necesario enviarlo. Se calcula desde el plan según `enrollmentType`. Si se envía, será sobrescrito por el cálculo automático.
 - `totalAmount` (number): **CALCULADO AUTOMÁTICAMENTE** - No es necesario enviarlo. Se calcula como `precio_del_plan × número_de_estudiantes`. Si se envía, será sobrescrito por el cálculo automático.
 
@@ -402,6 +458,9 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
 - `graceDays` (number): Días de gracia para pagar el enrollment nuevamente (por defecto: 0)
 - `latePaymentPenalty` (number): Penalización por retraso en el pago (por defecto: 0)
 - `extendedGraceDays` (number): Extensión excepcional de días de gracia (por defecto: 0)
+- `penalizationMoney` (number): Monto de dinero de la penalización aplicada por retraso en el pago (por defecto: 0)
+- `penalizationId` (ObjectId): Referencia al tipo de penalización aplicada (referencia a la colección `Penalizacion`, por defecto: null)
+  - Si se proporciona, debe ser un ObjectId válido de un registro existente en la colección `penalizaciones`
 - `studentIds` (Array[Object]): Array de objetos con información detallada de cada estudiante
   - `studentId` (ObjectId): ID del estudiante
   - `amount` (number): **Calculado automáticamente** - Monto disponible por estudiante (precio del plan según `enrollmentType` dividido entre el número de estudiantes)
@@ -414,6 +473,12 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
   - `idealClassType` (string): Tipo de clase ideal
   - `learningDifficulties` (string): Dificultades de aprendizaje
   - `languageLevel` (string): Nivel de idioma
+  - `experiencePastClass` (string): Como ha sido la experiencia en clases pasadas
+  - `howWhereTheClasses` (string): Como fueron las clases anteriores
+  - `roleGroup` (string): Rol del grupo (lider, organizador...)
+  - `willingHomework` (number): Si quieren hacer tareas o no: `1` si quiere tareas, `0` si no
+  - `availabityToPractice` (string): Disponibilidad para practicar en horas (1hr, 2hr, 3hr)
+  - `learningDifficulty` (number): Si o no: `1` para si, `0` para no
 
 #### **Cálculos Automáticos de Precios y Montos**
 
@@ -687,6 +752,10 @@ El cálculo depende del `classCalculationType`:
     "graceDays": 0,
     "latePaymentPenalty": 0,
     "extendedGraceDays": 0,
+    "suspensionDaysAfterEndDate": 3,
+    "lateFee": 2,
+    "penalizationMoney": 0,
+    "penalizationId": null,
     "classCalculationType": 1,
     "status": 1,
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -1286,6 +1355,462 @@ PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/deactivate
 #### **Errores Posibles**
 - `404`: Matrícula no encontrada
 - `400`: ID inválido
+
+---
+
+### **10. Disolver Enrollment**
+- **Método**: `PATCH`
+- **Ruta**: `/api/enrollments/:id/disolve`
+- **Descripción**: Disuelve una matrícula (establece `status` a `0` = disolve), guarda la razón de disolución y el usuario que realiza el disolve
+- **Acceso**: Solo admin
+
+#### **URL Completa**
+```
+PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/disolve
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Request Body**
+```json
+{
+  "disolve_reason": "El estudiante solicitó cancelar el enrollment por motivos personales"
+}
+```
+
+#### **Campos del Request Body**
+- `disolve_reason` (string): **OBLIGATORIO** - Razón de disolución del enrollment. Debe ser un string no vacío.
+
+#### **Response (200 - OK)**
+```json
+{
+  "message": "Matrícula disuelta exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "status": 0,
+    "disolve_reason": "El estudiante solicitó cancelar el enrollment por motivos personales",
+    "disolve_user": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+      "name": "Admin Usuario",
+      "email": "admin@example.com"
+    },
+    ...
+  }
+}
+```
+
+#### **Campos Actualizados**
+Cuando se ejecuta el endpoint de disolución, se actualizan los siguientes campos:
+- `status`: Se establece a `0` (disolve)
+- `disolve_reason`: Se guarda la razón proporcionada en el request body
+- `disolve_user`: Se guarda automáticamente el ObjectId del usuario que realiza el disolve (obtenido del token JWT)
+
+#### **Errores Posibles**
+- `400`: 
+  - ID de matrícula inválido
+  - El campo `disolve_reason` es obligatorio y debe ser un string no vacío
+  - ID de usuario inválido
+- `404`: Matrícula no encontrada
+- `500`: Error interno del servidor
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/disolve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "disolve_reason": "El estudiante solicitó cancelar el enrollment por motivos personales"
+  }'
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const disolveEnrollment = async (enrollmentId, disolveReason) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/enrollments/${enrollmentId}/disolve`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        disolve_reason: disolveReason
+      })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Enrollment disuelto:', data.enrollment);
+      console.log('Razón:', data.enrollment.disolve_reason);
+      console.log('Usuario que disolvió:', data.enrollment.disolve_user);
+    } else {
+      console.error('Error:', data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso
+disolveEnrollment('64f8a1b2c3d4e5f6a7b8c9d0', 'El estudiante solicitó cancelar el enrollment por motivos personales');
+```
+
+#### **Notas Importantes**
+- Solo usuarios con rol `admin` pueden ejecutar este endpoint
+- El campo `disolve_user` se guarda automáticamente desde el token JWT del usuario que realiza la petición
+- Una vez disuelto, el enrollment no puede ser reactivado directamente (debe usar el endpoint de activación si es necesario)
+- El campo `disolve_reason` es obligatorio y no puede estar vacío
+
+---
+
+### **11. Pausar Enrollment**
+- **Método**: `PATCH`
+- **Ruta**: `/api/enrollments/:id/pause`
+- **Descripción**: Pausa una matrícula (establece `status` a `3` = en pausa)
+- **Acceso**: Solo admin
+
+#### **URL Completa**
+```
+PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/pause
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Request Body**
+No requiere body.
+
+#### **Response (200 - OK)**
+```json
+{
+  "message": "Matrícula pausada exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "status": 3,
+    ...
+  }
+}
+```
+
+#### **Campos Actualizados**
+Cuando se ejecuta el endpoint de pausa, se actualiza el siguiente campo:
+- `status`: Se establece a `3` (en pausa)
+
+#### **Errores Posibles**
+- `400`: ID de matrícula inválido
+- `404`: Matrícula no encontrada
+- `500`: Error interno del servidor
+
+#### **Ejemplo para Postman**
+
+**Configuración de la Petición:**
+- **Método**: `PATCH`
+- **URL**: `http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/pause`
+- **Headers**:
+  - `Authorization`: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+- **Body**: No requiere body (dejar vacío o seleccionar "none")
+
+**Estructura en Postman:**
+```
+PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/pause
+
+Headers:
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/pause \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const pauseEnrollment = async (enrollmentId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/enrollments/${enrollmentId}/pause`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Enrollment pausado:', data.enrollment);
+      console.log('Status:', data.enrollment.status); // Debe ser 3
+    } else {
+      console.error('Error:', data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso
+pauseEnrollment('64f8a1b2c3d4e5f6a7b8c9d0');
+```
+
+---
+
+### **12. Reactivar Enrollment Pausado**
+- **Método**: `PATCH`
+- **Ruta**: `/api/enrollments/:id/resume`
+- **Descripción**: Reactiva una matrícula pausada, actualiza `startDate`, recalcula `endDate` y reagenda clases pendientes
+- **Acceso**: Solo admin
+
+#### **URL Completa**
+```
+PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/resume
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- `id` (string): ID único de la matrícula
+
+#### **Request Body**
+```json
+{
+  "startDate": "2024-02-15T00:00:00.000Z"
+}
+```
+
+#### **Campos del Request Body**
+- `startDate` (string/Date): **OBLIGATORIO** - Nueva fecha de inicio para reactivar el enrollment. Debe ser una fecha válida en formato ISO 8601 o Date.
+
+#### **Formatos Válidos de `startDate`**
+
+El campo `startDate` acepta múltiples formatos de fecha. El sistema los procesará correctamente y los normalizará a medianoche UTC. Ejemplos válidos:
+
+**Formato 1: ISO 8601 completo (Recomendado)**
+```json
+{
+  "startDate": "2024-02-15T00:00:00.000Z"
+}
+```
+
+**Formato 2: ISO 8601 sin milisegundos**
+```json
+{
+  "startDate": "2024-02-15T00:00:00Z"
+}
+```
+
+**Formato 3: Solo fecha (YYYY-MM-DD) - Más simple**
+```json
+{
+  "startDate": "2024-02-15"
+}
+```
+
+**Formato 4: Con hora específica**
+```json
+{
+  "startDate": "2024-02-15T10:30:00Z"
+}
+```
+
+**Formato 5: Con zona horaria específica**
+```json
+{
+  "startDate": "2024-02-15T00:00:00-05:00"
+}
+```
+
+**⚠️ Nota Importante:** 
+- El sistema normaliza automáticamente el `startDate` a medianoche UTC (`00:00:00.000Z`)
+- El formato más simple y recomendado es: `"2024-02-15"` (solo fecha)
+- Cualquier formato válido de fecha será procesado correctamente
+
+#### **Response (200 - OK)**
+```json
+{
+  "message": "Matrícula reactivada exitosamente",
+  "enrollment": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "startDate": "2024-02-15T00:00:00.000Z",
+    "endDate": "2024-03-14T23:59:59.999Z",
+    "monthlyClasses": 8,
+    "status": 1,
+    ...
+  },
+  "classesRescheduled": 6,
+  "newStartDate": "2024-02-15T00:00:00.000Z",
+  "newEndDate": "2024-03-14T23:59:59.999Z"
+}
+```
+
+#### **Campos Actualizados**
+Cuando se ejecuta el endpoint de reactivación, se actualizan los siguientes campos:
+
+**En el Enrollment:**
+- `startDate`: Se actualiza con la nueva fecha proporcionada
+- `endDate`: Se recalcula según el número de clases restantes y el `classCalculationType`
+- `monthlyClasses`: Se actualiza según las clases reagendadas
+- `status`: Se establece a `1` (activo)
+
+**En las Clases (ClassRegistry):**
+- `classDate`: Se actualiza para todas las clases pendientes (`classViewed: 0`) y clases en reschedule (`reschedule: 1`)
+- Las clases ya vistas (`classViewed: 1`) y las clases en reschedule completadas (`reschedule: 2`) **NO se modifican**
+
+#### **Lógica de Reagendamiento**
+1. **Identificación de clases a reagendar:**
+   - Clases con `classViewed: 0` (pendientes)
+   - Clases con `reschedule: 1` (hijas de reschedule)
+
+2. **Cálculo de `endDate`:**
+   - **Tipo 1 (mensual)**: Se calcula según las semanas necesarias para las clases restantes
+   - **Tipo 2 (semanal)**: Se calcula según las semanas necesarias para las clases restantes
+
+3. **Generación de nuevas fechas:**
+   - Se generan fechas desde el nuevo `startDate` respetando `scheduledDays` y `weeklyClasses`
+   - Se asignan las nuevas fechas a las clases pendientes y en reschedule
+
+4. **Clases que NO se modifican:**
+   - Clases con `classViewed: 1` (ya vistas)
+   - Clases con `reschedule: 2` (reschedule completado)
+
+#### **Errores Posibles**
+- `400`: 
+  - ID de matrícula inválido
+  - El campo `startDate` es obligatorio
+  - El enrollment no está en pausa (status debe ser 3)
+  - No hay clases pendientes para reagendar
+  - Error en el cálculo de fechas
+- `404`: Matrícula no encontrada
+- `500`: Error interno del servidor
+
+#### **Ejemplo para Postman**
+
+**Configuración de la Petición:**
+- **Método**: `PATCH`
+- **URL**: `http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/resume`
+- **Headers**:
+  - `Content-Type`: `application/json`
+  - `Authorization`: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+- **Body** (raw JSON):
+```json
+{
+  "startDate": "2024-02-15T00:00:00.000Z"
+}
+```
+
+**Estructura en Postman:**
+```
+PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/resume
+
+Headers:
+  Content-Type: application/json
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+Body (raw - JSON):
+{
+  "startDate": "2024-02-15"
+}
+```
+
+**Ejemplos de Body para Postman:**
+
+**Opción 1 - Formato simple (Recomendado):**
+```json
+{
+  "startDate": "2024-02-15"
+}
+```
+
+**Opción 2 - Formato ISO completo:**
+```json
+{
+  "startDate": "2024-02-15T00:00:00.000Z"
+}
+```
+
+**Opción 3 - Con hora específica:**
+```json
+{
+  "startDate": "2024-02-15T10:30:00Z"
+}
+```
+
+**⚠️ Importante:** Todos estos formatos son válidos. El sistema procesará cualquiera de ellos y normalizará la fecha a medianoche UTC automáticamente.
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/resume \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "startDate": "2024-02-15T00:00:00.000Z"
+  }'
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const resumeEnrollment = async (enrollmentId, newStartDate) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/enrollments/${enrollmentId}/resume`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        startDate: newStartDate
+      })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Enrollment reactivado:', data.enrollment);
+      console.log('Nueva fecha de inicio:', data.newStartDate);
+      console.log('Nueva fecha de fin:', data.newEndDate);
+      console.log('Clases reagendadas:', data.classesRescheduled);
+    } else {
+      console.error('Error:', data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso
+resumeEnrollment('64f8a1b2c3d4e5f6a7b8c9d0', '2024-02-15T00:00:00.000Z');
+```
+
+#### **Notas Importantes**
+- Solo usuarios con rol `admin` pueden ejecutar este endpoint
+- El enrollment debe estar en pausa (`status: 3`) para poder reactivarlo
+- El campo `startDate` es obligatorio y debe ser una fecha válida
+- Solo se reagendan las clases pendientes (`classViewed: 0`) y las clases en reschedule activas (`reschedule: 1`)
+- Las clases ya vistas (`classViewed: 1`) y las clases en reschedule completadas (`reschedule: 2`) mantienen sus fechas originales
+- El `endDate` se recalcula automáticamente según el número de clases restantes y el `classCalculationType` del enrollment
+- El `monthlyClasses` se actualiza según las clases reagendadas
 
 ---
 

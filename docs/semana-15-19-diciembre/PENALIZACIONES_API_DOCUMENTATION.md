@@ -45,6 +45,7 @@ const headers = {
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
   "name": "Falta de asistencia",
+  "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
   "status": 1,
   "statusText": "Activo",
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -55,6 +56,7 @@ const headers = {
 ### **Campos del Modelo**
 - `_id` (ObjectId): ID único de la penalización (generado automáticamente)
 - `name` (string): Nombre de la penalización (requerido, único)
+- `description` (string): Descripción detallada del tipo de penalización (opcional, por defecto: null)
 - `status` (number): Estado de la penalización
   - `1` = Activo
   - `2` = Anulado
@@ -89,7 +91,8 @@ POST /api/penalties
 #### **Request Body**
 ```json
 {
-  "name": "Falta de asistencia"
+  "name": "Falta de asistencia",
+  "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa"
 }
 ```
 
@@ -99,6 +102,12 @@ POST /api/penalties
     - No puede estar vacío
     - No puede ser solo espacios en blanco
     - Debe ser único (no puede existir otra penalización con el mismo nombre)
+
+#### **Campos Opcionales**
+- `description` (string): Descripción detallada del tipo de penalización
+  - **Requisitos**: 
+    - Puede estar vacío o ser null
+    - Si se proporciona, se guardará tal como se envía (con trim aplicado)
 
 #### **Campos Automáticos**
 - `status` (number): Se establece automáticamente en `1` (Activo)
@@ -112,6 +121,7 @@ POST /api/penalties
   "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
     "name": "Falta de asistencia",
+    "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -221,6 +231,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todas las penalizacio
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
     "name": "Falta de asistencia",
+    "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -229,6 +240,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todas las penalizacio
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
     "name": "Llegada tardía",
+    "description": null,
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T11:00:00.000Z",
@@ -237,6 +249,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todas las penalizacio
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
     "name": "No completar tarea",
+    "description": "Penalización aplicada cuando el estudiante no completa las tareas asignadas",
     "status": 2,
     "statusText": "Anulado",
     "createdAt": "2024-01-15T11:30:00.000Z",
@@ -328,6 +341,7 @@ GET /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
   "name": "Falta de asistencia",
+  "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
   "status": 1,
   "statusText": "Activo",
   "createdAt": "2024-01-15T10:30:00.000Z",
@@ -427,7 +441,8 @@ PUT /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0
 #### **Request Body**
 ```json
 {
-  "name": "Falta de asistencia sin justificación"
+  "name": "Falta de asistencia sin justificación",
+  "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa"
 }
 ```
 
@@ -437,10 +452,14 @@ PUT /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0
     - No puede estar vacío
     - No puede ser solo espacios en blanco
     - Debe ser único (no puede existir otra penalización con el mismo nombre)
+- `description` (string): Descripción detallada del tipo de penalización
+  - **Opcional**: Puede estar vacío o ser null
+  - Si se proporciona, se guardará tal como se envía (con trim aplicado)
 
 #### **Notas Importantes**
 - El campo `name` es **requerido** en el request body
-- Solo se actualiza el campo `name`
+- El campo `description` es **opcional**
+- Se pueden actualizar los campos `name` y `description`
 - **NO se puede actualizar el campo `status`** - usar endpoints específicos para activar/anular
 - El campo `updatedAt` se actualiza automáticamente
 
@@ -451,6 +470,7 @@ PUT /api/penalties/64f8a1b2c3d4e5f6a7b8c9d0
   "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
     "name": "Falta de asistencia sin justificación",
+    "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -583,6 +603,7 @@ Este endpoint no requiere body, solo el ID en la URL.
   "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
     "name": "Falta de asistencia",
+    "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
     "status": 1,
     "statusText": "Activo",
     "createdAt": "2024-01-15T10:30:00.000Z",
@@ -696,6 +717,7 @@ Este endpoint no requiere body, solo el ID en la URL.
   "penalizacion": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
     "name": "Falta de asistencia",
+    "description": "Penalización aplicada cuando el estudiante no asiste a una clase programada sin justificación previa",
     "status": 2,
     "statusText": "Anulado",
     "createdAt": "2024-01-15T10:30:00.000Z",

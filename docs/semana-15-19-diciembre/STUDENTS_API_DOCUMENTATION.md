@@ -137,6 +137,15 @@ login('juan.perez@example.com', '1234567890');
   "country": "Venezuela",
   "occupation": "Ingeniero",
   "status": 1,
+  "kid": 0,
+  "dislike": "No le gustan las clases muy largas",
+  "learningStyle": "Visual y kinestésico",
+  "academicPerformance": "Excelente desempeño académico",
+  "rutinePriorBespoke": "Revisa el material antes de cada clase",
+  "specialAssitance": 1,
+  "helpWithElectronicClassroom": 0,
+  "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "avatarPermission": 1,
   "notes": [
     {
       "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
@@ -159,6 +168,7 @@ login('juan.perez@example.com', '1234567890');
 - `dob` (String): Fecha de nacimiento en formato `YYYY-MM-DD`
 - `gender` (String): Género del estudiante. Valores permitidos: `"Male"`, `"Female"`, `"Other"`
 - `phone` (String): Número de teléfono del estudiante
+- `kid` (Number): Tipo de cuenta de estudiante. Valores permitidos: `0` (cuenta de estudiante normal), `1` (cuenta de kid). **Campo obligatorio, no puede ser null ni tener valor por defecto**
 
 #### **Campos Opcionales**
 - `studentCode` (String): Código único del estudiante. **Se genera automáticamente** con formato `BES-XXXX` (no enviar en el request)
@@ -171,6 +181,14 @@ login('juan.perez@example.com', '1234567890');
 - `country` (String): País del estudiante
 - `occupation` (String): Ocupación del estudiante
 - `status` (Number): Estado del estudiante. Valores: `1` (activo), `0` (inactivo). Por defecto: `1`
+- `dislike` (String): Cosas que no le gustan (por defecto: null)
+- `learningStyle` (String): Tipo de aprendizaje (por defecto: null)
+- `academicPerformance` (String): Como son sus calificaciones y su desenvolvimiento académico (por defecto: null)
+- `rutinePriorBespoke` (String): Cual su rutina antes de las clases en la plataforma (por defecto: null)
+- `specialAssitance` (Number): Representante durante clase. Valores: `1` = si, `0` = no, `2` = a veces (por defecto: null)
+- `helpWithElectronicClassroom` (Number): Necesita ayuda durante la clase para usar la conexión. Valores: `1` = si, `0` = no (por defecto: null)
+- `avatar` (String): String para guardar la versión en base64 del avatar del estudiante en el registro (por defecto: null)
+- `avatarPermission` (Number): Status de permiso del avatar. Valores: `1` = si, `0` = no (por defecto: null)
 - `notes` (Array): Array de objetos con notas sobre el estudiante
   - `date` (String): Fecha de la nota en formato `YYYY-MM-DD`
   - `text` (String): Texto de la nota
@@ -216,6 +234,15 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
   "country": "Venezuela",
   "occupation": "Ingeniero",
   "representativeName": null,
+  "kid": 0,
+  "dislike": "No le gustan las clases muy largas",
+  "learningStyle": "Visual y kinestésico",
+  "academicPerformance": "Excelente desempeño académico",
+  "rutinePriorBespoke": "Revisa el material antes de cada clase",
+  "specialAssitance": 1,
+  "helpWithElectronicClassroom": 0,
+  "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "avatarPermission": 1,
   "notes": [
     {
       "date": "2024-01-15",
@@ -232,6 +259,7 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
 - `dob` (String): Fecha de nacimiento en formato `YYYY-MM-DD`
 - `gender` (String): `"Male"`, `"Female"` o `"Other"`
 - `phone` (String): Número de teléfono
+- `kid` (Number): Tipo de cuenta de estudiante. Valores permitidos: `0` (cuenta de estudiante normal), `1` (cuenta de kid). **Campo obligatorio, no puede ser null ni tener valor por defecto**
 
 **Opcionales:**
 - `email` (String): Correo electrónico (único)
@@ -242,6 +270,14 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
 - `country` (String): País
 - `occupation` (String): Ocupación
 - `representativeName` (String): Nombre del representante
+- `dislike` (String): Cosas que no le gustan
+- `learningStyle` (String): Tipo de aprendizaje
+- `academicPerformance` (String): Como son sus calificaciones y su desenvolvimiento académico
+- `rutinePriorBespoke` (String): Cual su rutina antes de las clases en la plataforma
+- `specialAssitance` (Number): Representante durante clase. Valores: `1` = si, `0` = no, `2` = a veces
+- `helpWithElectronicClassroom` (Number): Necesita ayuda durante la clase para usar la conexión. Valores: `1` = si, `0` = no
+- `avatar` (String): String para guardar la versión en base64 del avatar del estudiante en el registro
+- `avatarPermission` (Number): Status de permiso del avatar. Valores: `1` = si, `0` = no
 - `notes` (Array): Array de objetos con `date` (String) y `text` (String)
 - `status` (Number): Estado. Por defecto: `1` (activo)
 
@@ -266,6 +302,15 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
     "country": "Venezuela",
     "occupation": "Ingeniero",
     "status": 1,
+    "kid": 0,
+    "dislike": "No le gustan las clases muy largas",
+    "learningStyle": "Visual y kinestésico",
+    "academicPerformance": "Excelente desempeño académico",
+    "rutinePriorBespoke": "Revisa el material antes de cada clase",
+    "specialAssitance": 1,
+    "helpWithElectronicClassroom": 0,
+    "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+    "avatarPermission": 1,
     "isActive": true,
     "notes": [
       {
@@ -285,8 +330,8 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
 
 **400 Bad Request**
 - ID inválido
-- Campos requeridos faltantes
-- Valores de enum inválidos
+- Campos requeridos faltantes (incluyendo `kid`)
+- Valores de enum inválidos (incluyendo `kid` que debe ser `0` o `1`)
 
 **409 Conflict**
 - Email duplicado
@@ -376,6 +421,15 @@ No requiere body.
     "email": "juan.perez@example.com",
     "role": "student",
     "status": 1,
+    "kid": 0,
+    "dislike": "No le gustan las clases muy largas",
+    "learningStyle": "Visual y kinestésico",
+    "academicPerformance": "Excelente desempeño académico",
+    "rutinePriorBespoke": "Revisa el material antes de cada clase",
+    "specialAssitance": 1,
+    "helpWithElectronicClassroom": 0,
+    "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+    "avatarPermission": 1,
     "isActive": true,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -390,6 +444,15 @@ No requiere body.
     "email": "maria.garcia@example.com",
     "role": "student",
     "status": 1,
+    "kid": 1,
+    "dislike": null,
+    "learningStyle": "Auditivo",
+    "academicPerformance": "Buen desempeño",
+    "rutinePriorBespoke": null,
+    "specialAssitance": 0,
+    "helpWithElectronicClassroom": 1,
+    "avatar": null,
+    "avatarPermission": 0,
     "isActive": true,
     "createdAt": "2024-01-16T14:20:00.000Z",
     "updatedAt": "2024-01-16T14:20:00.000Z"
@@ -1392,6 +1455,15 @@ No requiere body.
   "country": "Venezuela",
   "occupation": "Ingeniero",
   "status": 1,
+  "kid": 0,
+  "dislike": "No le gustan las clases muy largas",
+  "learningStyle": "Visual y kinestésico",
+  "academicPerformance": "Excelente desempeño académico",
+  "rutinePriorBespoke": "Revisa el material antes de cada clase",
+  "specialAssitance": 1,
+  "helpWithElectronicClassroom": 0,
+  "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "avatarPermission": 1,
   "isActive": true,
   "notes": [
     {
@@ -1517,6 +1589,15 @@ Actualiza la información de un estudiante existente. Puedes enviar solo los cam
     "country": "Venezuela",
     "occupation": "Desarrollador",
     "status": 1,
+    "kid": 0,
+    "dislike": "No le gustan las clases muy largas",
+    "learningStyle": "Visual y kinestésico",
+    "academicPerformance": "Excelente desempeño académico",
+    "rutinePriorBespoke": "Revisa el material antes de cada clase",
+    "specialAssitance": 1,
+    "helpWithElectronicClassroom": 0,
+    "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+    "avatarPermission": 1,
     "isActive": true,
     "notes": [
       {
@@ -1830,6 +1911,18 @@ En algunos casos, también puede incluir:
 }
 ```
 
+#### **400 Bad Request - Campo kid Faltante o Inválido**
+```json
+{
+  "message": "El campo kid es obligatorio y debe ser 0 (estudiante normal) o 1 (kid)."
+}
+```
+
+Este error ocurre cuando:
+- El campo `kid` no se envía en el request body
+- El campo `kid` es `null` o `undefined`
+- El campo `kid` tiene un valor diferente a `0` o `1`
+
 #### **409 Conflict - Email Duplicado**
 ```json
 {
@@ -1937,6 +2030,7 @@ El sistema utiliza un sistema de roles basado en la colección `Role`. Cada estu
 - `gender`: Solo acepta `"Male"`, `"Female"` o `"Other"`
 - `status`: Solo acepta `1` (activo) o `0` (inactivo)
 - `phone`: Campo requerido
+- `kid`: Campo obligatorio. Solo acepta `0` (cuenta de estudiante normal) o `1` (cuenta de kid). No puede ser `null` ni tener valor por defecto
 
 ### **Campos Sensibles**
 
@@ -1957,6 +2051,7 @@ const newStudent = await createStudent({
   gender: "Male",
   phone: "+584121234567",
   email: "juan.perez@example.com",
+  kid: 0, // 0 = estudiante normal, 1 = kid
   address: "Calle Principal 123",
   city: "Caracas",
   country: "Venezuela"

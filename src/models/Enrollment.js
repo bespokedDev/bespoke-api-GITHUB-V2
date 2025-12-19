@@ -19,12 +19,6 @@ const SubstituteProfessorSchema = new mongoose.Schema({
         required: true
         // ID del profesor suplente
     },
-    status: {
-        type: Number,
-        enum: [1, 0], // 1 para activo en suplencia, 0 para inactivo
-        default: 1
-        // Estado de suplencia: 1 = activo, 0 = no activo
-    },
     assignedDate: {
         type: Date,
         required: true
@@ -98,6 +92,42 @@ const StudentEnrollmentInfoSchema = new mongoose.Schema({
         trim: true,
         default: null
         // nivel de idioma
+    },
+    experiencePastClass: {
+        type: String,
+        trim: true,
+        default: null
+        // como ha sido la experiencia en clases pasadas?
+    },
+    howWhereTheClasses: {
+        type: String,
+        trim: true,
+        default: null
+        // como fueron las clases anteriores
+    },
+    roleGroup: {
+        type: String,
+        trim: true,
+        default: null
+        // rol del grupo, lider, organizador...
+    },
+    willingHomework: {
+        type: Number,
+        enum: [0, 1],
+        default: null
+        // si quieren hacer tareas o no, status: 1 si quiere tareas, 0 si no
+    },
+    availabityToPractice: {
+        type: String,
+        trim: true,
+        default: null
+        // en horas, 1hr, 2hr, 3hr
+    },
+    learningDifficulty: {
+        type: Number,
+        enum: [0, 1],
+        default: null
+        // si o no: 1 para si, 0 para no
     },
     amount: {
         type: Number,
@@ -182,6 +212,12 @@ const EnrollmentSchema = new mongoose.Schema({
         trim: true,
         default: null
     },
+    disolve_user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+        // ID del usuario que realizó el disolve del enrollment
+    },
     rescheduleHours: {
         type: Number,
         default: 0,
@@ -198,11 +234,13 @@ const EnrollmentSchema = new mongoose.Schema({
         default: false
         // pagos de cancelación activados
     },
-    graceDays: {
+    suspensionDaysAfterEndDate: {
         type: Number,
-        default: 0,
-        min: 0
-        // días de gracia
+        required: true,
+        min: 1
+        // número de días que deben pasar después de endDate para suspender el servicio del enrollment
+        // por ejemplo, si suspensionDaysAfterEndDate = 3 y endDate es 12 de diciembre,
+        // el servicio se suspende el 15 de diciembre (12 + 3 días)
     },
     latePaymentPenalty: {
         type: Number,
@@ -210,11 +248,25 @@ const EnrollmentSchema = new mongoose.Schema({
         min: 0
         // penalización de dinero en caso de que se retrase el pago
     },
-    extendedGraceDays: {
+    lateFee: {
+        type: Number,
+        required: true,
+        min: 0
+        // número de días tolerables de retraso en los pagos
+        // Si el lateFee es 2 y el enrollment tiene endDate del 12 de diciembre,
+        // el estudiante tiene hasta el 14 de diciembre para pagar antes de generar una penalización
+    },
+    penalizationMoney: {
         type: Number,
         default: 0,
         min: 0
-        // extender, de manera excepcional, los días de gracia
+        // monto de dinero de la penalización aplicada por retraso en el pago
+    },
+    penalizationId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Penalizacion',
+        default: null
+        // ID del tipo de penalización aplicada (referencia a la colección Penalizacion)
     },
     status: {
         type: Number,

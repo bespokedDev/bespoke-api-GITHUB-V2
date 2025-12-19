@@ -28,6 +28,9 @@ const categoryMoneyRoutes = require('./routes/categoryMoney.route');
 const generalPaymentTrackerRoutes = require('./routes/generalPaymentTracker.route');
 const specialProfessorReportRoutes = require('./routes/specialProfessorReport.route');
 const rolesRoutes = require('./routes/roles.route');
+const canvaDocRoutes = require('./routes/canvaDoc.route');
+const categoryNotificationRoutes = require('./routes/categoryNotification.route');
+const notificationRoutes = require('./routes/notification.route');
 const cors = require('cors');
 
 // ¡FORZAR CARGA DEL MODELO PROFESSORTYPE TEMPRANO! (Mantener si sigue siendo necesario para profesores)
@@ -73,6 +76,9 @@ app.use('/api/category-money', categoryMoneyRoutes);
 app.use('/api/general-payment-tracker', generalPaymentTrackerRoutes);
 app.use('/api/special-professor-report', specialProfessorReportRoutes);
 app.use('/api/roles', rolesRoutes);
+app.use('/api/canva-docs', canvaDocRoutes);
+app.use('/api/category-notifications', categoryNotificationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Ruta de health check para Vercel
 app.get('/', (req, res) => {

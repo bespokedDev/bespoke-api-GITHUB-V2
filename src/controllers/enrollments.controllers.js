@@ -4,6 +4,7 @@ const Plan = require('../models/Plans'); // Necesario para popular
 const Student = require('../models/Student'); // Necesario para popular
 const Professor = require('../models/Professor'); // Necesario para popular
 const ClassRegistry = require('../models/ClassRegistry'); // Modelo para registros de clase
+const Penalizacion = require('../models/Penalizacion'); // Necesario para validar penalizationId
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
 const mongoose = require('mongoose');
 
@@ -324,6 +325,51 @@ enrollmentCtrl.create = async (req, res) => {
             amount: planPrice
         }));
 
+        // Validar lateFee (OBLIGATORIO y debe ser diferente de 0)
+        if (req.body.lateFee === undefined || req.body.lateFee === null) {
+            return res.status(400).json({ message: 'El campo lateFee es obligatorio y debe ser un número mayor o igual a 0.' });
+        }
+        const lateFeeValue = Number(req.body.lateFee);
+        if (isNaN(lateFeeValue) || lateFeeValue < 0) {
+            return res.status(400).json({ message: 'El campo lateFee debe ser un número mayor o igual a 0.' });
+        }
+        req.body.lateFee = lateFeeValue;
+
+        // Validar suspensionDaysAfterEndDate (OBLIGATORIO y debe ser > 0)
+        if (req.body.suspensionDaysAfterEndDate === undefined || req.body.suspensionDaysAfterEndDate === null) {
+            return res.status(400).json({ message: 'El campo suspensionDaysAfterEndDate es obligatorio y debe ser un número mayor a 0.' });
+        }
+        const suspensionDaysValue = Number(req.body.suspensionDaysAfterEndDate);
+        if (isNaN(suspensionDaysValue) || suspensionDaysValue <= 0) {
+            return res.status(400).json({ message: 'El campo suspensionDaysAfterEndDate debe ser un número mayor a 0.' });
+        }
+        req.body.suspensionDaysAfterEndDate = suspensionDaysValue;
+
+        // Inicializar penalizationMoney a 0 por defecto
+        if (req.body.penalizationMoney === undefined || req.body.penalizationMoney === null) {
+            req.body.penalizationMoney = 0;
+        } else {
+            const penalizationMoneyValue = Number(req.body.penalizationMoney);
+            if (isNaN(penalizationMoneyValue) || penalizationMoneyValue < 0) {
+                return res.status(400).json({ message: 'El campo penalizationMoney debe ser un número mayor o igual a 0.' });
+            }
+            req.body.penalizationMoney = penalizationMoneyValue;
+        }
+
+        // Validar penalizationId si se proporciona
+        if (req.body.penalizationId !== undefined && req.body.penalizationId !== null) {
+            if (!mongoose.Types.ObjectId.isValid(req.body.penalizationId)) {
+                return res.status(400).json({ message: 'ID de Penalización inválido.' });
+            }
+            const penalizacionExists = await Penalizacion.findById(req.body.penalizationId);
+            if (!penalizacionExists) {
+                return res.status(400).json({ message: 'ID de Penalización no existente.' });
+            }
+        } else {
+            // Si no se proporciona, establecer como null
+            req.body.penalizationId = null;
+        }
+
         let classDates = [];
         let classRegistries = [];
 
@@ -355,6 +401,9 @@ enrollmentCtrl.create = async (req, res) => {
 
             // Asignar monthlyClasses al enrollment
             req.body.monthlyClasses = monthlyClasses;
+
+            // Inicializar disolve_user como null al crear
+            req.body.disolve_user = null;
 
             const newEnrollment = new Enrollment(req.body);
             const savedEnrollment = await newEnrollment.save();
@@ -432,6 +481,9 @@ enrollmentCtrl.create = async (req, res) => {
             enrollmentEndDate.setUTCDate(endDateObj.getUTCDate() - 1);
             enrollmentEndDate.setUTCHours(23, 59, 59, 999);
             req.body.endDate = enrollmentEndDate;
+
+            // Inicializar disolve_user como null al crear
+            req.body.disolve_user = null;
 
             const newEnrollment = new Enrollment(req.body);
             const savedEnrollment = await newEnrollment.save();
@@ -675,6 +727,306 @@ enrollmentCtrl.activate = async (req, res) => {
 };
 
 /**
+ * @route PATCH /api/enrollments/:id/disolve
+ * @description Disuelve una matrícula (establece status a 0 = disolve) y guarda la razón y el usuario que realiza el disolve
+ * @access Private (Requiere JWT) - Solo admin
+ */
+enrollmentCtrl.disolve = async (req, res) => {
+    try {
+        const { disolve_reason } = req.body;
+        const userId = req.user?.id;
+
+        // Validar que se proporcione la razón de disolución
+        if (!disolve_reason || typeof disolve_reason !== 'string' || disolve_reason.trim() === '') {
+            return res.status(400).json({ message: 'El campo disolve_reason es obligatorio y debe ser un string no vacío.' });
+        }
+
+        // Validar que el userId existe
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ message: 'ID de usuario inválido.' });
+        }
+
+        const disolvedEnrollment = await Enrollment.findByIdAndUpdate(
+            req.params.id,
+            { 
+                status: 0, // 0 = disolve
+                disolve_reason: disolve_reason.trim(),
+                disolve_user: userId
+            },
+            { new: true }
+        );
+
+        if (!disolvedEnrollment) {
+            return res.status(404).json({ message: 'Matrícula no encontrada' });
+        }
+
+        // Popular en la respuesta
+        const populatedDisolvedEnrollment = await Enrollment.findById(disolvedEnrollment._id)
+                                                                .populate(populateOptions)
+                                                                .populate('disolve_user', 'name email')
+                                                                .lean();
+
+        res.status(200).json({
+            message: 'Matrícula disuelta exitosamente',
+            enrollment: populatedDisolvedEnrollment
+        });
+    } catch (error) {
+        console.error('Error al disolver matrícula:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de matrícula o usuario inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al disolver matrícula', error: error.message });
+    }
+};
+
+/**
+ * @route PATCH /api/enrollments/:id/pause
+ * @description Pausa una matrícula (establece status a 3 = en pausa)
+ * @access Private (Requiere JWT) - Solo admin
+ */
+enrollmentCtrl.pause = async (req, res) => {
+    try {
+        const pausedEnrollment = await Enrollment.findByIdAndUpdate(
+            req.params.id,
+            { status: 3 }, // 3 = en pausa
+            { new: true }
+        );
+
+        if (!pausedEnrollment) {
+            return res.status(404).json({ message: 'Matrícula no encontrada' });
+        }
+
+        // Popular en la respuesta
+        const populatedPausedEnrollment = await Enrollment.findById(pausedEnrollment._id)
+                                                                .populate(populateOptions)
+                                                                .lean();
+
+        res.status(200).json({
+            message: 'Matrícula pausada exitosamente',
+            enrollment: populatedPausedEnrollment
+        });
+    } catch (error) {
+        console.error('Error al pausar matrícula:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de matrícula inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al pausar matrícula', error: error.message });
+    }
+};
+
+/**
+ * @route PATCH /api/enrollments/:id/resume
+ * @description Reactiva una matrícula pausada, actualiza startDate, recalcula endDate y reagenda clases pendientes
+ * @access Private (Requiere JWT) - Solo admin
+ */
+enrollmentCtrl.resume = async (req, res) => {
+    try {
+        const { startDate } = req.body;
+        const enrollmentId = req.params.id;
+
+        // Validar que se proporcione startDate
+        if (!startDate) {
+            return res.status(400).json({ message: 'El campo startDate es obligatorio.' });
+        }
+
+        // Validar que el enrollment existe
+        const enrollment = await Enrollment.findById(enrollmentId)
+            .populate('planId', 'name weeklyClasses planType weeks')
+            .lean();
+
+        if (!enrollment) {
+            return res.status(404).json({ message: 'Enrollment no encontrado' });
+        }
+
+        // Validar que el enrollment esté en pausa (status: 3)
+        if (enrollment.status !== 3) {
+            return res.status(400).json({ message: 'El enrollment no está en pausa. Solo se pueden reactivar enrollments con status 3 (en pausa).' });
+        }
+
+        const plan = enrollment.planId;
+        if (!plan) {
+            return res.status(400).json({ message: 'El enrollment no tiene un plan asociado.' });
+        }
+
+        // Convertir startDate a Date
+        const newStartDate = new Date(startDate);
+        newStartDate.setUTCHours(0, 0, 0, 0);
+
+        // Buscar todas las clases del enrollment
+        const allClasses = await ClassRegistry.find({ enrollmentId: enrollmentId }).lean();
+
+        // Identificar clases a reagendar:
+        // 1. Clases con classViewed: 0 (pendientes)
+        // 2. Clases con reschedule: 1 (hijas de reschedule)
+        const classesToReschedule = allClasses.filter(classRecord => {
+            return classRecord.classViewed === 0 || classRecord.reschedule === 1;
+        });
+
+        // Contar cuántas clases hay que reagendar
+        const classesToRescheduleCount = classesToReschedule.length;
+
+        if (classesToRescheduleCount === 0) {
+            return res.status(400).json({ message: 'No hay clases pendientes para reagendar.' });
+        }
+
+        let newEndDate;
+        let newMonthlyClasses;
+
+        // Recalcular endDate según classCalculationType y número de clases restantes
+        if (enrollment.classCalculationType === 1) {
+            // Tipo A: Enrollment normal (plan mensual)
+            if (plan.planType !== 1) {
+                return res.status(400).json({ message: 'El classCalculationType 1 solo es válido para planes de tipo mensual (planType 1).' });
+            }
+
+            // Calcular cuántas semanas se necesitan para las clases restantes
+            // Dividir clases restantes entre weeklyClasses para obtener semanas necesarias
+            const weeksNeeded = Math.ceil(classesToRescheduleCount / plan.weeklyClasses);
+            
+            // Calcular endDate: semanas necesarias desde newStartDate
+            // Para tipo mensual, calculamos como si fuera un mes, pero ajustado a las semanas necesarias
+            const endDateObj = new Date(newStartDate);
+            endDateObj.setUTCDate(endDateObj.getUTCDate() + (weeksNeeded * 7) - 1);
+            endDateObj.setUTCHours(23, 59, 59, 999);
+            newEndDate = endDateObj;
+
+            // Generar fechas de clases para el nuevo período
+            const classDates = calculateClassDates(newStartDate, newEndDate, enrollment.scheduledDays, plan.weeklyClasses);
+            // Tomar solo las fechas necesarias para las clases a reagendar
+            const datesToAssign = classDates.slice(0, classesToRescheduleCount);
+            newMonthlyClasses = datesToAssign.length;
+
+            if (datesToAssign.length < classesToRescheduleCount) {
+                // Si no hay suficientes fechas, extender el período
+                const additionalWeeks = Math.ceil((classesToRescheduleCount - datesToAssign.length) / plan.weeklyClasses);
+                const extendedEndDate = new Date(newEndDate);
+                extendedEndDate.setUTCDate(extendedEndDate.getUTCDate() + (additionalWeeks * 7));
+                extendedEndDate.setUTCHours(23, 59, 59, 999);
+                
+                const extendedClassDates = calculateClassDates(newStartDate, extendedEndDate, enrollment.scheduledDays, plan.weeklyClasses);
+                const finalDates = extendedClassDates.slice(0, classesToRescheduleCount);
+                newEndDate = extendedEndDate;
+                newMonthlyClasses = finalDates.length;
+
+                // Actualizar datesToAssign para usar en la actualización
+                var datesToAssignFinal = finalDates;
+            } else {
+                var datesToAssignFinal = datesToAssign;
+            }
+
+        } else if (enrollment.classCalculationType === 2) {
+            // Tipo B: Enrollment por número de semanas
+            if (plan.planType !== 2) {
+                return res.status(400).json({ message: 'El classCalculationType 2 solo es válido para planes de tipo semanal (planType 2).' });
+            }
+
+            if (!plan.weeks || plan.weeks <= 0) {
+                return res.status(400).json({ message: 'El plan de tipo semanal debe tener la key weeks definida y mayor a 0.' });
+            }
+
+            // Calcular cuántas semanas se necesitan para las clases restantes
+            const weeksNeeded = Math.ceil(classesToRescheduleCount / plan.weeklyClasses);
+
+            // Calcular endDate basado en semanas necesarias desde newStartDate
+            const startDayOfWeek = newStartDate.getUTCDay();
+            const firstWeekSunday = new Date(newStartDate);
+            firstWeekSunday.setUTCDate(newStartDate.getUTCDate() - startDayOfWeek);
+            firstWeekSunday.setUTCHours(0, 0, 0, 0);
+
+            // Calcular el final de la última semana necesaria
+            const endDateObj = new Date(firstWeekSunday);
+            endDateObj.setUTCDate(firstWeekSunday.getUTCDate() + (weeksNeeded * 7) - 1);
+            endDateObj.setUTCHours(23, 59, 59, 999);
+
+            // El endDate del enrollment será el día antes de la culminación de las semanas
+            const enrollmentEndDate = new Date(endDateObj);
+            enrollmentEndDate.setUTCDate(endDateObj.getUTCDate() - 1);
+            enrollmentEndDate.setUTCHours(23, 59, 59, 999);
+            newEndDate = enrollmentEndDate;
+
+            // Generar fechas de clases para las semanas necesarias
+            const classDates = calculateClassDatesByWeeks(newStartDate, weeksNeeded, enrollment.scheduledDays, plan.weeklyClasses);
+            const datesToAssign = classDates.slice(0, classesToRescheduleCount);
+            newMonthlyClasses = datesToAssign.length;
+
+            if (datesToAssign.length < classesToRescheduleCount) {
+                // Si no hay suficientes fechas, extender semanas
+                const additionalWeeks = Math.ceil((classesToRescheduleCount - datesToAssign.length) / plan.weeklyClasses);
+                const totalWeeks = weeksNeeded + additionalWeeks;
+                
+                const extendedClassDates = calculateClassDatesByWeeks(newStartDate, totalWeeks, enrollment.scheduledDays, plan.weeklyClasses);
+                const finalDates = extendedClassDates.slice(0, classesToRescheduleCount);
+                
+                // Recalcular endDate con las semanas extendidas
+                const extendedEndDateObj = new Date(firstWeekSunday);
+                extendedEndDateObj.setUTCDate(firstWeekSunday.getUTCDate() + (totalWeeks * 7) - 1);
+                extendedEndDateObj.setUTCHours(23, 59, 59, 999);
+                const extendedEnrollmentEndDate = new Date(extendedEndDateObj);
+                extendedEnrollmentEndDate.setUTCDate(extendedEndDateObj.getUTCDate() - 1);
+                extendedEnrollmentEndDate.setUTCHours(23, 59, 59, 999);
+                newEndDate = extendedEnrollmentEndDate;
+                newMonthlyClasses = finalDates.length;
+
+                var datesToAssignFinal = finalDates;
+            } else {
+                var datesToAssignFinal = datesToAssign;
+            }
+        } else {
+            return res.status(400).json({ message: 'classCalculationType inválido.' });
+        }
+
+        // Actualizar las clases a reagendar con las nuevas fechas
+        const updatePromises = classesToReschedule.map((classRecord, index) => {
+            const newDate = datesToAssignFinal[index];
+            const dateObj = new Date(newDate);
+            const year = dateObj.getUTCFullYear();
+            const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getUTCDate()).padStart(2, '0');
+            const dateString = `${year}-${month}-${day}`;
+
+            return ClassRegistry.findByIdAndUpdate(
+                classRecord._id,
+                { classDate: dateString },
+                { new: true }
+            );
+        });
+
+        await Promise.all(updatePromises);
+
+        // Actualizar el enrollment con el nuevo startDate, endDate y monthlyClasses
+        const updatedEnrollment = await Enrollment.findByIdAndUpdate(
+            enrollmentId,
+            {
+                startDate: newStartDate,
+                endDate: newEndDate,
+                monthlyClasses: newMonthlyClasses,
+                status: 1 // Reactivar el enrollment (status: 1 = activo)
+            },
+            { new: true }
+        );
+
+        // Popular en la respuesta
+        const populatedUpdatedEnrollment = await Enrollment.findById(updatedEnrollment._id)
+                                                                .populate(populateOptions)
+                                                                .lean();
+
+        res.status(200).json({
+            message: 'Matrícula reactivada exitosamente',
+            enrollment: populatedUpdatedEnrollment,
+            classesRescheduled: classesToRescheduleCount,
+            newStartDate: newStartDate,
+            newEndDate: newEndDate
+        });
+    } catch (error) {
+        console.error('Error al reactivar matrícula:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de matrícula inválido' });
+        }
+        res.status(500).json({ message: 'Error interno al reactivar matrícula', error: error.message });
+    }
+};
+
+/**
  * @route GET /api/enrollments/professor/:professorId
  * @description Obtiene todas las matrículas asociadas a un profesor específico, con datos populados.
  * @access Private (Requiere JWT)
@@ -724,9 +1076,7 @@ enrollmentCtrl.getDetail = async (req, res) => {
         delete processedEnrollment.totalAmount;
         delete processedEnrollment.available_balance;
         delete processedEnrollment.rescheduleHours;
-        delete processedEnrollment.graceDays;
         delete processedEnrollment.latePaymentPenalty;
-        delete processedEnrollment.extendedGraceDays;
 
         // Construir respuesta con formato similar al ejemplo
         const response = {
