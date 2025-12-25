@@ -4,53 +4,43 @@ const mongoose = require('mongoose');
 const PenalizacionSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: false, // Ahora opcional para permitir registros de penalización sin name
+        required: false, // Opcional, pero recomendado para identificar el tipo de penalización
         unique: true,
         sparse: true, // Permite múltiples documentos con 'null' en este campo, pero únicos para valores no nulos
         trim: true
-        // Nombre del tipo de penalización (para tipos de penalización)
+        // Nombre del tipo de penalización (catálogo de tipos disponibles)
     },
-    description: {
-        type: String,
-        trim: true,
-        default: null
-        // descripción detallada del tipo de penalización
+    penalizationLevels: {
+        type: [{
+            tipo: {
+                type: String,
+                trim: true,
+                required: true
+                // Tipo de penalización (ej: "Llamado de Atención", "Amonestación", "Suspensión")
+            },
+            nivel: {
+                type: Number,
+                required: true,
+                min: 1
+                // Nivel de la penalización (1, 2, 3, etc.)
+            },
+            description: {
+                type: String,
+                trim: true,
+                default: null
+                // Descripción específica para este nivel y tipo de penalización
+            }
+        }],
+        default: []
+        // Array de niveles y tipos de penalización disponibles para este tipo de penalización
+        // Permite tener múltiples niveles (1, 2, 3) y tipos (Llamado de Atención, Amonestación, etc.)
+        // para una misma penalización
     },
     status: {
         type: Number,
         required: true,
         default: 1, // 1 = activo, 2 = anulado
         enum: [1, 2]
-    },
-    // Campos para registros de penalización por enrollment (opcionales)
-    enrollmentId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Enrollment',
-        default: null
-        // ID del enrollment (para registros de penalización generados por cronjob)
-    },
-    penalization_description: {
-        type: String,
-        trim: true,
-        default: null
-        // Descripción de la penalización aplicada al enrollment
-    },
-    penalizationMoney: {
-        type: Number,
-        default: null,
-        min: 0
-        // Monto de dinero de la penalización (sacado del enrollment)
-    },
-    lateFee: {
-        type: Number,
-        default: null,
-        min: 0
-        // Número de días de lateFee (sacado del enrollment)
-    },
-    endDate: {
-        type: Date,
-        default: null
-        // Fecha de fin del enrollment (sacada del enrollment)
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

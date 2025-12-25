@@ -2,6 +2,7 @@
 // Archivo principal para inicializar todos los cronjobs
 
 const { initEnrollmentsPaymentCronjob } = require('./enrollments.jobs');
+const { initClassFinalizationCronjob } = require('./classRegistry.jobs');
 
 /**
  * Inicializa todos los cronjobs del sistema
@@ -12,6 +13,9 @@ const initAllJobs = () => {
 
     // Inicializar cronjob de enrollments por impago
     initEnrollmentsPaymentCronjob();
+
+    // Inicializar cronjob de finalización de clases
+    initClassFinalizationCronjob();
 
     console.log('[JOBS] Todos los cronjobs han sido inicializados');
 };

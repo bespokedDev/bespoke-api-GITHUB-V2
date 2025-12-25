@@ -5,6 +5,8 @@ const Student = require('../models/Student'); // Necesario para popular
 const Professor = require('../models/Professor'); // Necesario para popular
 const ClassRegistry = require('../models/ClassRegistry'); // Modelo para registros de clase
 const Penalizacion = require('../models/Penalizacion'); // Necesario para validar penalizationId
+const User = require('../models/User'); // Necesario para obtener información del usuario que disuelve
+const Notification = require('../models/Notification'); // Necesario para crear notificaciones
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
 const mongoose = require('mongoose');
 
@@ -746,6 +748,31 @@ enrollmentCtrl.disolve = async (req, res) => {
             return res.status(400).json({ message: 'ID de usuario inválido.' });
         }
 
+        // Obtener información del usuario que realiza el disolve
+        const user = await User.findById(userId).lean();
+        if (!user) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+
+        // Obtener el enrollment antes de actualizarlo para extraer los IDs de estudiantes
+        const enrollment = await Enrollment.findById(req.params.id).lean();
+        if (!enrollment) {
+            return res.status(404).json({ message: 'Matrícula no encontrada' });
+        }
+
+        // Extraer IDs de estudiantes del enrollment
+        const studentIds = enrollment.studentIds
+            .map(s => {
+                // Si studentId es un ObjectId directo
+                if (s.studentId && typeof s.studentId === 'object' && s.studentId._id) {
+                    return s.studentId._id.toString();
+                }
+                // Si studentId es un ObjectId o string
+                return s.studentId ? s.studentId.toString() : null;
+            })
+            .filter(id => id !== null && id !== undefined);
+
+        // Actualizar el enrollment
         const disolvedEnrollment = await Enrollment.findByIdAndUpdate(
             req.params.id,
             { 
@@ -756,8 +783,29 @@ enrollmentCtrl.disolve = async (req, res) => {
             { new: true }
         );
 
-        if (!disolvedEnrollment) {
-            return res.status(404).json({ message: 'Matrícula no encontrada' });
+        // Crear notificación de disolución
+        try {
+            // Validar que el ObjectId de categoría de notificación sea válido
+            const categoryNotificationId = '6941c9b30646c9359c7f9f68';
+            if (!mongoose.Types.ObjectId.isValid(categoryNotificationId)) {
+                throw new Error('ID de categoría de notificación inválido');
+            }
+
+            const newNotification = new Notification({
+                idCategoryNotification: categoryNotificationId,
+                notification_description: `Enrollment disuelto desde el administrativo por ${user.name}`,
+                idPenalization: null,
+                idEnrollment: disolvedEnrollment._id,
+                idProfessor: null,
+                idStudent: studentIds.length > 0 ? studentIds : [],
+                isActive: true
+            });
+
+            await newNotification.save();
+            console.log(`[DISOLVE] Notificación de disolución creada para enrollment ${disolvedEnrollment._id}`);
+        } catch (notificationError) {
+            console.error(`[DISOLVE] Error creando notificación de disolución para enrollment ${disolvedEnrollment._id}:`, notificationError.message);
+            // No fallar la operación si la notificación falla, solo loguear el error
         }
 
         // Popular en la respuesta

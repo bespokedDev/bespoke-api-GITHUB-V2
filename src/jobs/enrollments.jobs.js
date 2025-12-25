@@ -2,6 +2,7 @@
 const cron = require('node-cron');
 const Enrollment = require('../models/Enrollment');
 const Penalizacion = require('../models/Penalizacion');
+const PenalizationRegistry = require('../models/PenalizationRegistry');
 const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
 
@@ -109,25 +110,42 @@ const processEnrollmentsPaymentStatus = async () => {
                     if (expandedEndDate < now) {
                         // Si penalizationMoney > 0, crear registro de penalización
                         if (enrollment.penalizationMoney > 0) {
-                            // Verificar si ya existe una penalización para este enrollment
-                            const existingPenalization = await Penalizacion.findOne({
+                            // Verificar si ya existe un registro de penalización para este enrollment
+                            const existingPenalizationRegistry = await PenalizationRegistry.findOne({
                                 enrollmentId: enrollment._id
                             });
 
-                            if (!existingPenalization) {
-                                // Crear registro de penalización
-                                const newPenalization = new Penalizacion({
-                                    name: null, // No tiene name porque es un registro, no un tipo
-                                    description: `Penalización por vencimiento de días de pago - Enrollment ${enrollment._id}`,
-                                    status: 1,
+                            if (!existingPenalizationRegistry) {
+                                // Buscar o crear el tipo de penalización por defecto para "Vencimiento de días de pago"
+                                let penalizationType = await Penalizacion.findOne({
+                                    name: 'Penalización por vencimiento de días de pago'
+                                });
+
+                                if (!penalizationType) {
+                                    // Crear el tipo de penalización si no existe
+                                    penalizationType = new Penalizacion({
+                                        name: 'Penalización por vencimiento de días de pago',
+                                        tipo: null,
+                                        description: 'Penalización aplicada automáticamente cuando un enrollment vence y tiene penalizationMoney > 0',
+                                        status: 1
+                                    });
+                                    await penalizationType.save();
+                                    console.log(`[CRONJOB] Tipo de penalización "Penalización por vencimiento de días de pago" creado`);
+                                }
+
+                                // Crear registro de penalización en PenalizationRegistry
+                                const newPenalizationRegistry = new PenalizationRegistry({
+                                    idPenalizacion: penalizationType._id,
                                     enrollmentId: enrollment._id,
+                                    professorId: null,
+                                    studentId: null,
                                     penalization_description: `Penalización por vencimiento de días de pago. Enrollment vencido el ${endDate.toISOString().split('T')[0]}`,
                                     penalizationMoney: enrollment.penalizationMoney,
                                     lateFee: enrollment.lateFee,
                                     endDate: enrollment.endDate
                                 });
 
-                                const savedPenalization = await newPenalization.save();
+                                const savedPenalizationRegistry = await newPenalizationRegistry.save();
                                 penalizedCount++;
 
                                 // Obtener categoría de notificación "Penalización" o crearla si no existe
@@ -157,11 +175,12 @@ const processEnrollmentsPaymentStatus = async () => {
                                     .filter(id => id !== null && id !== undefined);
 
                                 // Crear notificación
+                                // La notificación apunta al tipo de penalización (Penalizacion), no al registro
                                 if (studentIds.length > 0) {
                                     const newNotification = new Notification({
                                         idCategoryNotification: categoryNotification._id,
                                         notification_description: 'penalización por vencimiento de dias de pago',
-                                        idPenalization: savedPenalization._id,
+                                        idPenalization: penalizationType._id, // Apunta al tipo de penalización
                                         idEnrollment: enrollment._id,
                                         idProfessor: null,
                                         idStudent: studentIds,
@@ -172,7 +191,7 @@ const processEnrollmentsPaymentStatus = async () => {
                                     console.log(`[CRONJOB] Notificación creada para enrollment ${enrollment._id}`);
                                 }
 
-                                console.log(`[CRONJOB] Penalización creada para enrollment ${enrollment._id}`);
+                                console.log(`[CRONJOB] Registro de penalización creado para enrollment ${enrollment._id}`);
                             }
                         }
 

@@ -12,14 +12,74 @@ const penalizacionCtrl = {};
  */
 penalizacionCtrl.create = async (req, res) => {
     try {
-        const { name } = req.body;
+        const { name, penalizationLevels } = req.body;
 
         // Validaciones básicas
         if (!name || typeof name !== 'string' || name.trim() === '') {
             return res.status(400).json({ message: 'El nombre de la penalización es requerido.' });
         }
 
-        const newPenalizacion = new Penalizacion({ name });
+        // Construir objeto de penalización
+        const penalizacionData = {
+            name: name.trim()
+        };
+
+        // Validar y agregar penalizationLevels si se proporciona
+        if (penalizationLevels !== undefined) {
+            if (!Array.isArray(penalizationLevels)) {
+                return res.status(400).json({ message: 'El campo penalizationLevels debe ser un array.' });
+            }
+
+            // Validar cada elemento del array
+            const validatedLevels = [];
+            for (let i = 0; i < penalizationLevels.length; i++) {
+                const level = penalizationLevels[i];
+
+                if (!level || typeof level !== 'object') {
+                    return res.status(400).json({ 
+                        message: `El elemento ${i} de penalizationLevels debe ser un objeto.` 
+                    });
+                }
+
+                // Validar tipo
+                if (!level.tipo || typeof level.tipo !== 'string' || level.tipo.trim() === '') {
+                    return res.status(400).json({ 
+                        message: `El campo tipo es requerido en el elemento ${i} de penalizationLevels.` 
+                    });
+                }
+
+                // Validar nivel
+                if (level.nivel === undefined || level.nivel === null) {
+                    return res.status(400).json({ 
+                        message: `El campo nivel es requerido en el elemento ${i} de penalizationLevels.` 
+                    });
+                }
+
+                const nivelNumber = Number(level.nivel);
+                if (isNaN(nivelNumber) || nivelNumber < 1 || !Number.isInteger(nivelNumber)) {
+                    return res.status(400).json({ 
+                        message: `El campo nivel en el elemento ${i} debe ser un número entero mayor o igual a 1.` 
+                    });
+                }
+
+                // Validar description (opcional)
+                if (level.description !== undefined && level.description !== null && typeof level.description !== 'string') {
+                    return res.status(400).json({ 
+                        message: `El campo description en el elemento ${i} debe ser un string o null.` 
+                    });
+                }
+
+                validatedLevels.push({
+                    tipo: level.tipo.trim(),
+                    nivel: nivelNumber,
+                    description: level.description ? level.description.trim() : null
+                });
+            }
+
+            penalizacionData.penalizationLevels = validatedLevels;
+        }
+
+        const newPenalizacion = new Penalizacion(penalizacionData);
         const savedPenalizacion = await newPenalizacion.save();
 
         // Agregar información de status legible
@@ -114,23 +174,82 @@ penalizacionCtrl.getById = async (req, res) => {
 penalizacionCtrl.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name } = req.body;
+        const { name, penalizationLevels } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID de penalización inválido.' });
         }
 
         // Validar que se proporcione al menos un campo
-        if (!name) {
-            return res.status(400).json({ message: 'Se requiere el campo name para actualizar la penalización.' });
+        if (!name && penalizationLevels === undefined) {
+            return res.status(400).json({ message: 'Se requiere al menos un campo para actualizar la penalización.' });
         }
 
-        // Validar que el nombre no esté vacío
-        if (typeof name !== 'string' || name.trim() === '') {
-            return res.status(400).json({ message: 'El nombre de la penalización no puede estar vacío.' });
+        // Construir objeto de actualización
+        const updateFields = {};
+
+        // Validar y agregar name si se proporciona
+        if (name !== undefined) {
+            if (typeof name !== 'string' || name.trim() === '') {
+                return res.status(400).json({ message: 'El nombre de la penalización no puede estar vacío.' });
+            }
+            updateFields.name = name.trim();
         }
 
-        const updateFields = { name: name.trim() };
+        // Validar y agregar penalizationLevels si se proporciona
+        if (penalizationLevels !== undefined) {
+            if (!Array.isArray(penalizationLevels)) {
+                return res.status(400).json({ message: 'El campo penalizationLevels debe ser un array.' });
+            }
+
+            // Validar cada elemento del array
+            const validatedLevels = [];
+            for (let i = 0; i < penalizationLevels.length; i++) {
+                const level = penalizationLevels[i];
+
+                if (!level || typeof level !== 'object') {
+                    return res.status(400).json({ 
+                        message: `El elemento ${i} de penalizationLevels debe ser un objeto.` 
+                    });
+                }
+
+                // Validar tipo
+                if (!level.tipo || typeof level.tipo !== 'string' || level.tipo.trim() === '') {
+                    return res.status(400).json({ 
+                        message: `El campo tipo es requerido en el elemento ${i} de penalizationLevels.` 
+                    });
+                }
+
+                // Validar nivel
+                if (level.nivel === undefined || level.nivel === null) {
+                    return res.status(400).json({ 
+                        message: `El campo nivel es requerido en el elemento ${i} de penalizationLevels.` 
+                    });
+                }
+
+                const nivelNumber = Number(level.nivel);
+                if (isNaN(nivelNumber) || nivelNumber < 1 || !Number.isInteger(nivelNumber)) {
+                    return res.status(400).json({ 
+                        message: `El campo nivel en el elemento ${i} debe ser un número entero mayor o igual a 1.` 
+                    });
+                }
+
+                // Validar description (opcional)
+                if (level.description !== undefined && level.description !== null && typeof level.description !== 'string') {
+                    return res.status(400).json({ 
+                        message: `El campo description en el elemento ${i} debe ser un string o null.` 
+                    });
+                }
+
+                validatedLevels.push({
+                    tipo: level.tipo.trim(),
+                    nivel: nivelNumber,
+                    description: level.description ? level.description.trim() : null
+                });
+            }
+
+            updateFields.penalizationLevels = validatedLevels;
+        }
 
         const updatedPenalizacion = await Penalizacion.findByIdAndUpdate(id, updateFields, { new: true, runValidators: true }).lean();
 
