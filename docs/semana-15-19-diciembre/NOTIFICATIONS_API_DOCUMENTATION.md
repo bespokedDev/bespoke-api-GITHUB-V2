@@ -26,6 +26,7 @@ const headers = {
 |--------|------|-------------|--------|
 | `POST` | `/api/notifications` | Crear nueva notificación | Solo admin |
 | `GET` | `/api/notifications` | Listar todas las notificaciones | Solo admin |
+| `GET` | `/api/notifications/user/my-notifications` | Listar notificaciones del usuario autenticado | Cualquier usuario autenticado |
 | `GET` | `/api/notifications/:id` | Obtener notificación por ID | Solo admin |
 | `PUT` | `/api/notifications/:id` | Actualizar notificación | Solo admin |
 | `PATCH` | `/api/notifications/:id/anular` | Anular notificación | Solo admin |
@@ -70,6 +71,7 @@ const headers = {
       "email": "maria.garcia@example.com"
     }
   ],
+  "userId": null,
   "isActive": true,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -87,6 +89,7 @@ const headers = {
 - `idEnrollment` (ObjectId, default: null): ID de enrollment (referencia a la colección `Enrollment`) - por si la notificación es de un enrollment directo
 - `idProfessor` (ObjectId, default: null): ID del profesor (referencia a la colección `Professor`) - por si la notificación viene de un profesor
 - `idStudent` (Array[ObjectId], default: []): Array de IDs de estudiantes (referencia a la colección `Student`) - por si la notificación viene de uno o más estudiantes
+- `userId` (ObjectId, default: null): ID del usuario administrador (referencia a la colección `User`) - para notificaciones dirigidas a administradores
 - `isActive` (Boolean): Indica si la notificación está activa. Por defecto: `true`
 
 #### **Campos Generados Automáticamente**
@@ -358,7 +361,178 @@ curl -X GET "http://localhost:3000/api/notifications?idStudent=64f8a1b2c3d4e5f6a
 
 ---
 
-### **3. Obtener Notificación por ID**
+### **3. Obtener Notificaciones del Usuario Autenticado**
+
+#### **GET** `/api/notifications/user/my-notifications`
+
+Obtiene todas las notificaciones del usuario autenticado. El sistema identifica automáticamente el tipo de usuario desde el token JWT y busca las notificaciones correspondientes.
+
+**Lógica de búsqueda:**
+- **Si el usuario es `student`**: Busca notificaciones donde el `idStudent` (array) contenga el ID del estudiante
+- **Si el usuario es `professor`**: Busca notificaciones donde el `idProfessor` coincida con el ID del profesor
+- **Si el usuario es `admin`**: Busca notificaciones donde el `userId` coincida con el ID del usuario administrador
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Request Body**
+No requiere body. El ID y tipo de usuario se obtienen automáticamente del token JWT.
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Notificaciones obtenidas exitosamente",
+  "count": 2,
+  "userType": "student",
+  "userId": "64f8a1b2c3d4e5f6a7b8c9d4",
+  "notifications": [
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "idCategoryNotification": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "category_notification_description": "Penalización",
+        "isActive": true
+      },
+      "notification_description": "El estudiante tiene un retraso en el pago de 3 días",
+      "idPenalization": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
+        "name": "Retraso en pago",
+        "penalizationLevels": [
+          {
+            "tipo": "Amonestación",
+            "nivel": 1,
+            "description": "Primera amonestación por retraso"
+          }
+        ],
+        "status": 1
+      },
+      "idEnrollment": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d3",
+        "alias": "Enrollment de Juan",
+        "language": "English",
+        "enrollmentType": "single",
+        "status": 1,
+        "professorId": "64f8a1b2c3d4e5f6a7b8c9d6",
+        "studentIds": [
+          {
+            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+          }
+        ]
+      },
+      "idProfessor": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
+        "name": "Profesor Ejemplo",
+        "email": "profesor@example.com",
+        "phone": "+1234567890",
+        "status": 1
+      },
+      "idStudent": [
+        {
+          "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+          "name": "Juan Pérez",
+          "studentCode": "BES-0001",
+          "email": "juan.perez@example.com",
+          "status": 1
+        }
+      ],
+      "userId": null,
+      "isActive": true,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### **Errores Posibles**
+
+**400 - Bad Request**
+```json
+{
+  "message": "ID de usuario no encontrado en el token"
+}
+```
+- **Causa**: El token no contiene el ID del usuario
+
+```json
+{
+  "message": "ID de usuario inválido en el token"
+}
+```
+- **Causa**: El ID del usuario en el token no es un ObjectId válido
+
+```json
+{
+  "message": "Tipo de usuario no válido o no encontrado en el token"
+}
+```
+- **Causa**: El token no contiene `userType` o `role`, o el valor no es `student`, `professor` o `admin`
+
+**401 - Unauthorized**
+```json
+{
+  "message": "Token no proporcionado"
+}
+```
+- **Causa**: No se incluyó el header de autorización
+
+**403 - Forbidden**
+```json
+{
+  "message": "Token inválido o expirado"
+}
+```
+- **Causa**: El token JWT es inválido o ha expirado
+
+**500 - Internal Server Error**
+```json
+{
+  "message": "Error interno al obtener notificaciones",
+  "error": "Mensaje de error detallado"
+}
+```
+- **Causa**: Error inesperado del servidor
+
+#### **Ejemplo de Uso (JavaScript/Fetch)**
+```javascript
+const getMyNotifications = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/notifications/user/my-notifications', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Tienes ${data.count} notificaciones`);
+    console.log('Notificaciones:', data.notifications);
+    return data;
+  } catch (error) {
+    console.error('Error al obtener notificaciones:', error);
+    throw error;
+  }
+};
+```
+
+#### **Notas Importantes**
+- Solo se devuelven notificaciones con `isActive: true`
+- Todas las referencias externas se popula automáticamente con información completa
+- Las notificaciones se ordenan por fecha de creación descendente (más recientes primero)
+- El endpoint funciona para cualquier tipo de usuario autenticado (student, professor, admin)
+
+---
+
+### **4. Obtener Notificación por ID**
 
 #### **GET** `/api/notifications/:id`
 

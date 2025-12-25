@@ -37,6 +37,12 @@ const NotificationSchema = new mongoose.Schema({
         ref: 'Student'
         // Array de IDs de estudiantes (referencia a la colección Student) - opcional, por si la notificación viene de uno o más estudiantes
     }],
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+        // ID del usuario administrador (referencia a la colección User) - opcional, para notificaciones dirigidas a administradores
+    },
     isActive: {
         type: Boolean,
         default: true

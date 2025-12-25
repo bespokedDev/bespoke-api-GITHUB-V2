@@ -5,6 +5,7 @@ const Penalizacion = require('../models/Penalizacion');
 const Enrollment = require('../models/Enrollment');
 const Professor = require('../models/Professor');
 const Student = require('../models/Student');
+const User = require('../models/User');
 const utilsFunctions = require('../utils/utilsFunctions');
 const mongoose = require('mongoose');
 
@@ -17,7 +18,7 @@ const notificationCtrl = {};
  */
 notificationCtrl.create = async (req, res) => {
     try {
-        const { idCategoryNotification, notification_description, idPenalization, idEnrollment, idProfessor, idStudent } = req.body;
+        const { idCategoryNotification, notification_description, idPenalization, idEnrollment, idProfessor, idStudent, userId } = req.body;
 
         // Validar campos requeridos
         if (!idCategoryNotification || !notification_description) {
@@ -119,6 +120,21 @@ notificationCtrl.create = async (req, res) => {
             }
         }
 
+        // Validar userId si se proporciona
+        if (userId !== undefined && userId !== null) {
+            if (!mongoose.Types.ObjectId.isValid(userId)) {
+                return res.status(400).json({
+                    message: 'ID de usuario inválido'
+                });
+            }
+            const user = await User.findById(userId);
+            if (!user) {
+                return res.status(404).json({
+                    message: 'Usuario no encontrado'
+                });
+            }
+        }
+
         // Crear la nueva notificación
         const newNotification = new Notification({
             idCategoryNotification: idCategoryNotification,
@@ -127,6 +143,7 @@ notificationCtrl.create = async (req, res) => {
             idEnrollment: idEnrollment || null,
             idProfessor: idProfessor || null,
             idStudent: studentIdsArray.length > 0 ? studentIdsArray : [],
+            userId: userId || null,
             isActive: req.body.isActive !== undefined ? req.body.isActive : true
         });
 
@@ -135,10 +152,11 @@ notificationCtrl.create = async (req, res) => {
         // Popular todas las referencias en la respuesta
         const populatedNotification = await Notification.findById(savedNotification._id)
             .populate('idCategoryNotification', 'category_notification_description')
-            .populate('idPenalization', 'name description')
+            .populate('idPenalization', 'name penalizationLevels status')
             .populate('idEnrollment', 'alias language enrollmentType')
             .populate('idProfessor', 'name email phone')
             .populate('idStudent', 'name studentCode email')
+            .populate('userId', 'name email role')
             .lean();
 
         res.status(201).json({
@@ -235,10 +253,11 @@ notificationCtrl.list = async (req, res) => {
 
         const notifications = await Notification.find(query)
             .populate('idCategoryNotification', 'category_notification_description')
-            .populate('idPenalization', 'name description')
-            .populate('idEnrollment', 'alias language enrollmentType')
-            .populate('idProfessor', 'name email phone')
-            .populate('idStudent', 'name studentCode email')
+            .populate('idPenalization', 'name penalizationLevels status')
+            .populate('idEnrollment', 'alias language enrollmentType status professorId studentIds')
+            .populate('idProfessor', 'name email phone status')
+            .populate('idStudent', 'name studentCode email status')
+            .populate('userId', 'name email role')
             .sort({ createdAt: -1 })
             .lean();
 
@@ -251,6 +270,78 @@ notificationCtrl.list = async (req, res) => {
         console.error('Error al listar notificaciones:', error);
         res.status(500).json({
             message: 'Error interno al listar notificaciones',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @route GET /api/notifications/user/my-notifications
+ * @description Lista todas las notificaciones del usuario autenticado (student, professor o admin)
+ * @access Private (Requiere JWT - Cualquier usuario autenticado)
+ * 
+ * Busca notificaciones según el tipo de usuario:
+ * - Si es student: busca en idStudent (array)
+ * - Si es professor: busca en idProfessor
+ * - Si es admin: busca en userId
+ */
+notificationCtrl.getMyNotifications = async (req, res) => {
+    try {
+        const userType = req.user?.userType || req.user?.role; // userType o role del token
+        const userId = req.user?.id; // ID del usuario del token
+
+        if (!userId) {
+            return res.status(400).json({
+                message: 'ID de usuario no encontrado en el token'
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                message: 'ID de usuario inválido en el token'
+            });
+        }
+
+        const query = { isActive: true }; // Solo notificaciones activas
+
+        // Construir query según el tipo de usuario
+        if (userType === 'student') {
+            // Buscar notificaciones donde el estudiante esté en el array idStudent
+            query.idStudent = { $in: [mongoose.Types.ObjectId(userId)] };
+        } else if (userType === 'professor') {
+            // Buscar notificaciones donde el profesor coincida
+            query.idProfessor = mongoose.Types.ObjectId(userId);
+        } else if (userType === 'admin') {
+            // Buscar notificaciones donde el usuario admin coincida
+            query.userId = mongoose.Types.ObjectId(userId);
+        } else {
+            return res.status(400).json({
+                message: 'Tipo de usuario no válido o no encontrado en el token'
+            });
+        }
+
+        // Buscar notificaciones con populate de todas las referencias
+        const notifications = await Notification.find(query)
+            .populate('idCategoryNotification', 'category_notification_description isActive')
+            .populate('idPenalization', 'name penalizationLevels status')
+            .populate('idEnrollment', 'alias language enrollmentType status professorId studentIds')
+            .populate('idProfessor', 'name email phone status')
+            .populate('idStudent', 'name studentCode email status')
+            .populate('userId', 'name email role')
+            .sort({ createdAt: -1 }) // Más recientes primero
+            .lean();
+
+        res.status(200).json({
+            message: 'Notificaciones obtenidas exitosamente',
+            count: notifications.length,
+            userType: userType,
+            userId: userId,
+            notifications: notifications
+        });
+    } catch (error) {
+        console.error('Error al obtener notificaciones del usuario:', error);
+        res.status(500).json({
+            message: 'Error interno al obtener notificaciones',
             error: error.message
         });
     }
@@ -273,10 +364,11 @@ notificationCtrl.getById = async (req, res) => {
 
         const notification = await Notification.findById(id)
             .populate('idCategoryNotification', 'category_notification_description')
-            .populate('idPenalization', 'name description')
-            .populate('idEnrollment', 'alias language enrollmentType')
-            .populate('idProfessor', 'name email phone')
-            .populate('idStudent', 'name studentCode email')
+            .populate('idPenalization', 'name penalizationLevels status')
+            .populate('idEnrollment', 'alias language enrollmentType status professorId studentIds')
+            .populate('idProfessor', 'name email phone status')
+            .populate('idStudent', 'name studentCode email status')
+            .populate('userId', 'name email role')
             .lean();
 
         if (!notification) {
@@ -313,7 +405,7 @@ notificationCtrl.getById = async (req, res) => {
 notificationCtrl.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { idCategoryNotification, notification_description, idPenalization, idEnrollment, idProfessor, idStudent, isActive } = req.body;
+        const { idCategoryNotification, notification_description, idPenalization, idEnrollment, idProfessor, idStudent, userId, isActive } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
@@ -411,6 +503,25 @@ notificationCtrl.update = async (req, res) => {
             }
         }
 
+        if (userId !== undefined) {
+            if (userId === null) {
+                updateFields.userId = null;
+            } else {
+                if (!mongoose.Types.ObjectId.isValid(userId)) {
+                    return res.status(400).json({
+                        message: 'ID de usuario inválido'
+                    });
+                }
+                const user = await User.findById(userId);
+                if (!user) {
+                    return res.status(404).json({
+                        message: 'Usuario no encontrado'
+                    });
+                }
+                updateFields.userId = userId;
+            }
+        }
+
         if (idStudent !== undefined) {
             if (idStudent === null || (Array.isArray(idStudent) && idStudent.length === 0)) {
                 updateFields.idStudent = [];
@@ -456,10 +567,11 @@ notificationCtrl.update = async (req, res) => {
         // Popular todas las referencias en la respuesta
         const populatedNotification = await Notification.findById(updatedNotification._id)
             .populate('idCategoryNotification', 'category_notification_description')
-            .populate('idPenalization', 'name description')
-            .populate('idEnrollment', 'alias language enrollmentType')
-            .populate('idProfessor', 'name email phone')
-            .populate('idStudent', 'name studentCode email')
+            .populate('idPenalization', 'name penalizationLevels status')
+            .populate('idEnrollment', 'alias language enrollmentType status professorId studentIds')
+            .populate('idProfessor', 'name email phone status')
+            .populate('idStudent', 'name studentCode email status')
+            .populate('userId', 'name email role')
             .lean();
 
         res.status(200).json({
@@ -528,10 +640,11 @@ notificationCtrl.anular = async (req, res) => {
             { new: true, runValidators: true }
         )
             .populate('idCategoryNotification', 'category_notification_description')
-            .populate('idPenalization', 'name description')
-            .populate('idEnrollment', 'alias language enrollmentType')
-            .populate('idProfessor', 'name email phone')
-            .populate('idStudent', 'name studentCode email')
+            .populate('idPenalization', 'name penalizationLevels status')
+            .populate('idEnrollment', 'alias language enrollmentType status professorId studentIds')
+            .populate('idProfessor', 'name email phone status')
+            .populate('idStudent', 'name studentCode email status')
+            .populate('userId', 'name email role')
             .lean();
 
         res.status(200).json({
@@ -595,10 +708,11 @@ notificationCtrl.activate = async (req, res) => {
             { new: true, runValidators: true }
         )
             .populate('idCategoryNotification', 'category_notification_description')
-            .populate('idPenalization', 'name description')
-            .populate('idEnrollment', 'alias language enrollmentType')
-            .populate('idProfessor', 'name email phone')
-            .populate('idStudent', 'name studentCode email')
+            .populate('idPenalization', 'name penalizationLevels status')
+            .populate('idEnrollment', 'alias language enrollmentType status professorId studentIds')
+            .populate('idProfessor', 'name email phone status')
+            .populate('idStudent', 'name studentCode email status')
+            .populate('userId', 'name email role')
             .lean();
 
         res.status(200).json({

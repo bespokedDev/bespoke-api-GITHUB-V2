@@ -15,6 +15,10 @@ router.post('/', verifyToken, verifyRole('admin'), notificationCtrl.create);
 // Acceso: Solo admin
 router.get('/', verifyToken, verifyRole('admin'), notificationCtrl.list);
 
+// GET /api/notifications/user/my-notifications - Lista notificaciones del usuario autenticado
+// Acceso: Cualquier usuario autenticado (student, professor, admin)
+router.get('/user/my-notifications', verifyToken, notificationCtrl.getMyNotifications);
+
 // GET /api/notifications/:id - Obtiene una notificación por su ID
 // Acceso: Solo admin
 router.get('/:id', verifyToken, verifyRole('admin'), notificationCtrl.getById);
