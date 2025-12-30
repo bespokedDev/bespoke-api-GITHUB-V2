@@ -153,13 +153,6 @@ const EnrollmentSchema = new mongoose.Schema({
         enum: ['single', 'couple', 'group'],
         required: true
     },
-    classCalculationType: {
-        type: Number,
-        enum: [1, 2],
-        default: 1
-        // 1 para enrollment normal (calculo de clases por semana y por scheduledDays)
-        // 2 para clases por semana / plan
-    },
     alias: {
         type: String,
         trim: true,
@@ -233,14 +226,6 @@ const EnrollmentSchema = new mongoose.Schema({
         type: Boolean,
         default: false
         // pagos de cancelación automaticos activados (true) o desactivados (false)
-    },
-    suspensionDaysAfterEndDate: {
-        type: Number,
-        required: true,
-        min: 1
-        // número de días que deben pasar después de endDate para suspender el servicio del enrollment
-        // por ejemplo, si suspensionDaysAfterEndDate = 3 y endDate es 12 de diciembre,
-        // el servicio se suspende el 15 de diciembre (12 + 3 días)
     },
     latePaymentPenalty: {
         type: Number,

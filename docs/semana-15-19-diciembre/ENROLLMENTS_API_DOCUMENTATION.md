@@ -109,11 +109,9 @@ const headers = {
   "graceDays": 0,
   "latePaymentPenalty": 0,
   "extendedGraceDays": 0,
-  "suspensionDaysAfterEndDate": 3,
   "lateFee": 2,
   "penalizationMoney": 0,
   "penalizationId": null,
-  "classCalculationType": 1,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -147,9 +145,6 @@ const headers = {
   - `learningDifficulty` (number): Si o no: `1` para si, `0` para no (por defecto: null)
 - `professorId` (ObjectId): Referencia al profesor asignado
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
-- `classCalculationType` (number): Tipo de cálculo de clases para el enrollment (por defecto: 1)
-  - `1` = Enrollment normal (cálculo de clases por semana y por scheduledDays)
-  - `2` = Clases por semana / plan
 - `alias` (string): Alias opcional para la matrícula
 - `language` (string): Idioma (`English`, `French`)
 - `scheduledDays` (Array): Días programados de las clases
@@ -186,8 +181,6 @@ const headers = {
 - `graceDays` (number): Cantidad de días de gracia asignados al estudiante para pagar el enrollment nuevamente en caso de que `totalAmount` sea 0 o que la cancelación automática no esté disponible (por defecto: 0)
 - `latePaymentPenalty` (number): Penalización de dinero en caso de que se retrase el pago (por defecto: 0)
 - `extendedGraceDays` (number): Permite extender, de manera excepcional, los días de gracia cuando el administrador decide dar días adicionales al estudiante para que pague (por defecto: 0)
-- `suspensionDaysAfterEndDate` (number): **OBLIGATORIO** - Número de días que deben pasar después de `endDate` para suspender el servicio del enrollment.
-  - Ejemplo: Si `suspensionDaysAfterEndDate: 3` y `endDate: 2024-12-12`, el servicio se suspende el `2024-12-15`
 - `lateFee` (number): **OBLIGATORIO** - Número de días tolerables de retraso en los pagos. Si el `lateFee` es 2 y el enrollment tiene `endDate` del 12 de diciembre, el estudiante tiene hasta el 14 de diciembre para pagar antes de generar una penalización
   - Ejemplo: Si `lateFee: 2` y `endDate: 2024-12-12`, la fecha límite de pago sin penalización es `2024-12-14`
 - `penalizationMoney` (number): Monto de dinero de la penalización aplicada por retraso en el pago (por defecto: 0)
@@ -288,9 +281,9 @@ POST /api/enrollments
 
 #### **Tipos de Cálculo de Clases**
 
-El sistema soporta dos tipos de cálculo de clases según el valor de `classCalculationType`:
+El sistema determina automáticamente el tipo de cálculo de clases según el `planType` del plan:
 
-**Tipo A (`classCalculationType: 1`) - Enrollment Normal (Plan Mensual):**
+**Tipo A (Plan Mensual - `planType: 1`):**
 - **Requisito**: El plan debe tener `planType: 1` (mensual)
 - Calcula clases basándose en un período mensual (desde `startDate` hasta un mes menos un día)
 - Genera clases día por día según `scheduledDays` dentro del período
@@ -298,7 +291,7 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
 - El campo `endDate` se calcula automáticamente
 - El campo `monthlyClasses` se calcula como el número real de clases que se pueden hacer según `scheduledDays` y el rango de fechas
 
-**Tipo B (`classCalculationType: 2`) - Enrollment por Semanas (Plan Semanal):**
+**Tipo B (Plan Semanal - `planType: 2`):**
 - **Requisito**: El plan debe tener `planType: 2` (semanal) y `weeks` definido
 - Calcula clases basándose en el número de semanas del plan (`plan.weeks`)
 - Multiplica `plan.weeks × plan.weeklyClasses` para calcular `monthlyClasses`
@@ -306,7 +299,7 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
 - El campo `endDate` se calcula basado en semanas completas (día antes de la culminación de las semanas)
 - **Ya no se requiere el campo `numberOfWeeks` en el request body** - ahora se usa `plan.weeks` del plan
 
-#### **Request Body - Tipo A (Normal)**
+#### **Request Body - Tipo A (Plan Mensual)**
 
 ```json
 {
@@ -334,21 +327,19 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
   "enrollmentType": "single",
   "language": "English",
-  "classCalculationType": 1,
   "scheduledDays": [
     { "day": "Lunes" },
     { "day": "Miércoles" }
   ],
   "purchaseDate": "2024-01-15T10:30:00.000Z",
   "startDate": "2024-01-22T00:00:00.000Z",
-  "lateFee": 2,
-  "suspensionDaysAfterEndDate": 3
+  "lateFee": 2
 }
 ```
 
-**Nota para Tipo A:** El campo `endDate` se calcula automáticamente como un mes menos un día desde `startDate`. No es necesario enviarlo en el request.
+**Nota para Tipo A:** El campo `endDate` se calcula automáticamente como un mes menos un día desde `startDate`. No es necesario enviarlo en el request. El plan debe tener `planType: 1` (mensual).
 
-#### **Request Body - Tipo B (Por Semanas)**
+#### **Request Body - Tipo B (Plan Semanal)**
 
 ```json
 {
@@ -376,7 +367,6 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
   "enrollmentType": "single",
   "language": "English",
-  "classCalculationType": 2,
   "scheduledDays": [
     { "day": "Lunes" },
     { "day": "Miércoles" }
@@ -384,7 +374,6 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
   "purchaseDate": "2024-01-15T10:30:00.000Z",
   "startDate": "2024-11-27T00:00:00.000Z",
   "lateFee": 2,
-  "suspensionDaysAfterEndDate": 3,
   "pricePerStudent": 100,
   "totalAmount": 100
 }
@@ -427,16 +416,14 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
 - `startDate` (date): **OBLIGATORIO** - Fecha de inicio de las clases
 - `lateFee` (number): **OBLIGATORIO** - Número de días tolerables de retraso en los pagos. Debe ser un número mayor o igual a 0
   - Ejemplo: Si `lateFee: 2` y `endDate: 2024-12-12`, la fecha límite de pago sin penalización es `2024-12-14`
-- `suspensionDaysAfterEndDate` (number): **OBLIGATORIO** - Número de días que deben pasar después de `endDate` para suspender el servicio. Debe ser un número mayor a 0.
-  - Ejemplo: Si `suspensionDaysAfterEndDate: 3` y `endDate: 2024-12-12`, el servicio se suspende el `2024-12-15`
 - `pricePerStudent` (number): **CALCULADO AUTOMÁTICAMENTE** - No es necesario enviarlo. Se calcula desde el plan según `enrollmentType`. Si se envía, será sobrescrito por el cálculo automático.
 - `totalAmount` (number): **CALCULADO AUTOMÁTICAMENTE** - No es necesario enviarlo. Se calcula como `precio_del_plan × número_de_estudiantes`. Si se envía, será sobrescrito por el cálculo automático.
 
 **Campos específicos por tipo:**
-- **Tipo A (`classCalculationType: 1`)**: 
+- **Tipo A (Plan Mensual - `planType: 1`)**: 
   - El plan debe tener `planType: 1` (mensual)
   - No requiere campos adicionales. El `endDate` y `monthlyClasses` se calculan automáticamente.
-- **Tipo B (`classCalculationType: 2`)**: 
+- **Tipo B (Plan Semanal - `planType: 2`)**: 
   - El plan debe tener `planType: 2` (semanal) y `weeks` definido
   - **Ya no se requiere `numberOfWeeks` en el request body** - se usa `plan.weeks` del plan
   - El `endDate` y `monthlyClasses` se calculan automáticamente basándose en `plan.weeks`
@@ -444,9 +431,6 @@ El sistema soporta dos tipos de cálculo de clases según el valor de `classCalc
 #### **Campos Opcionales**
 - `alias` (string): Alias para la matrícula
 - `purchaseDate` (date): Fecha de compra (por defecto: fecha actual)
-- `classCalculationType` (number): Tipo de cálculo de clases (por defecto: 1)
-  - `1` = Enrollment normal (cálculo de clases por semana y por scheduledDays)
-  - `2` = Clases por semana / plan
 - `disolve_reason` (string): Razón de disolución del enrollment (por defecto: null)
 - `rescheduleHours` (number): Horas de reschedule disponibles (por defecto: 0)
 - `substituteProfessor` (object): Profesor suplente asignado
@@ -539,9 +523,9 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
 
 #### **Lógica de Generación de Clases**
 
-El proceso de generación de clases depende del valor de `classCalculationType`:
+El proceso de generación de clases depende del `planType` del plan:
 
-**Tipo A (`classCalculationType: 1`) - Enrollment Normal:**
+**Tipo A (Plan Mensual - `planType: 1`):**
 
 Al crear un enrollment tipo A, el sistema realiza el siguiente proceso:
 
@@ -596,7 +580,7 @@ Al crear un enrollment tipo A, el sistema realiza el siguiente proceso:
 
 **Total:** 10 registros generados en `class-registry`
 
-**Tipo B (`classCalculationType: 2`) - Enrollment por Semanas:**
+**Tipo B (Plan Semanal - `planType: 2`):**
 
 Al crear un enrollment tipo B, el sistema realiza el siguiente proceso:
 
@@ -651,9 +635,9 @@ Al crear un enrollment tipo B, el sistema realiza el siguiente proceso:
 
 #### **Cómo se calcula el número de clases**
 
-El cálculo depende del `classCalculationType`:
+El cálculo depende del `planType` del plan:
 
-**Tipo A (`classCalculationType: 1`):**
+**Tipo A (Plan Mensual - `planType: 1`):**
 
 1. **Período del enrollment:**
    - `startDate` (incluido): Primer día válido del enrollment
@@ -685,7 +669,7 @@ El cálculo depende del `classCalculationType`:
 
 **Resultado:** 10 clases generadas (2 por semana × 5 semanas)
 
-**Tipo B (`classCalculationType: 2`):**
+**Tipo B (Plan Semanal - `planType: 2`):**
 
 1. **Cálculo de `monthlyClasses`:**
    - El sistema multiplica `plan.weeks × plan.weeklyClasses`
@@ -752,11 +736,9 @@ El cálculo depende del `classCalculationType`:
     "graceDays": 0,
     "latePaymentPenalty": 0,
     "extendedGraceDays": 0,
-    "suspensionDaysAfterEndDate": 3,
     "lateFee": 2,
     "penalizationMoney": 0,
     "penalizationId": null,
-    "classCalculationType": 1,
     "status": 1,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -985,7 +967,6 @@ No requiere body.
       ],
       "professorId": "6832845ebb53229d9559459b",
       "enrollmentType": "couple",
-      "classCalculationType": 2,
       "alias": null,
       "language": "English",
       "scheduledDays": [
@@ -1685,7 +1666,7 @@ Cuando se ejecuta el endpoint de reactivación, se actualizan los siguientes cam
 
 **En el Enrollment:**
 - `startDate`: Se actualiza con la nueva fecha proporcionada
-- `endDate`: Se recalcula según el número de clases restantes y el `classCalculationType`
+- `endDate`: Se recalcula según el número de clases restantes y el `planType` del plan
 - `monthlyClasses`: Se actualiza según las clases reagendadas
 - `status`: Se establece a `1` (activo)
 
@@ -1699,8 +1680,8 @@ Cuando se ejecuta el endpoint de reactivación, se actualizan los siguientes cam
    - Clases con `reschedule: 1` (hijas de reschedule)
 
 2. **Cálculo de `endDate`:**
-   - **Tipo 1 (mensual)**: Se calcula según las semanas necesarias para las clases restantes
-   - **Tipo 2 (semanal)**: Se calcula según las semanas necesarias para las clases restantes
+   - **Plan Mensual (`planType: 1`)**: Se calcula según las semanas necesarias para las clases restantes
+   - **Plan Semanal (`planType: 2`)**: Se calcula según las semanas necesarias para las clases restantes
 
 3. **Generación de nuevas fechas:**
    - Se generan fechas desde el nuevo `startDate` respetando `scheduledDays` y `weeklyClasses`
@@ -1824,7 +1805,7 @@ resumeEnrollment('64f8a1b2c3d4e5f6a7b8c9d0', '2024-02-15T00:00:00.000Z');
 - El campo `startDate` es obligatorio y debe ser una fecha válida
 - Solo se reagendan las clases pendientes (`classViewed: 0`) y las clases en reschedule activas (`reschedule: 1`)
 - Las clases ya vistas (`classViewed: 1`) y las clases en reschedule completadas (`reschedule: 2`) mantienen sus fechas originales
-- El `endDate` se recalcula automáticamente según el número de clases restantes y el `classCalculationType` del enrollment
+- El `endDate` se recalcula automáticamente según el número de clases restantes y el `planType` del plan
 - El `monthlyClasses` se actualiza según las clases reagendadas
 
 ---

@@ -984,7 +984,6 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
                     languageLevel: si.languageLevel
                 })),
                 enrollmentType: enrollment.enrollmentType,
-                classCalculationType: enrollment.classCalculationType,
                 alias: enrollment.alias,
                 language: enrollment.language,
                 scheduledDays: enrollment.scheduledDays,

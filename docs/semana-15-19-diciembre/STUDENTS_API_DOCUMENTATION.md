@@ -1158,7 +1158,6 @@ No requiere body.
       }
     ],
     "enrollmentType": "single",
-    "classCalculationType": 1,
     "alias": "Enrollment de Juan",
     "language": "English",
     "scheduledDays": [

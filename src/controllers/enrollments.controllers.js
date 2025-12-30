@@ -295,9 +295,6 @@ enrollmentCtrl.create = async (req, res) => {
             req.body.startDate = new Date(req.body.startDate);
         }
 
-        // Obtener classCalculationType (default: 1 si no viene)
-        const classCalculationType = req.body.classCalculationType || 1;
-
         // Calcular precios automáticamente desde el plan
         const enrollmentType = req.body.enrollmentType;
         let planPrice = 0;
@@ -337,15 +334,6 @@ enrollmentCtrl.create = async (req, res) => {
         }
         req.body.lateFee = lateFeeValue;
 
-        // Validar suspensionDaysAfterEndDate (OBLIGATORIO y debe ser > 0)
-        if (req.body.suspensionDaysAfterEndDate === undefined || req.body.suspensionDaysAfterEndDate === null) {
-            return res.status(400).json({ message: 'El campo suspensionDaysAfterEndDate es obligatorio y debe ser un número mayor a 0.' });
-        }
-        const suspensionDaysValue = Number(req.body.suspensionDaysAfterEndDate);
-        if (isNaN(suspensionDaysValue) || suspensionDaysValue <= 0) {
-            return res.status(400).json({ message: 'El campo suspensionDaysAfterEndDate debe ser un número mayor a 0.' });
-        }
-        req.body.suspensionDaysAfterEndDate = suspensionDaysValue;
 
         // Inicializar penalizationMoney a 0 por defecto
         if (req.body.penalizationMoney === undefined || req.body.penalizationMoney === null) {
@@ -376,11 +364,7 @@ enrollmentCtrl.create = async (req, res) => {
         let classRegistries = [];
 
         // LÓGICA TIPO A: Enrollment normal (cálculo por mes y scheduledDays)
-        if (classCalculationType === 1) {
-            // Validar que el plan sea de tipo mensual (planType 1)
-            if (plan.planType !== 1) {
-                return res.status(400).json({ message: 'El classCalculationType 1 solo es válido para planes de tipo mensual (planType 1).' });
-            }
+        if (plan.planType === 1) {
 
             // Calcular endDate: un mes menos un día desde startDate
             // Ejemplo: 22 enero → 21 febrero, 16 julio → 15 agosto
@@ -447,11 +431,7 @@ enrollmentCtrl.create = async (req, res) => {
             });
         }
         // LÓGICA TIPO B: Enrollment por número de semanas
-        else if (classCalculationType === 2) {
-            // Validar que el plan sea de tipo semanal (planType 2)
-            if (plan.planType !== 2) {
-                return res.status(400).json({ message: 'El classCalculationType 2 solo es válido para planes de tipo semanal (planType 2).' });
-            }
+        else if (plan.planType === 2) {
 
             // Validar que el plan tenga la key weeks definida
             if (!plan.weeks || plan.weeks <= 0) {
@@ -528,7 +508,7 @@ enrollmentCtrl.create = async (req, res) => {
                 classesCreated: classRegistries.length
             });
         } else {
-            return res.status(400).json({ message: 'classCalculationType debe ser 1 o 2.' });
+            return res.status(400).json({ message: 'El plan debe tener planType 1 (mensual) o 2 (semanal).' });
         }
     } catch (error) {
         console.error('Error al crear matrícula:', error);
@@ -920,12 +900,9 @@ enrollmentCtrl.resume = async (req, res) => {
         let newEndDate;
         let newMonthlyClasses;
 
-        // Recalcular endDate según classCalculationType y número de clases restantes
-        if (enrollment.classCalculationType === 1) {
+        // Recalcular endDate según planType y número de clases restantes
+        if (plan.planType === 1) {
             // Tipo A: Enrollment normal (plan mensual)
-            if (plan.planType !== 1) {
-                return res.status(400).json({ message: 'El classCalculationType 1 solo es válido para planes de tipo mensual (planType 1).' });
-            }
 
             // Calcular cuántas semanas se necesitan para las clases restantes
             // Dividir clases restantes entre weeklyClasses para obtener semanas necesarias
@@ -962,11 +939,8 @@ enrollmentCtrl.resume = async (req, res) => {
                 var datesToAssignFinal = datesToAssign;
             }
 
-        } else if (enrollment.classCalculationType === 2) {
+        } else if (plan.planType === 2) {
             // Tipo B: Enrollment por número de semanas
-            if (plan.planType !== 2) {
-                return res.status(400).json({ message: 'El classCalculationType 2 solo es válido para planes de tipo semanal (planType 2).' });
-            }
 
             if (!plan.weeks || plan.weeks <= 0) {
                 return res.status(400).json({ message: 'El plan de tipo semanal debe tener la key weeks definida y mayor a 0.' });
@@ -1020,7 +994,7 @@ enrollmentCtrl.resume = async (req, res) => {
                 var datesToAssignFinal = datesToAssign;
             }
         } else {
-            return res.status(400).json({ message: 'classCalculationType inválido.' });
+            return res.status(400).json({ message: 'El plan debe tener planType 1 (mensual) o 2 (semanal).' });
         }
 
         // Actualizar las clases a reagendar con las nuevas fechas
