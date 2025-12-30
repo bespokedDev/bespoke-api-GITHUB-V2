@@ -66,13 +66,8 @@ const createEnrollmentDeactivationNotification = async (enrollment) => {
  * Reglas de negocio:
  * 1. Si endDate pasó y lateFee > 0: expandir endDate virtualmente (lateFee días)
  *    - Si nueva fecha pasó y penalizationMoney > 0: crear penalización y notificación
- * 2. Si endDate pasó, lateFee = 0 y suspensionDaysAfterEndDate = 0: anular inmediatamente (status = 2)
- * 3. Si endDate pasó, lateFee > 0 y suspensionDaysAfterEndDate > 0:
- *    - Expandir endDate virtualmente (lateFee días)
- *    - Fecha invalidación = nueva endDate + suspensionDaysAfterEndDate días
- *    - Anular (status = 2) solo después de fecha invalidación
- * 4. Si endDate pasó, lateFee > 0 y suspensionDaysAfterEndDate = 0:
- *    - Aplicar penalización (regla 1) + anular inmediatamente (status = 2)
+ *    - Si nueva fecha pasó: anular enrollment inmediatamente (status = 2)
+ * 2. Si endDate pasó y lateFee = 0: anular inmediatamente (status = 2)
  */
 const processEnrollmentsPaymentStatus = async () => {
     try {
@@ -96,16 +91,12 @@ const processEnrollmentsPaymentStatus = async () => {
                 const endDate = new Date(enrollment.endDate);
                 endDate.setHours(0, 0, 0, 0);
 
-                // Calcular fecha expandida virtualmente (endDate + lateFee días)
-                const expandedEndDate = new Date(endDate);
-                expandedEndDate.setDate(expandedEndDate.getDate() + enrollment.lateFee);
-
-                // Calcular fecha de invalidación (expandedEndDate + suspensionDaysAfterEndDate días)
-                const invalidationDate = new Date(expandedEndDate);
-                invalidationDate.setDate(invalidationDate.getDate() + enrollment.suspensionDaysAfterEndDate);
-
-                // Regla 1 y 4: lateFee > 0
+                // Regla 1: lateFee > 0
                 if (enrollment.lateFee > 0) {
+                    // Calcular fecha expandida virtualmente (endDate + lateFee días)
+                    const expandedEndDate = new Date(endDate);
+                    expandedEndDate.setDate(expandedEndDate.getDate() + enrollment.lateFee);
+
                     // Verificar si la fecha expandida ya pasó
                     if (expandedEndDate < now) {
                         // Si penalizationMoney > 0, crear registro de penalización
@@ -195,33 +186,21 @@ const processEnrollmentsPaymentStatus = async () => {
                             }
                         }
 
-                        // Regla 4: lateFee > 0 y suspensionDaysAfterEndDate = 0 -> anular inmediatamente
-                        if (enrollment.suspensionDaysAfterEndDate === 0) {
-                            await Enrollment.findByIdAndUpdate(enrollment._id, { status: 2 });
-                            await createEnrollmentDeactivationNotification(enrollment);
-                            deactivatedCount++;
-                            console.log(`[CRONJOB] Enrollment ${enrollment._id} anulado (lateFee > 0, suspensionDaysAfterEndDate = 0)`);
-                        }
-                        // Regla 3: lateFee > 0 y suspensionDaysAfterEndDate > 0
-                        else if (enrollment.suspensionDaysAfterEndDate > 0) {
-                            // Verificar si la fecha de invalidación ya pasó
-                            if (invalidationDate < now) {
-                                await Enrollment.findByIdAndUpdate(enrollment._id, { status: 2 });
-                                await createEnrollmentDeactivationNotification(enrollment);
-                                deactivatedCount++;
-                                console.log(`[CRONJOB] Enrollment ${enrollment._id} anulado (fecha invalidación pasada)`);
-                            }
-                        }
+                        // Anular enrollment inmediatamente después de que pase la fecha expandida
+                        await Enrollment.findByIdAndUpdate(enrollment._id, { status: 2 });
+                        await createEnrollmentDeactivationNotification(enrollment);
+                        deactivatedCount++;
+                        console.log(`[CRONJOB] Enrollment ${enrollment._id} anulado (lateFee > 0, fecha expandida pasada)`);
                     }
                 }
-                // Regla 2: lateFee = 0 y suspensionDaysAfterEndDate = 0 -> anular inmediatamente
-                else if (enrollment.lateFee === 0 && enrollment.suspensionDaysAfterEndDate === 0) {
+                // Regla 2: lateFee = 0 -> anular inmediatamente cuando pase endDate
+                else if (enrollment.lateFee === 0) {
                     // Verificar si endDate ya pasó
                     if (endDate < now) {
                         await Enrollment.findByIdAndUpdate(enrollment._id, { status: 2 });
                         await createEnrollmentDeactivationNotification(enrollment);
                         deactivatedCount++;
-                        console.log(`[CRONJOB] Enrollment ${enrollment._id} anulado (lateFee = 0, suspensionDaysAfterEndDate = 0)`);
+                        console.log(`[CRONJOB] Enrollment ${enrollment._id} anulado (lateFee = 0, endDate pasada)`);
                     }
                 }
 

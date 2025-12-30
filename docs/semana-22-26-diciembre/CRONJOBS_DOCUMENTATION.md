@@ -38,21 +38,10 @@ Este cronjob gestiona automáticamente el estado de los enrollments que han venc
 **Regla 1: Enrollments con `lateFee > 0`**
 - Si el `endDate` pasó y `lateFee > 0`: se expande virtualmente el `endDate` sumando `lateFee` días
 - Si esta nueva fecha expandida pasó y `penalizationMoney > 0`: se crea un registro de penalización y una notificación
+- Si esta nueva fecha expandida pasó: se anula el enrollment inmediatamente (status = 2)
 
 **Regla 2: Anulación Inmediata**
-- Si `endDate` pasó, `lateFee = 0` y `suspensionDaysAfterEndDate = 0`: se anula el enrollment inmediatamente (status = 2)
-
-**Regla 3: Anulación con Suspensión**
-- Si `endDate` pasó, `lateFee > 0` y `suspensionDaysAfterEndDate > 0`:
-  - Se expande virtualmente el `endDate` sumando `lateFee` días
-  - La fecha de invalidación es: `endDate expandido + suspensionDaysAfterEndDate` días
-  - Se anula el enrollment (status = 2) solo después de que pase la fecha de invalidación
-  - Se crea un registro de penalización por los días de `lateFee`
-
-**Regla 4: Anulación con Penalización**
-- Si `endDate` pasó, `lateFee > 0` y `suspensionDaysAfterEndDate = 0`:
-  - Se aplica un registro de penalización (como en Regla 1)
-  - Se anula el enrollment inmediatamente (status = 2)
+- Si `endDate` pasó y `lateFee = 0`: se anula el enrollment inmediatamente (status = 2)
 
 #### **Proceso de Ejecución**
 
@@ -210,7 +199,7 @@ Todos los cronjobs generan logs detallados en la consola con el prefijo `[CRONJO
 [CRONJOB] Encontrados 5 enrollments activos para procesar
 [CRONJOB] Penalización creada para enrollment 64f8a1b2c3d4e5f6a7b8c9d0
 [CRONJOB] Notificación creada para enrollment 64f8a1b2c3d4e5f6a7b8c9d0
-[CRONJOB] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 anulado (lateFee > 0, suspensionDaysAfterEndDate = 0)
+[CRONJOB] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 anulado (lateFee > 0, fecha expandida pasada)
 [CRONJOB] Procesamiento completado:
   - Enrollments procesados: 5
   - Penalizaciones creadas: 2

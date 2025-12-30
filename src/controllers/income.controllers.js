@@ -1611,7 +1611,7 @@ incomesCtrl.professorsPayoutReport = async (req, res) => {
             report: report, // Array de profesores
             totals: totals, // PARTE 8: Sumatorias totales (Total Teacher, Total Bespoke, Balance Remaining)
             specialProfessorReport: specialProfessorReport, // Objeto del profesor singular (o null si no hay data)
-            excedente: excedenteReport // 🆕 NUEVO: Reporte de excedentes (o null si no hay data)
+            excedents: excedenteReport // 🆕 NUEVO: Reporte de excedentes (o null si no hay data)
         });
 
     } catch (error) {
