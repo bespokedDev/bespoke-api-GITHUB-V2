@@ -11,6 +11,10 @@ const verifyRole = require('../middlewares/verifyRole');
 // Acceso: admin, professor, student
 router.get('/', verifyToken, verifyRole('admin', 'professor', 'student'), classRegistryCtrl.list);
 
+// GET /api/class-registry/range - Lista registros de clase por rango de fechas de un enrollment
+// Acceso: admin, professor, student
+router.get('/range', verifyToken, verifyRole('admin', 'professor', 'student'), classRegistryCtrl.listByDateRange);
+
 // GET /api/class-registry/:id - Obtiene un registro de clase por su ID (con detalle completo)
 // Acceso: admin, professor
 router.get('/:id', verifyToken, verifyRole('admin', 'professor'), classRegistryCtrl.getById);

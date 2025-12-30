@@ -4,11 +4,100 @@ const Professor = require('../models/Professor');
 const Student = require('../models/Student');
 const Enrollment = require('../models/Enrollment');
 const ProfessorType = require('../models/ProfessorType');
+const ClassRegistry = require('../models/ClassRegistry');
+const ProfessorBonus = require('../models/ProfessorBonus');
 
 const moment = require('moment'); // Asegúrate de tenerlo instalado: npm install moment
 const mongoose = require('mongoose');
 
 const specialProfessorReportCtrl = {};
+
+/**
+ * Función auxiliar para convertir minutos a horas fraccionarias
+ * @param {number} minutes - Minutos a convertir
+ * @returns {number} - Horas fraccionarias (0.25, 0.5, 0.75, 1.0)
+ */
+const convertMinutesToFractionalHours = (minutes) => {
+    if (!minutes || minutes <= 0) return 0;
+    if (minutes <= 15) return 0.25;
+    if (minutes <= 30) return 0.5;
+    if (minutes <= 45) return 0.75;
+    return 1.0; // 45-60 minutos = 1 hora
+};
+
+/**
+ * Función auxiliar para procesar ClassRegistry de un enrollment y calcular horas vistas
+ * PARTE 4 y 5: Procesa ClassRegistry dentro del mes, calcula horas vistas con reschedules
+ * 
+ * @param {Object} enrollment - Enrollment object
+ * @param {Date} monthStartDate - Primer día del mes del reporte
+ * @param {Date} monthEndDate - Último día del mes del reporte
+ * @returns {Promise<number>} - Horas vistas totales para el profesor del enrollment
+ */
+const processClassRegistryForEnrollment = async (enrollment, monthStartDate, monthEndDate) => {
+    // Formatear fechas del mes para comparar con classDate (string YYYY-MM-DD)
+    const monthStartStr = moment(monthStartDate).format('YYYY-MM-DD');
+    const monthEndStr = moment(monthEndDate).format('YYYY-MM-DD');
+
+    // PARTE 5: Buscar todas las clases normales (reschedule = 0) dentro del mes con classViewed = 1 o 2
+    const classRegistriesInMonth = await ClassRegistry.find({
+        enrollmentId: enrollment._id,
+        classDate: {
+            $gte: monthStartStr,
+            $lte: monthEndStr
+        },
+        reschedule: 0, // Solo clases normales, no reschedules
+        classViewed: { $in: [1, 2] } // Solo clases vistas (1) o parcialmente vistas (2)
+    }).lean();
+
+    // PARTE 5: Buscar todos los reschedules dentro del mes para optimizar consultas
+    const normalClassIds = classRegistriesInMonth.map(cr => cr._id);
+    const reschedulesInMonth = await ClassRegistry.find({
+        enrollmentId: enrollment._id,
+        classDate: {
+            $gte: monthStartStr,
+            $lte: monthEndStr
+        },
+        originalClassId: { $in: normalClassIds },
+        reschedule: { $in: [1, 2] } // Clases en reschedule (1 = en reschedule, 2 = reschedule visto)
+    }).lean();
+
+    // Crear un mapa de reschedules por originalClassId para acceso rápido
+    const reschedulesMap = new Map();
+    for (const reschedule of reschedulesInMonth) {
+        const originalId = reschedule.originalClassId ? reschedule.originalClassId.toString() : null;
+        if (originalId) {
+            if (!reschedulesMap.has(originalId)) {
+                reschedulesMap.set(originalId, []);
+            }
+            reschedulesMap.get(originalId).push(reschedule);
+        }
+    }
+
+    // PARTE 5: Procesar cada clase normal y sumar minutos de reschedules si existen
+    let totalHoursSeen = 0;
+
+    for (const classRecord of classRegistriesInMonth) {
+        let totalMinutes = classRecord.minutesViewed || 0;
+        
+        // PARTE 5: Buscar reschedules de esta clase normal dentro del mes
+        const classRecordId = classRecord._id.toString();
+        const reschedulesForThisClass = reschedulesMap.get(classRecordId) || [];
+        
+        // Sumar minutos de todos los reschedules de esta clase que estén dentro del mes
+        for (const reschedule of reschedulesForThisClass) {
+            if (reschedule.minutesViewed) {
+                totalMinutes += reschedule.minutesViewed;
+            }
+        }
+
+        // PARTE 5: Convertir el total de minutos a horas fraccionarias
+        const fractionalHours = convertMinutesToFractionalHours(totalMinutes);
+        totalHoursSeen += fractionalHours;
+    }
+
+    return totalHoursSeen;
+};
 
 /**
  * @route GET /api/special-professor-report
@@ -30,62 +119,74 @@ specialProfessorReportCtrl.generateReport = async (req, res) => {
 
         const TARGET_PROFESSOR_ID = new mongoose.Types.ObjectId("685a1caa6c566777c1b5dc4b"); // ID del profesor Andrea Wias
 
-        // 1. Obtener todos los Incomes relevantes para el mes y el profesor target
-        const incomes = await Income.find({
-            income_date: {
-                $gte: startDate,
-                $lte: endDate
-            },
-            idProfessor: TARGET_PROFESSOR_ID // Solo este profesor
+        // PARTE 3: Filtrar enrollments cuyo startDate o endDate estén dentro del rango del mes
+        // Buscar enrollments donde startDate O endDate coincidan con alguna fecha del rango del mes
+        const enrollments = await Enrollment.find({
+            professorId: TARGET_PROFESSOR_ID,
+            status: 1, // Solo enrollments activos
+            $or: [
+                {
+                    // startDate está dentro del rango del mes
+                    startDate: {
+                        $gte: startDate,
+                        $lte: endDate
+                    }
+                },
+                {
+                    // endDate está dentro del rango del mes
+                    endDate: {
+                        $gte: startDate,
+                        $lte: endDate
+                    }
+                }
+            ]
         })
         .populate({
-            path: 'idProfessor',
+            path: 'planId',
+            select: 'name monthlyClasses pricing'
+        })
+        .populate({
+            path: 'professorId',
             select: 'name ciNumber typeId'
         })
         .populate({
-            path: 'idEnrollment',
-            select: 'planId studentIds professorId enrollmentType purchaseDate pricePerStudent totalAmount status',
-            populate: [
-                { path: 'planId', select: 'name monthlyClasses pricing' },
-                { path: 'studentIds', select: 'name' }
-            ]
+            path: 'studentIds',
+            select: 'name'
         })
         .lean();
 
-        if (!incomes || incomes.length === 0) {
+        if (!enrollments || enrollments.length === 0) {
             return res.status(200).json({ message: 'No se encontraron registros para el profesor y el mes especificados.', report: {} });
         }
 
         // --- Estructura para agrupar los resultados por Enrollment ---
-        const enrollmentReportMap = new Map(); // Map<enrollmentId, { totalIncomeAmount, enrollmentInfo, professorInfo }>
+        const enrollmentReportMap = new Map(); // Map<enrollmentId, { enrollmentInfo, professorInfo }>
 
-        // --- Paso 2: Agrupar Incomes por Enrollment, sumando montos ---
-        let professorName = 'Profesor Desconocido'; // Se obtiene del primer income válido
-        let professorId = TARGET_PROFESSOR_ID.toString(); // Será el ID del profesor target
+        // --- Paso 2: Agrupar Enrollments ---
+        let professorName = 'Profesor Desconocido';
+        let professorId = TARGET_PROFESSOR_ID.toString();
 
-        for (const income of incomes) {
-            const enrollmentId = income.idEnrollment ? income.idEnrollment._id.toString() : 'unknown_enrollment';
+        for (const enrollment of enrollments) {
+            const enrollmentId = enrollment._id.toString();
 
-            if (!income.idEnrollment || !income.idProfessor || !income.idProfessor.typeId) {
-                console.warn(`Skipping income ${income._id} due to missing enrollment, professor or professorType info.`);
+            if (!enrollment.professorId || !enrollment.professorId.typeId || !enrollment.planId) {
+                console.warn(`Skipping enrollment ${enrollment._id} due to missing professor, professorType or plan info.`);
                 continue;
             }
 
             if (!enrollmentReportMap.has(enrollmentId)) {
                 enrollmentReportMap.set(enrollmentId, {
-                    totalIncomeAmountForEnrollment: 0,
-                    enrollmentInfo: income.idEnrollment,
-                    professorInfo: income.idProfessor
+                    enrollmentInfo: enrollment,
+                    professorInfo: enrollment.professorId
                 });
             }
-            enrollmentReportMap.get(enrollmentId).totalIncomeAmountForEnrollment += income.amount;
 
-            if (professorName === 'Profesor Desconocido' && income.idProfessor.name) {
-                professorName = income.idProfessor.name;
+            if (professorName === 'Profesor Desconocido' && enrollment.professorId.name) {
+                professorName = enrollment.professorId.name;
             }
         }
 
-        // Si no se procesó ningún income válido
+        // Si no se procesó ningún enrollment válido
         if (enrollmentReportMap.size === 0) {
              return res.status(200).json({ message: 'No se encontraron registros válidos para el profesor y el mes especificados.', report: {} });
         }
@@ -119,17 +220,38 @@ specialProfessorReportCtrl.generateReport = async (req, res) => {
             const planName = plan ? plan.name : 'N/A';
             const planDisplay = `${planPrefix} - ${planName}`;
 
-            const studentNamesConcatenated = studentList && studentList.length > 0
-                ? studentList.map(s => s.name || 'Estudiante Desconocido').join(' & ')
-                : 'Estudiante Desconocido';
+            // Ordenar estudiantes alfabéticamente (igual que en el reporte general)
+            const sortedStudentList = studentList && studentList.length > 0
+                ? [...studentList].sort((a, b) => {
+                    const nameA = (a.name || '').toLowerCase().trim();
+                    const nameB = (b.name || '').toLowerCase().trim();
+                    return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+                })
+                : [];
             
-            const totalHours = plan ? (plan.monthlyClasses || 0) : 0;
+            // Usar alias si existe, sino concatenar nombres de estudiantes ordenados
+            const hasAlias = enrollment.alias && enrollment.alias.trim() !== '';
+            const studentNamesConcatenated = hasAlias
+                ? enrollment.alias.trim()
+                : sortedStudentList.length > 0
+                    ? sortedStudentList.map(s => s.name || 'Estudiante Desconocido').join(' & ')
+                    : 'Estudiante Desconocido';
+            
+            // PARTE 2: Calcular pricePerHour dividiendo el precio del plan entre el total de ClassRegistry normales
+            // Buscar todos los ClassRegistry del enrollment donde reschedule = 0 (solo clases normales, no reschedules)
+            const totalNormalClasses = await ClassRegistry.countDocuments({
+                enrollmentId: enrollment._id,
+                reschedule: 0 // Solo clases normales, excluir reschedules
+            });
+
+            const totalHours = plan ? (plan.monthlyClasses || 0) : 0; // Mantener para compatibilidad con otros campos
 
             let pricePerHour = 0;
-            if (plan && plan.pricing && enrollment.enrollmentType && totalHours > 0) {
+            if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
                 const price = plan.pricing[enrollment.enrollmentType];
                 if (typeof price === 'number') {
-                    pricePerHour = price / totalHours;
+                    // Dividir el precio del plan entre el total de clases normales
+                    pricePerHour = price / totalNormalClasses;
                 }
             }
 
@@ -142,32 +264,95 @@ specialProfessorReportCtrl.generateReport = async (req, res) => {
                 }
             }
 
-            // Columnas a inicializar en 0 (del requerimiento)
-            const hoursSeen = 0;
-            const oldBalance = 0;
-            const payment = 0; // Se calcula en el frontend
-            const total = 0;   // Se calcula en el frontend ( payment + (hoursSeen * pPerHour) )
-            const balanceRemaining = 0; // Se calcula en el frontend
+            // PARTE 4 y 5: Procesar ClassRegistry y calcular horas vistas
+            const hoursSeen = await processClassRegistryForEnrollment(enrollment, startDate, endDate);
+
+            // PARTE 1: Calcular amount y balance basado en available_balance y totalAmount
+            const availableBalance = enrollment.available_balance || 0;
+            const totalAmount = enrollment.totalAmount || 0;
+            
+            let calculatedAmount = 0;
+            let calculatedOldBalance = 0;
+            
+            if (availableBalance >= totalAmount) {
+                // Si available_balance >= totalAmount: amount = totalAmount, balance = available_balance - totalAmount
+                calculatedAmount = totalAmount;
+                calculatedOldBalance = availableBalance - totalAmount;
+            } else {
+                // Si available_balance < totalAmount: amount = 0, balance = available_balance
+                calculatedAmount = 0;
+                calculatedOldBalance = availableBalance;
+            }
+
+            // PARTE 7: Calcular payment, total y balanceRemaining para reporte especial de Andrea Vivas
+            // Para el reporte especial: Total = Hours Seen × Price/Hour (Andrea Vivas gana el valor completo de la hora)
+            const total = hoursSeen * pricePerHour;
+            
+            // Payment = pPerHour × hoursSeen (pago al profesor)
+            const payment = pPerHour * hoursSeen;
+            
+            // Balance Remaining = (Amount + Old Balance) - Total
+            const balanceRemaining = (calculatedAmount + calculatedOldBalance) - total;
 
             const detailEntry = {
                 enrollmentId: enrollment._id,
                 period: period,
                 plan: planDisplay,
                 studentName: studentNamesConcatenated,
-                amount: data.totalIncomeAmountForEnrollment, // Suma de incomes para este enrollment
+                amount: parseFloat(calculatedAmount.toFixed(2)),
                 totalHours: totalHours,
-                hoursSeen: hoursSeen,
-                oldBalance: oldBalance,
-                payment: payment,
-                total: total,
-                balanceRemaining: balanceRemaining
+                hoursSeen: parseFloat(hoursSeen.toFixed(2)),
+                oldBalance: parseFloat(calculatedOldBalance.toFixed(2)),
+                payment: parseFloat(payment.toFixed(2)),
+                total: parseFloat(total.toFixed(2)),
+                balanceRemaining: parseFloat(balanceRemaining.toFixed(2))
             };
             details.push(detailEntry);
 
-            // Sumatorias para la fila de SUBTOTATAL (inicialmente 0)
-            subtotalPayment += payment;
+            // PARTE 10: Sumatorias para la fila de SUBTOTAL
+            // Para el reporte especial, sumamos 'total' (no 'payment') y 'balanceRemaining'
+            subtotalPayment += total; // En realidad es subtotalTotal, pero mantenemos el nombre para compatibilidad
             subtotalBalanceRemaining += balanceRemaining;
         }
+
+        // Ordenar enrollments: primero por plan (alfabéticamente), luego por studentName (alfabéticamente)
+        details.sort((a, b) => {
+            // Primero ordenar por plan (alfabéticamente)
+            const planComparison = a.plan.localeCompare(b.plan);
+            if (planComparison !== 0) {
+                return planComparison;
+            }
+            
+            // Si los planes son iguales, ordenar por studentName (alfabéticamente)
+            const nameA = (a.studentName || '').toLowerCase().trim();
+            const nameB = (b.studentName || '').toLowerCase().trim();
+            return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+        });
+
+        // PARTE 11: Buscar bonos del profesor especial para este mes
+        const professorBonuses = await ProfessorBonus.find({
+            professorId: professorId,
+            month: month,
+            status: 1 // Solo bonos activos
+        })
+        .populate('userId', 'name email role')
+        .sort({ bonusDate: -1, createdAt: -1 })
+        .lean();
+
+        // Calcular total de bonos (abonos) para este profesor
+        const totalBonuses = professorBonuses.reduce((sum, bonus) => sum + (bonus.amount || 0), 0);
+
+        // Crear detalles de bonos (abonos)
+        const abonosDetails = professorBonuses.map(bonus => ({
+            bonusId: bonus._id,
+            amount: parseFloat(bonus.amount.toFixed(2)),
+            description: bonus.description || null,
+            bonusDate: bonus.bonusDate,
+            month: bonus.month,
+            userId: bonus.userId ? bonus.userId._id : null,
+            userName: bonus.userId ? bonus.userId.name : null,
+            createdAt: bonus.createdAt
+        }));
 
         // --- Estructura Final del Reporte ---
         const finalReport = {
@@ -175,10 +360,14 @@ specialProfessorReportCtrl.generateReport = async (req, res) => {
             professorName: professorName,
             reportDateRange: `${moment(startDate).format("MMM Do YYYY")} - ${moment(endDate).format("MMM Do YYYY")}`,
             details: details,
-            // Las filas de SUBTOTAl se inicializan a 0 aquí
+            // PARTE 10: Subtotales calculados correctamente
             subtotal: {
-                total: parseFloat(subtotalPayment.toFixed(2)), // En este punto, 'payment' es 0, así que subtotalPayment será 0
-                balanceRemaining: parseFloat(subtotalBalanceRemaining.toFixed(2)) // También será 0
+                total: parseFloat(subtotalPayment.toFixed(2)), // Suma de todos los 'total' (Hours Seen × Price/Hour)
+                balanceRemaining: parseFloat(subtotalBalanceRemaining.toFixed(2)) // Suma de todos los 'balanceRemaining'
+            },
+            abonos: { // PARTE 11: Sección de abonos (bonos)
+                total: parseFloat(totalBonuses.toFixed(2)),
+                details: abonosDetails
             }
         };
 

@@ -14,6 +14,7 @@ const enrollmentRoutes = require('./routes/enrollments.route');
 const payoutRoutes = require('./routes/payouts.route');
 const incomeRoutes = require('./routes/incomes.route');
 const bonusRoutes = require('./routes/bonus.route');
+const professorBonusRoutes = require('./routes/professorBonus.route');
 const divisaRoutes = require('./routes/divisas.route');
 const paymentMethodsRoutes = require('./routes/paymentMethods.route');
 const tiposPagoRoutes = require('./routes/tiposPago.route');
@@ -63,6 +64,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/payouts', payoutRoutes); // ¡Añade esta línea para las rutas de pagos!
 app.use('/api/bonuses', bonusRoutes);
+app.use('/api/professor-bonuses', professorBonusRoutes);
 app.use('/api/divisas', divisaRoutes);
 app.use('/api/payment-methods', paymentMethodsRoutes);
 app.use('/api/payment-types', tiposPagoRoutes);

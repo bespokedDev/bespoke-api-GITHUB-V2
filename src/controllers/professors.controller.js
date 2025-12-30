@@ -319,7 +319,7 @@
                 status: 1 // Solo enrollments activos
             })
             .populate('planId', 'name')
-            .populate('studentIds.studentId', 'name email studentCode')
+            .populate('studentIds.studentId', 'name email studentCode dob')
             .lean();
 
             // Procesar enrollments para incluir solo los campos necesarios
@@ -328,8 +328,13 @@
                 const simplifiedEnrollment = {
                     _id: enrollment._id,
                     planId: {
-                        name: enrollment.planId ? enrollment.planId.name : null
+                        name: enrollment.planId ? enrollment.planId.name : null,
+                        enrollmentType: enrollment.enrollmentType || null, // single, couple o group
+                        language: enrollment.language || null, // English o French
+                        startDate: enrollment.startDate || null, // Fecha de inicio del enrollment
+                        endDate: enrollment.endDate || null // Fecha de fin del enrollment
                     },
+                    alias: enrollment.alias || null, // Alias del enrollment (para ordenamiento)
                     studentIds: Array.isArray(enrollment.studentIds) 
                         ? enrollment.studentIds.map(studentInfo => ({
                             _id: studentInfo._id,
@@ -337,13 +342,60 @@
                                 _id: studentInfo.studentId ? studentInfo.studentId._id : null,
                                 studentCode: studentInfo.studentId ? studentInfo.studentId.studentCode : null,
                                 name: studentInfo.studentId ? studentInfo.studentId.name : null,
-                                email: studentInfo.studentId ? studentInfo.studentId.email : null
+                                email: studentInfo.studentId ? studentInfo.studentId.email : null,
+                                dob: studentInfo.studentId ? studentInfo.studentId.dob : null // Fecha de nacimiento
                             }
                         }))
                         : []
                 };
 
                 return simplifiedEnrollment;
+            });
+
+            // Ordenar enrollments según los criterios especificados:
+            // 1. Primero por plan (nombre del plan)
+            // 2. Luego por enrollmentType (single, couple, group)
+            // 3. Luego por alias (si existe) o por nombre del primer estudiante
+            processedEnrollments.sort((a, b) => {
+                // 1. Ordenar por nombre del plan (alfabéticamente)
+                const planNameA = (a.planId?.name || '').toLowerCase();
+                const planNameB = (b.planId?.name || '').toLowerCase();
+                const planComparison = planNameA.localeCompare(planNameB);
+                if (planComparison !== 0) {
+                    return planComparison;
+                }
+
+                // 2. Si los planes son iguales, ordenar por enrollmentType
+                // Orden: single (1), couple (2), group (3)
+                const enrollmentTypeOrder = { 'single': 1, 'couple': 2, 'group': 3 };
+                const typeA = enrollmentTypeOrder[a.planId?.enrollmentType] || 999;
+                const typeB = enrollmentTypeOrder[b.planId?.enrollmentType] || 999;
+                if (typeA !== typeB) {
+                    return typeA - typeB;
+                }
+
+                // 3. Si el enrollmentType es igual, ordenar por alias o nombre del primer estudiante
+                const aliasA = (a.alias || '').trim().toLowerCase();
+                const aliasB = (b.alias || '').trim().toLowerCase();
+                
+                // Si ambos tienen alias, ordenar por alias
+                if (aliasA && aliasB) {
+                    return aliasA.localeCompare(aliasB);
+                }
+                
+                // Si solo uno tiene alias, el que tiene alias va primero
+                if (aliasA && !aliasB) return -1;
+                if (!aliasA && aliasB) return 1;
+                
+                // Si ninguno tiene alias, ordenar por nombre del primer estudiante
+                const firstNameA = a.studentIds && a.studentIds.length > 0 && a.studentIds[0].studentId?.name
+                    ? a.studentIds[0].studentId.name.toLowerCase().trim()
+                    : '';
+                const firstNameB = b.studentIds && b.studentIds.length > 0 && b.studentIds[0].studentId?.name
+                    ? b.studentIds[0].studentId.name.toLowerCase().trim()
+                    : '';
+                
+                return firstNameA.localeCompare(firstNameB);
             });
 
             res.status(200).json({

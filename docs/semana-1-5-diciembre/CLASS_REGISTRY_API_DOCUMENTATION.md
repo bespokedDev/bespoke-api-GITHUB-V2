@@ -58,6 +58,7 @@ const headers = {
 | Método | Ruta | Descripción | Roles Permitidos |
 |--------|------|-------------|------------------|
 | `GET` | `/api/class-registry` | Listar registros de clase (con información básica) | `admin`, `professor`, `student` |
+| `GET` | `/api/class-registry/range` | Listar registros de clase por rango de fechas de un enrollment | `admin`, `professor`, `student` |
 | `GET` | `/api/class-registry/:id` | Obtener registro de clase por ID (con detalle completo) | `admin`, `professor` |
 | `PUT` | `/api/class-registry/:id` | Actualizar datos de un registro de clase | `admin`, `professor` |
 | `POST` | `/api/class-registry/:id/reschedule` | Crear una nueva clase de tipo reschedule | `professor` |
@@ -109,6 +110,8 @@ const headers = {
   "originalClassId": null,
   "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
   "evaluations": [],
+  "professorId": null,
+  "userId": null,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-22T15:45:00.000Z"
 }
@@ -143,6 +146,8 @@ const headers = {
 - `originalClassId` (ObjectId): ID de la clase original cuando esta clase es un reschedule. Por defecto: `null`
 - `vocabularyContent` (String): Contenido de vocabulario de la clase (puede ser null). Por defecto: `null` al crear el enrollment
 - `evaluations` (Array[Object]): Array de evaluaciones asociadas a esta clase (referencia a `Evaluation`). Se populan automáticamente con todos sus detalles cuando se obtiene el registro por ID. Por defecto: `[]`
+- `professorId` (ObjectId): ID del profesor (referencia a `Professor`). Por defecto: `null` - Para manejo de cuestiones administrativas
+- `userId` (ObjectId): ID del usuario administrador (referencia a `User`). Por defecto: `null` - Para manejo de cuestiones administrativas
 
 #### **Campos Generados Automáticamente**
 - `_id` (ObjectId): Identificador único del registro de clase
@@ -219,6 +224,8 @@ No requiere body.
       "minutesClassDefault": 60,
       "originalClassId": null,
       "vocabularyContent": null,
+      "professorId": null,
+      "userId": null,
       "evaluations": [
         {
           "_id": "692a1f4a5fa3f53b825ee53f",
@@ -301,7 +308,333 @@ const listClassRegistries = async (enrollmentId = null) => {
 
 ---
 
-### **2. Obtener Registro de Clase por ID (Detalle Completo)**
+### **2. Listar Registros de Clase por Rango de Fechas**
+
+#### **GET** `/api/class-registry/range`
+
+Obtiene una lista de registros de clase de un enrollment específico dentro de un rango de fechas. Los resultados se ordenan desde la fecha más reciente a la más antigua (descendente).
+
+**Roles permitidos:** `admin`, `professor`, `student`
+
+#### **Headers**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Query Parameters (Requeridos)**
+- `enrollmentId` (String, requerido): ID del enrollment (ObjectId válido)
+- `from` (String, requerido): Fecha inicial en formato `YYYY-MM-DD` (ej: "2024-12-01")
+- `to` (String, requerido): Fecha final en formato `YYYY-MM-DD` (ej: "2024-12-31")
+
+#### **Request Body**
+No requiere body.
+
+#### **Ejemplo de URL**
+```
+GET /api/class-registry/range?enrollmentId=692a1f4a5fa3f53b825ee53f&from=2024-12-01&to=2024-12-31
+```
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Registros de clase obtenidos exitosamente",
+  "enrollmentId": "692a1f4a5fa3f53b825ee53f",
+  "dateRange": {
+    "from": "2024-12-01",
+    "to": "2024-12-31"
+  },
+  "classes": [
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "enrollmentId": {
+        "_id": "692a1f4a5fa3f53b825ee53f",
+        "alias": "Clases de Inglés - Juan",
+        "language": "English",
+        "enrollmentType": "single",
+        "startDate": "2024-12-01T00:00:00.000Z",
+        "endDate": "2024-12-31T23:59:59.999Z"
+      },
+      "classDate": "2024-12-31",
+      "classTime": "14:30",
+      "hoursViewed": 1,
+      "minutesViewed": 30,
+      "classType": [
+        {
+          "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+          "name": "Individual"
+        }
+      ],
+      "contentType": [
+        {
+          "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
+          "name": "Conversación"
+        }
+      ],
+      "studentMood": "Motivado",
+      "note": {
+        "content": "Clase muy productiva",
+        "visible": {
+          "admin": 1,
+          "student": 0,
+          "professor": 1
+        }
+      },
+      "homework": "Ejercicios de gramática",
+      "token": "abc123xyz",
+      "reschedule": 0,
+      "classViewed": 1,
+      "minutesClassDefault": 60,
+      "originalClassId": null,
+      "vocabularyContent": "Palabras nuevas: hello, goodbye",
+      "professorId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d3",
+        "name": "Profesor Ejemplo",
+        "email": "profesor@example.com",
+        "phone": "+1234567890"
+      },
+      "userId": null,
+      "evaluations": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee53f",
+          "classRegistryId": "64f8a1b2c3d4e5f6a7b8c9d0",
+          "fecha": "31/12/2024",
+          "temasEvaluados": "Presente simple",
+          "skillEvaluada": "Speaking",
+          "puntuacion": "85/100",
+          "isActive": true
+        }
+      ],
+      "createdAt": "2024-12-31T15:45:00.000Z",
+      "updatedAt": "2024-12-31T15:45:00.000Z"
+    },
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+      "enrollmentId": {
+        "_id": "692a1f4a5fa3f53b825ee53f",
+        "alias": "Clases de Inglés - Juan",
+        "language": "English",
+        "enrollmentType": "single",
+        "startDate": "2024-12-01T00:00:00.000Z",
+        "endDate": "2024-12-31T23:59:59.999Z"
+      },
+      "classDate": "2024-12-12",
+      "classTime": "10:00",
+      "hoursViewed": null,
+      "minutesViewed": null,
+      "classType": [],
+      "contentType": [],
+      "studentMood": null,
+      "note": null,
+      "homework": null,
+      "token": null,
+      "reschedule": 0,
+      "classViewed": 0,
+      "minutesClassDefault": 60,
+      "originalClassId": null,
+      "vocabularyContent": null,
+      "professorId": null,
+      "userId": null,
+      "evaluations": [],
+      "createdAt": "2024-12-01T10:30:00.000Z",
+      "updatedAt": "2024-12-01T10:30:00.000Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+#### **Notas Importantes**
+- Los registros se ordenan por `classDate` descendente (más reciente primero), luego por `createdAt` descendente
+- El rango de fechas es inclusivo: incluye tanto la fecha `from` como la fecha `to`
+- Todas las referencias se populan automáticamente: `enrollmentId`, `classType`, `contentType`, `originalClassId`, `professorId`, `userId`, `evaluations`
+- Si no hay clases en el rango de fechas, se devuelve un array vacío con `total: 0`
+
+#### **Errores Posibles**
+
+**400 - Bad Request**
+```json
+{
+  "message": "El campo enrollmentId es requerido."
+}
+```
+- **Causa**: No se proporcionó `enrollmentId` en los query parameters
+
+```json
+{
+  "message": "ID de enrollment inválido."
+}
+```
+- **Causa**: El `enrollmentId` proporcionado no es un ObjectId válido
+
+```json
+{
+  "message": "El campo from es requerido (formato YYYY-MM-DD)."
+}
+```
+- **Causa**: No se proporcionó `from` en los query parameters
+
+```json
+{
+  "message": "El campo from debe tener el formato YYYY-MM-DD (ej: 2024-12-01)."
+}
+```
+- **Causa**: El campo `from` no tiene el formato correcto
+
+```json
+{
+  "message": "El campo to es requerido (formato YYYY-MM-DD)."
+}
+```
+- **Causa**: No se proporcionó `to` en los query parameters
+
+```json
+{
+  "message": "El campo to debe tener el formato YYYY-MM-DD (ej: 2024-12-31)."
+}
+```
+- **Causa**: El campo `to` no tiene el formato correcto
+
+```json
+{
+  "message": "La fecha from debe ser menor o igual a la fecha to."
+}
+```
+- **Causa**: La fecha `from` es posterior a la fecha `to`
+
+```json
+{
+  "message": "La fecha from no es una fecha válida."
+}
+```
+- **Causa**: La fecha `from` no es una fecha válida
+
+```json
+{
+  "message": "La fecha to no es una fecha válida."
+}
+```
+- **Causa**: La fecha `to` no es una fecha válida
+
+**404 - Not Found**
+```json
+{
+  "message": "Enrollment no encontrado."
+}
+```
+- **Causa**: El `enrollmentId` proporcionado no existe en la base de datos
+
+**401 - Unauthorized**
+```json
+{
+  "message": "Token no proporcionado"
+}
+```
+- **Causa**: No se incluyó el header de autorización
+
+**403 - Forbidden**
+```json
+{
+  "message": "Token inválido o expirado"
+}
+```
+- **Causa**: El token JWT es inválido o el usuario no tiene uno de los roles permitidos
+
+**500 - Internal Server Error**
+```json
+{
+  "message": "Error interno al listar registros de clase por rango de fechas",
+  "error": "Mensaje de error detallado"
+}
+```
+- **Causa**: Error inesperado del servidor
+
+#### **Ejemplo de Uso (JavaScript/Fetch)**
+```javascript
+const listClassesByDateRange = async (enrollmentId, fromDate, toDate) => {
+  try {
+    const url = new URL('http://localhost:3000/api/class-registry/range');
+    url.searchParams.append('enrollmentId', enrollmentId);
+    url.searchParams.append('from', fromDate); // Formato: YYYY-MM-DD
+    url.searchParams.append('to', toDate);     // Formato: YYYY-MM-DD
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Encontradas ${data.total} clases entre ${data.dateRange.from} y ${data.dateRange.to}`);
+    console.log('Clases (ordenadas de más reciente a más antigua):', data.classes);
+    return data;
+  } catch (error) {
+    console.error('Error al obtener clases por rango de fechas:', error);
+    throw error;
+  }
+};
+
+// Uso - Obtener clases de diciembre 2024
+listClassesByDateRange(
+  '692a1f4a5fa3f53b825ee53f',
+  '2024-12-01',
+  '2024-12-31'
+);
+```
+
+#### **Ejemplo con cURL**
+```bash
+# Listar clases del 1 al 31 de diciembre de 2024
+curl -X GET "http://localhost:3000/api/class-registry/range?enrollmentId=692a1f4a5fa3f53b825ee53f&from=2024-12-01&to=2024-12-31" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+# Listar clases de una semana específica
+curl -X GET "http://localhost:3000/api/class-registry/range?enrollmentId=692a1f4a5fa3f53b825ee53f&from=2024-12-15&to=2024-12-21" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Casos de Uso Comunes**
+
+**Caso 1: Obtener todas las clases de un mes**
+```javascript
+// Obtener todas las clases de diciembre 2024
+const decemberClasses = await listClassesByDateRange(
+  '692a1f4a5fa3f53b825ee53f',
+  '2024-12-01',
+  '2024-12-31'
+);
+```
+
+**Caso 2: Obtener clases de una semana específica**
+```javascript
+// Obtener clases de la semana del 15 al 21 de diciembre
+const weekClasses = await listClassesByDateRange(
+  '692a1f4a5fa3f53b825ee53f',
+  '2024-12-15',
+  '2024-12-21'
+);
+```
+
+**Caso 3: Obtener clases de un día específico**
+```javascript
+// Obtener clases del 25 de diciembre
+const dayClasses = await listClassesByDateRange(
+  '692a1f4a5fa3f53b825ee53f',
+  '2024-12-25',
+  '2024-12-25'
+);
+```
+
+---
+
+### **3. Obtener Registro de Clase por ID (Detalle Completo)**
 
 #### **GET** `/api/class-registry/:id`
 
@@ -367,6 +700,8 @@ No requiere body.
     "minutesClassDefault": 60,
     "originalClassId": null,
     "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+    "professorId": null,
+    "userId": null,
     "evaluations": [
       {
         "_id": "692a1f4a5fa3f53b825ee53f",
@@ -577,6 +912,8 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
     "minutesClassDefault": 60,
     "originalClassId": null,
     "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+    "professorId": null,
+    "userId": null,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-22T16:00:00.000Z"
   }
@@ -791,6 +1128,8 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
       "enrollmentId": "692a1f4a5fa3f53b825ee53f"
     },
     "vocabularyContent": null,
+    "professorId": null,
+    "userId": null,
     "createdAt": "2024-01-25T10:30:00.000Z",
     "updatedAt": "2024-01-25T10:30:00.000Z"
   }

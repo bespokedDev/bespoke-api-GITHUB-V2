@@ -211,8 +211,271 @@ const initClassFinalizationCronjob = () => {
     console.log('[CRONJOB] ⚠️ RECORDATORIO: Cambiar a "0 0 * * *" para producción (diario a medianoche)');
 };
 
+/**
+ * Función helper para crear notificación de cierre mensual de clases
+ */
+const createMonthlyClassClosureNotification = async (enrollment, monthYear, stats) => {
+    try {
+        // Validar que el ObjectId de categoría de notificación sea válido
+        // Usar la misma categoría que el cronjob de finalización o crear una nueva
+        const categoryNotificationId = '6941c9b30646c9359c7f9f68';
+        if (!mongoose.Types.ObjectId.isValid(categoryNotificationId)) {
+            throw new Error('ID de categoría de notificación inválido');
+        }
+
+        // Construir descripción dinámica
+        const monthNames = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                           'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const [year, month] = monthYear.split('-');
+        const monthName = monthNames[parseInt(month) - 1];
+
+        let description = `Cierre mensual de clases - ${monthName.toUpperCase()} ${year}. Enrollment ${enrollment._id}. `;
+        
+        const parts = [];
+        
+        if (stats.noShowMarked > 0) {
+            parts.push(`${stats.noShowMarked} clase(s) marcada(s) como no show del mes de ${monthName}`);
+        }
+        
+        if (stats.totalClassesInMonth > 0) {
+            parts.push(`Total de clases del mes: ${stats.totalClassesInMonth}`);
+        }
+
+        if (stats.viewedInMonth > 0) {
+            parts.push(`${stats.viewedInMonth} vista(s)`);
+        }
+
+        if (stats.partiallyViewedInMonth > 0) {
+            parts.push(`${stats.partiallyViewedInMonth} parcialmente vista(s)`);
+        }
+
+        if (stats.alreadyNoShowInMonth > 0) {
+            parts.push(`${stats.alreadyNoShowInMonth} ya marcada(s) como no show`);
+        }
+
+        if (parts.length > 0) {
+            description += parts.join(', ') + '.';
+        } else {
+            description += 'No se encontraron clases para reportar en este mes.';
+        }
+
+        // Crear notificación
+        const newNotification = new Notification({
+            idCategoryNotification: categoryNotificationId,
+            notification_description: description,
+            idPenalization: null,
+            idEnrollment: enrollment._id,
+            idProfessor: null,
+            idStudent: [], // No incluir estudiantes según especificación
+            isActive: true
+        });
+
+        await newNotification.save();
+        console.log(`[CRONJOB MENSUAL] Notificación de cierre mensual creada para enrollment ${enrollment._id} - ${monthYear}`);
+        return true;
+    } catch (error) {
+        console.error(`[CRONJOB MENSUAL] Error creando notificación de cierre mensual para enrollment ${enrollment._id}:`, error.message);
+        return false;
+    }
+};
+
+/**
+ * Cronjob para procesar cierre mensual de clases
+ * Se ejecuta el último día de cada mes a las 00:00 (medianoche)
+ * 
+ * Reglas de negocio:
+ * 1. Buscar todos los enrollments que tengan clases en el mes actual (sin filtrar por status)
+ * 2. Para cada enrollment:
+ *    - Revisar todas sus ClassRegistry
+ *    - Filtrar clases cuya classDate esté dentro del mes actual que está terminando
+ *    - Si classViewed = 0 → cambiar a classViewed = 3 (no show) SOLO para clases del mes actual
+ *    - Generar notificación con estadísticas del mes:
+ *      - Clases marcadas como no show en este procesamiento
+ *      - Total de clases del mes
+ *      - Clases vistas del mes
+ *      - Clases parcialmente vistas del mes
+ *      - Clases ya marcadas como no show del mes
+ */
+const processMonthlyClassClosure = async () => {
+    try {
+        console.log('[CRONJOB MENSUAL] Iniciando procesamiento de cierre mensual de clases...');
+        const now = new Date();
+        
+        // Obtener mes y año actual (el mes que está terminando)
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1; // getMonth() devuelve 0-11, necesitamos 1-12
+        const monthYear = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+        
+        // Calcular rango del mes: primer día y último día del mes
+        const firstDayOfMonth = `${monthYear}-01`;
+        const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate(); // Último día del mes
+        const lastDayOfMonthStr = `${monthYear}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+        console.log(`[CRONJOB MENSUAL] Procesando clases del mes: ${monthYear} (${firstDayOfMonth} a ${lastDayOfMonthStr})`);
+
+        // Buscar todos los enrollments que tengan clases en el mes actual
+        // Primero, buscar todas las ClassRegistry del mes
+        const classesInMonth = await ClassRegistry.find({
+            classDate: { $gte: firstDayOfMonth, $lte: lastDayOfMonthStr }
+        }).select('enrollmentId').lean();
+
+        // Obtener IDs únicos de enrollments
+        const enrollmentIds = [...new Set(classesInMonth.map(c => c.enrollmentId.toString()))];
+        
+        if (enrollmentIds.length === 0) {
+            console.log(`[CRONJOB MENSUAL] No se encontraron enrollments con clases en el mes ${monthYear}`);
+            return;
+        }
+
+        // Buscar todos los enrollments que tienen clases en el mes (sin filtrar por status)
+        const enrollmentsToProcess = await Enrollment.find({
+            _id: { $in: enrollmentIds }
+        }).lean();
+
+        console.log(`[CRONJOB MENSUAL] Encontrados ${enrollmentsToProcess.length} enrollments con clases en el mes ${monthYear} para procesar`);
+
+        let processedCount = 0;
+        let updatedClassesCount = 0;
+        let notificationsCreated = 0;
+
+        for (const enrollment of enrollmentsToProcess) {
+            try {
+                // Buscar todas las ClassRegistry de este enrollment
+                const classRegistries = await ClassRegistry.find({
+                    enrollmentId: enrollment._id
+                }).lean();
+
+                if (classRegistries.length === 0) {
+                    console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} no tiene clases registradas`);
+                    processedCount++;
+                    continue;
+                }
+
+                // Filtrar clases que estén dentro del rango del mes actual
+                const classesInMonth = classRegistries.filter(cr => {
+                    // classDate está en formato YYYY-MM-DD (string)
+                    const classDateStr = cr.classDate;
+                    return classDateStr >= firstDayOfMonth && classDateStr <= lastDayOfMonthStr;
+                });
+
+                if (classesInMonth.length === 0) {
+                    console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} no tiene clases en el mes ${monthYear}`);
+                    processedCount++;
+                    continue;
+                }
+
+                // Actualizar clases con classViewed = 0 → cambiar a classViewed = 3 (solo del mes actual)
+                const classesToUpdate = classesInMonth.filter(
+                    cr => cr.classViewed === 0
+                );
+
+                if (classesToUpdate.length > 0) {
+                    const classIdsToUpdate = classesToUpdate.map(cr => cr._id);
+                    const updateResult = await ClassRegistry.updateMany(
+                        {
+                            _id: { $in: classIdsToUpdate },
+                            classViewed: 0
+                        },
+                        {
+                            $set: { classViewed: 3 } // Cambiar a no show
+                        }
+                    );
+                    updatedClassesCount += updateResult.modifiedCount;
+                    console.log(`[CRONJOB MENSUAL] Actualizadas ${updateResult.modifiedCount} clases a no show para enrollment ${enrollment._id} (mes ${monthYear})`);
+                }
+
+                // Obtener todas las clases del mes actualizadas (incluyendo las que acabamos de actualizar)
+                const allClassesInMonth = await ClassRegistry.find({
+                    enrollmentId: enrollment._id,
+                    classDate: { $gte: firstDayOfMonth, $lte: lastDayOfMonthStr }
+                }).lean();
+
+                // Contar estadísticas del mes
+                const stats = {
+                    noShowMarked: classesToUpdate.length, // Clases marcadas como no show en este procesamiento
+                    totalClassesInMonth: allClassesInMonth.length, // Total de clases del mes
+                    viewedInMonth: 0, // classViewed = 1
+                    partiallyViewedInMonth: 0, // classViewed = 2
+                    alreadyNoShowInMonth: 0 // classViewed = 3 (ya estaban marcadas antes)
+                };
+
+                for (const classRecord of allClassesInMonth) {
+                    if (classRecord.classViewed === 1) {
+                        stats.viewedInMonth++;
+                    } else if (classRecord.classViewed === 2) {
+                        stats.partiallyViewedInMonth++;
+                    } else if (classRecord.classViewed === 3) {
+                        stats.alreadyNoShowInMonth++;
+                    }
+                }
+
+                // Crear notificación con las estadísticas del mes
+                await createMonthlyClassClosureNotification(enrollment, monthYear, stats);
+                notificationsCreated++;
+
+                processedCount++;
+                console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} procesado (mes ${monthYear}): ${stats.noShowMarked} marcadas como no show, ${stats.viewedInMonth} vistas, ${stats.partiallyViewedInMonth} parcialmente vistas, ${stats.alreadyNoShowInMonth} ya no show`);
+            } catch (error) {
+                console.error(`[CRONJOB MENSUAL] Error procesando enrollment ${enrollment._id}:`, error.message);
+                // Continuar con el siguiente enrollment
+            }
+        }
+
+        console.log(`[CRONJOB MENSUAL] Procesamiento de cierre mensual completado:`);
+        console.log(`  - Mes procesado: ${monthYear}`);
+        console.log(`  - Enrollments procesados: ${processedCount}`);
+        console.log(`  - Clases actualizadas a no show: ${updatedClassesCount}`);
+        console.log(`  - Notificaciones creadas: ${notificationsCreated}`);
+        console.log('[CRONJOB MENSUAL] Finalizando procesamiento de cierre mensual de clases');
+
+    } catch (error) {
+        console.error('[CRONJOB MENSUAL] Error en procesamiento de cierre mensual de clases:', error);
+    }
+};
+
+/**
+ * Verifica si hoy es el último día del mes
+ * @returns {boolean} true si hoy es el último día del mes
+ */
+const isLastDayOfMonth = () => {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Si mañana es día 1, entonces hoy es el último día del mes
+    return tomorrow.getDate() === 1;
+};
+
+/**
+ * Inicializa el cronjob para procesar cierre mensual de clases
+ * Se ejecuta el último día de cada mes a las 00:00 (medianoche)
+ * 
+ * ⚠️ MODO PRUEBA: Actualmente configurado para ejecutarse cada 10 segundos
+ * Cambiar a '0 0 28-31 * *' para producción (días 28-31 a medianoche, verifica si es último día)
+ */
+const initMonthlyClassClosureCronjob = () => {
+    // Cron expression para pruebas: cada 10 segundos
+    // Para producción: '0 0 28-31 * *' = días 28-31 a las 00:00, luego verifica si es último día
+    cron.schedule('*/10 * * * * *', async () => {
+        // En modo prueba, ejecutar siempre
+        // En producción, descomentar la siguiente línea y comentar la anterior
+        // if (!isLastDayOfMonth()) return;
+        
+        console.log(`[CRONJOB MENSUAL] Ejecutando cronjob de cierre mensual de clases - ${new Date().toISOString()}`);
+        await processMonthlyClassClosure();
+    }, {
+        scheduled: true,
+        timezone: "America/Caracas"
+    });
+
+    console.log('[CRONJOB MENSUAL] Cronjob de cierre mensual de clases configurado (cada 10 segundos - MODO PRUEBA)');
+    console.log('[CRONJOB MENSUAL] ⚠️ RECORDATORIO: Cambiar a "0 0 28-31 * *" para producción (último día del mes a medianoche)');
+};
+
 module.exports = {
     processClassFinalization,
-    initClassFinalizationCronjob
+    initClassFinalizationCronjob,
+    processMonthlyClassClosure,
+    initMonthlyClassClosureCronjob
 };
 

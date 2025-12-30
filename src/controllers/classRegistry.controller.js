@@ -443,5 +443,107 @@ classRegistryCtrl.createReschedule = async (req, res) => {
     }
 };
 
+/**
+ * @route GET /api/class-registry/range
+ * @description Lista registros de clase de un enrollment específico dentro de un rango de fechas
+ * @access Private (Requiere JWT)
+ * 
+ * Query Parameters:
+ * - enrollmentId (String, requerido): ID del enrollment
+ * - from (String, requerido): Fecha inicial en formato YYYY-MM-DD
+ * - to (String, requerido): Fecha final en formato YYYY-MM-DD
+ * 
+ * Los resultados se ordenan desde la fecha más reciente a la más antigua (descendente)
+ */
+classRegistryCtrl.listByDateRange = async (req, res) => {
+    try {
+        const { enrollmentId, from, to } = req.query;
+
+        // Validar enrollmentId
+        if (!enrollmentId) {
+            return res.status(400).json({ message: 'El campo enrollmentId es requerido.' });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+            return res.status(400).json({ message: 'ID de enrollment inválido.' });
+        }
+
+        // Validar que el enrollment existe
+        const enrollment = await Enrollment.findById(enrollmentId).lean();
+        if (!enrollment) {
+            return res.status(404).json({ message: 'Enrollment no encontrado.' });
+        }
+
+        // Validar from
+        if (!from) {
+            return res.status(400).json({ message: 'El campo from es requerido (formato YYYY-MM-DD).' });
+        }
+
+        const fromRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!fromRegex.test(from)) {
+            return res.status(400).json({ message: 'El campo from debe tener el formato YYYY-MM-DD (ej: 2024-12-01).' });
+        }
+
+        // Validar to
+        if (!to) {
+            return res.status(400).json({ message: 'El campo to es requerido (formato YYYY-MM-DD).' });
+        }
+
+        const toRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!toRegex.test(to)) {
+            return res.status(400).json({ message: 'El campo to debe tener el formato YYYY-MM-DD (ej: 2024-12-31).' });
+        }
+
+        // Validar que from <= to
+        if (from > to) {
+            return res.status(400).json({ message: 'La fecha from debe ser menor o igual a la fecha to.' });
+        }
+
+        // Validar que las fechas sean válidas
+        const fromDate = new Date(from);
+        const toDate = new Date(to);
+        
+        if (isNaN(fromDate.getTime())) {
+            return res.status(400).json({ message: 'La fecha from no es una fecha válida.' });
+        }
+
+        if (isNaN(toDate.getTime())) {
+            return res.status(400).json({ message: 'La fecha to no es una fecha válida.' });
+        }
+
+        // Buscar registros de clase del enrollment dentro del rango de fechas
+        const classRegistries = await ClassRegistry.find({
+            enrollmentId: enrollmentId,
+            classDate: { $gte: from, $lte: to }
+        })
+            .populate('enrollmentId', 'alias language enrollmentType startDate endDate')
+            .populate('classType', 'name')
+            .populate('contentType', 'name')
+            .populate('originalClassId', 'classDate enrollmentId')
+            .populate('professorId', 'name email phone')
+            .populate('userId', 'name email role')
+            .populate('evaluations') // Popula todas las evaluaciones asociadas
+            .sort({ classDate: -1, createdAt: -1 }) // Ordenar por fecha descendente (más reciente primero)
+            .lean();
+
+        res.status(200).json({
+            message: 'Registros de clase obtenidos exitosamente',
+            enrollmentId: enrollmentId,
+            dateRange: {
+                from: from,
+                to: to
+            },
+            classes: classRegistries,
+            total: classRegistries.length
+        });
+    } catch (error) {
+        console.error('Error al listar registros de clase por rango de fechas:', error);
+        res.status(500).json({ 
+            message: 'Error interno al listar registros de clase por rango de fechas', 
+            error: error.message 
+        });
+    }
+};
+
 module.exports = classRegistryCtrl;
 

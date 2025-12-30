@@ -839,8 +839,13 @@ No requiere body.
     {
       "_id": "692a1f4a5fa3f53b825ee53f",
       "planId": {
-        "name": "Panda_W"
+        "name": "Panda_W",
+        "enrollmentType": "couple",
+        "language": "English",
+        "startDate": "2025-01-15T00:00:00.000Z",
+        "endDate": "2025-02-14T23:59:59.999Z"
       },
+      "alias": "Pareja de Inglés",
       "studentIds": [
         {
           "_id": "692a1f4a5fa3f53b825ee540",
@@ -848,7 +853,8 @@ No requiere body.
             "_id": "6858c84b1b114315ccdf65d0",
             "studentCode": "BES-0084",
             "name": "Jose Orlando Contreras",
-            "email": "contrerasnorlando@gmail.com"
+            "email": "contrerasnorlando@gmail.com",
+            "dob": "1995-03-15"
           }
         },
         {
@@ -857,7 +863,8 @@ No requiere body.
             "_id": "6858c84b1b114315ccdf65d1",
             "studentCode": "BES-0085",
             "name": "Yainery Veles",
-            "email": "yaineryveles99@gmail.com"
+            "email": "yaineryveles99@gmail.com",
+            "dob": "1998-07-22"
           }
         }
       ]
@@ -877,7 +884,13 @@ No requiere body.
 **enrollments:**
 - Array de objetos simplificados con:
   - `_id` (String): ID del enrollment
-  - `planId` (Object): Objeto con solo `name` del plan
+  - `planId` (Object): Objeto con información del plan y enrollment:
+    - `name` (String): Nombre del plan
+    - `enrollmentType` (String): Tipo de enrollment (`single`, `couple` o `group`)
+    - `language` (String): Idioma del enrollment (`English` o `French`)
+    - `startDate` (Date/String): Fecha de inicio del enrollment (formato ISO o Date)
+    - `endDate` (Date/String): Fecha de fin del enrollment (formato ISO o Date)
+  - `alias` (String/null): Alias del enrollment (si existe, null si no tiene alias)
   - `studentIds` (Array): Array de objetos con:
     - `_id` (String): ID del objeto studentId
     - `studentId` (Object): Objeto con:
@@ -885,14 +898,51 @@ No requiere body.
       - `studentCode` (String): Código del estudiante
       - `name` (String): Nombre del estudiante
       - `email` (String): Correo electrónico del estudiante
+      - `dob` (String): Fecha de nacimiento del estudiante (formato YYYY-MM-DD)
 
 **total:**
 - `total` (Number): Cantidad total de enrollments activos del profesor
+
+#### **🆕 Ordenamiento de Enrollments**
+
+Los enrollments se ordenan automáticamente según los siguientes criterios (en orden de prioridad):
+
+1. **Por Plan**: Alfabéticamente por nombre del plan (A-Z)
+2. **Por Tipo de Enrollment**: Dentro del mismo plan, se ordenan por `enrollmentType`:
+   - Primero: `single`
+   - Segundo: `couple`
+   - Tercero: `group`
+3. **Por Alias o Nombre del Primer Estudiante**: Dentro del mismo plan y tipo:
+   - Si ambos enrollments tienen `alias`: Se ordenan alfabéticamente por alias
+   - Si solo uno tiene `alias`: El que tiene alias aparece primero
+   - Si ninguno tiene `alias`: Se ordenan alfabéticamente por el nombre del primer estudiante
+
+**Ejemplo de ordenamiento:**
+```
+Plan A - single - Estudiante: Ana
+Plan A - single - Estudiante: Carlos
+Plan A - couple - Alias: "Pareja 1"
+Plan A - couple - Alias: "Pareja 2"
+Plan A - group - Alias: "Grupo Avanzado"
+Plan B - single - Estudiante: Juan
+```
+
+**Lógica de ordenamiento detallada:**
+1. **Criterio 1 - Plan**: Todos los enrollments se agrupan primero por nombre del plan (orden alfabético)
+2. **Criterio 2 - Tipo**: Dentro de cada plan, se ordenan por tipo:
+   - `single` aparece primero
+   - `couple` aparece segundo
+   - `group` aparece tercero
+3. **Criterio 3 - Alias o Nombre**: Dentro del mismo plan y tipo:
+   - Si un enrollment tiene `alias` y otro no: el que tiene alias aparece primero
+   - Si ambos tienen `alias`: se ordenan alfabéticamente por alias
+   - Si ninguno tiene `alias`: se ordenan alfabéticamente por el nombre del primer estudiante en el array `studentIds`
 
 #### **Notas Importantes**
 - Solo se devuelven enrollments con `status: 1` (activos)
 - La respuesta está optimizada para listas previas, excluyendo información sensible como precios y balances
 - Para obtener el detalle completo de un enrollment, usar el endpoint `/api/enrollments/:id/detail`
+- Los enrollments vienen ordenados según los criterios especificados arriba
 
 #### **Errores Posibles**
 
@@ -932,7 +982,19 @@ const getProfessorEnrollments = async (professorId) => {
       // Ejemplo de uso
       data.enrollments.forEach(enrollment => {
         console.log(`Plan: ${enrollment.planId.name}`);
+        console.log(`Tipo de Enrollment: ${enrollment.planId.enrollmentType}`); // single, couple o group
+        console.log(`Idioma: ${enrollment.planId.language}`); // English o French
+        console.log(`Fecha Inicio: ${enrollment.planId.startDate}`);
+        console.log(`Fecha Fin: ${enrollment.planId.endDate}`);
+        console.log(`Alias: ${enrollment.alias || 'Sin alias'}`);
         console.log(`Estudiantes: ${enrollment.studentIds.length}`);
+        
+        // Mostrar información de cada estudiante
+        enrollment.studentIds.forEach(studentInfo => {
+          console.log(`  - ${studentInfo.studentId.name} (${studentInfo.studentId.studentCode})`);
+          console.log(`    Email: ${studentInfo.studentId.email}`);
+          console.log(`    Fecha de Nacimiento: ${studentInfo.studentId.dob}`);
+        });
       });
     } else {
       console.error('Error:', data.message);

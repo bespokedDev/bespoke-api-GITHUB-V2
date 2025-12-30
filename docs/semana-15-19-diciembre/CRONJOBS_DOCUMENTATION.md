@@ -16,9 +16,13 @@ Todos los cronjobs están configurados para usar la zona horaria `America/Caraca
 
 ### **Modo Prueba vs Producción**
 - **Modo Prueba**: Los cronjobs se ejecutan cada 10 segundos para facilitar las pruebas
-- **Producción**: Los cronjobs se ejecutan diariamente a las 00:00 (expresión cron: `'0 0 * * *'`)
+- **Producción**: 
+  - Cronjobs diarios: Se ejecutan diariamente a las 00:00 (expresión cron: `'0 0 * * *'`)
+  - Cronjob mensual: Se ejecuta el último día de cada mes a las 00:00 (expresión cron: `'0 0 28-31 * *'` con verificación de último día)
 
-⚠️ **IMPORTANTE**: Antes de desplegar a producción, cambiar la expresión cron de `'*/10 * * * * *'` a `'0 0 * * *'` en cada archivo de cronjob.
+⚠️ **IMPORTANTE**: Antes de desplegar a producción, cambiar las expresiones cron en cada archivo de cronjob:
+- Cronjobs diarios: de `'*/10 * * * * *'` a `'0 0 * * *'`
+- Cronjob mensual: de `'*/10 * * * * *'` a `'0 0 28-31 * *'` y agregar verificación de último día del mes
 
 ---
 
@@ -199,6 +203,172 @@ El cronjob registra en consola:
 
 ---
 
+### **3. Cronjob de Cierre Mensual de Clases**
+
+**Archivo**: `src/jobs/classRegistry.jobs.js`  
+**Función**: `processMonthlyClassClosure`  
+**Inicialización**: `initMonthlyClassClosureCronjob`
+
+#### **Descripción**
+Este cronjob procesa automáticamente el cierre mensual de clases, marcando como "no show" las clases no vistas que pertenecen al mes que está terminando. Se ejecuta el último día de cada mes a las 00:00 (medianoche).
+
+#### **Reglas de Negocio**
+
+1. **Búsqueda de Enrollments con Clases del Mes**
+   - Busca todos los enrollments que tengan clases en el mes actual (sin filtrar por `status`)
+   - Identifica las clases cuya `classDate` esté dentro del rango del mes que está terminando
+
+2. **Actualización de Clases No Vistas del Mes**
+   - Para cada enrollment con clases en el mes:
+     - Filtra las clases cuya `classDate` esté dentro del mes actual
+     - Si una clase tiene `classViewed: 0` (no vista):
+       - Actualiza `classViewed` a `3` (no show)
+     - **IMPORTANTE**: Solo actualiza clases del mes actual, no toca clases de meses futuros
+
+3. **Generación de Estadísticas del Mes**
+   - Cuenta las clases del mes por tipo:
+     - **No Show Marcadas**: Clases marcadas como no show en este procesamiento
+     - **Total del Mes**: Total de clases que pertenecen al mes
+     - **Vistas del Mes**: Clases con `classViewed: 1`
+     - **Parcialmente Vistas del Mes**: Clases con `classViewed: 2`
+     - **Ya No Show del Mes**: Clases que ya estaban marcadas como no show (`classViewed: 3`)
+
+4. **Creación de Notificaciones**
+   - Crea una notificación por enrollment con las estadísticas del mes procesado
+   - La notificación incluye el mes y año procesado
+
+#### **Proceso de Ejecución**
+
+1. **Identificación del Mes Actual**
+   ```javascript
+   const currentYear = now.getFullYear();
+   const currentMonth = now.getMonth() + 1;
+   const monthYear = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+   // Ejemplo: "2024-12" para diciembre de 2024
+   ```
+
+2. **Búsqueda de Clases del Mes**
+   ```javascript
+   // Busca todas las ClassRegistry del mes actual
+   const classesInMonth = await ClassRegistry.find({
+       classDate: { $gte: firstDayOfMonth, $lte: lastDayOfMonthStr }
+   });
+   
+   // Obtiene los enrollmentIds únicos
+   const enrollmentIds = [...new Set(classesInMonth.map(c => c.enrollmentId))];
+   
+   // Busca todos los enrollments (sin filtrar por status)
+   const enrollmentsToProcess = await Enrollment.find({
+       _id: { $in: enrollmentIds }
+   });
+   ```
+
+3. **Actualización de Clases**
+   - Para cada enrollment, filtra las clases del mes actual
+   - Actualiza solo las clases con `classViewed: 0` a `classViewed: 3`
+   - Las clases de meses futuros no se tocan, aunque tengan `classViewed: 0`
+
+4. **Cálculo de Estadísticas**
+   - Recorre todas las clases del mes para cada enrollment
+   - Cuenta por tipo de `classViewed`
+   - Genera estadísticas detalladas
+
+5. **Generación de Notificación**
+   - Crea una notificación con descripción que incluye:
+     - Mes y año procesado (ej: "DICIEMBRE 2024")
+     - ID del enrollment
+     - Cantidad de clases marcadas como no show
+     - Total de clases del mes
+     - Desglose por tipo (vistas, parcialmente vistas, ya no show)
+
+#### **Ejemplo de Procesamiento**
+
+**Escenario:**
+- Fecha de ejecución: 31 de diciembre de 2024 (último día del mes)
+- Enrollment con 12 clases:
+  - 10 clases en diciembre (días 1-31 de diciembre)
+  - 2 clases en enero (días 5 y 10 de enero)
+
+**Procesamiento:**
+1. El cronjob identifica que está procesando el mes "2024-12" (diciembre)
+2. Filtra las 10 clases de diciembre
+3. De esas 10 clases:
+   - 5 tienen `classViewed: 0` → Se actualizan a `classViewed: 3` (no show)
+   - 3 tienen `classViewed: 1` (vistas)
+   - 2 tienen `classViewed: 2` (parcialmente vistas)
+4. Las 2 clases de enero NO se tocan (aunque tengan `classViewed: 0`)
+5. Se crea una notificación con las estadísticas de diciembre
+
+#### **Notificación Generada**
+
+**Estructura de la Notificación:**
+```json
+{
+  "idCategoryNotification": "6941c9b30646c9359c7f9f68",
+  "notification_description": "Cierre mensual de clases - DICIEMBRE 2024. Enrollment 64f8a1b2c3d4e5f6a7b8c9d0. 5 clase(s) marcada(s) como no show del mes de diciembre, Total de clases del mes: 10, 3 vista(s), 2 parcialmente vista(s), 0 ya marcada(s) como no show.",
+  "idEnrollment": "64f8a1b2c3d4e5f6a7b8c9d0",
+  "idStudent": [],
+  "isActive": true
+}
+```
+
+**Ejemplo de Descripción:**
+```
+Cierre mensual de clases - DICIEMBRE 2024. Enrollment 64f8a1b2c3d4e5f6a7b8c9d0. 
+5 clase(s) marcada(s) como no show del mes de diciembre, 
+Total de clases del mes: 10, 3 vista(s), 2 parcialmente vista(s), 0 ya marcada(s) como no show.
+```
+
+**Nota**: La descripción solo incluye los tipos de clases que tienen al menos una ocurrencia. Si un tipo no tiene clases, no se menciona en la descripción.
+
+#### **Frecuencia de Ejecución**
+
+- **Modo Prueba**: Cada 10 segundos (para facilitar pruebas)
+- **Producción**: Último día de cada mes a las 00:00 (expresión cron: `'0 0 28-31 * *'` con verificación de último día)
+
+**⚠️ IMPORTANTE**: Antes de producción, cambiar la expresión cron y agregar la verificación:
+```javascript
+cron.schedule('0 0 28-31 * *', async () => {
+    if (!isLastDayOfMonth()) return; // Solo ejecutar si es último día del mes
+    await processMonthlyClassClosure();
+});
+```
+
+#### **Diferencia con el Cronjob de Finalización de Clases**
+
+| Aspecto | Finalización de Clases | Cierre Mensual |
+|---------|------------------------|----------------|
+| **Frecuencia** | Diario (medianoche) | Mensual (último día del mes) |
+| **Enrollments** | Vencidos (`endDate < hoy`) | Con clases en el mes actual |
+| **Filtro de Clases** | Todas las clases del enrollment | Solo clases del mes actual |
+| **Propósito** | Cerrar enrollments vencidos | Cerrar mes contable/administrativo |
+| **Notificaciones** | Por enrollment vencido | Por enrollment con clases del mes |
+
+#### **Logs del Cronjob**
+El cronjob registra en consola:
+- Mes y año que se está procesando
+- Número de enrollments encontrados con clases en el mes
+- Número de clases actualizadas a "no show"
+- Número de notificaciones creadas
+- Estadísticas detalladas por enrollment procesado
+- Errores específicos por enrollment (si los hay)
+
+**Ejemplo de Logs:**
+```
+[CRONJOB MENSUAL] Ejecutando cronjob de cierre mensual de clases - 2024-12-31T00:00:00.000Z
+[CRONJOB MENSUAL] Procesando clases del mes: 2024-12 (2024-12-01 a 2024-12-31)
+[CRONJOB MENSUAL] Encontrados 15 enrollments con clases en el mes 2024-12 para procesar
+[CRONJOB MENSUAL] Actualizadas 8 clases a no show para enrollment 64f8a1b2c3d4e5f6a7b8c9d0 (mes 2024-12)
+[CRONJOB MENSUAL] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 procesado (mes 2024-12): 8 marcadas como no show, 5 vistas, 2 parcialmente vistas, 0 ya no show
+[CRONJOB MENSUAL] Procesamiento de cierre mensual completado:
+  - Mes procesado: 2024-12
+  - Enrollments procesados: 15
+  - Clases actualizadas a no show: 45
+  - Notificaciones creadas: 15
+```
+
+---
+
 ## 🔍 **Monitoreo y Debugging**
 
 ### **Logs en Consola**
@@ -234,7 +404,7 @@ src/
   jobs/
     index.js                    # Inicialización centralizada
     enrollments.jobs.js         # Cronjob de enrollments por impago
-    classRegistry.jobs.js       # Cronjob de finalización de clases
+    classRegistry.jobs.js       # Cronjob de finalización de clases y cierre mensual
 ```
 
 ### **Dependencias**
@@ -259,7 +429,8 @@ if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
 
 ### **Checklist Pre-Producción**
 
-1. ✅ Cambiar expresión cron de `'*/10 * * * * *'` a `'0 0 * * *'` en ambos archivos de cronjob
+1. ✅ Cambiar expresión cron de `'*/10 * * * * *'` a `'0 0 * * *'` en los cronjobs diarios
+2. ✅ Cambiar expresión cron del cronjob mensual a `'0 0 28-31 * *'` y agregar verificación de último día del mes
 2. ✅ Verificar que la zona horaria sea correcta (`America/Caracas` o la zona horaria del proyecto)
 3. ✅ Verificar que los logs estén configurados correctamente
 4. ✅ Probar los cronjobs en un entorno de staging antes de producción
@@ -275,12 +446,25 @@ cron.schedule('*/10 * * * * *', async () => {
 cron.schedule('0 0 * * *', async () => {
 ```
 
-**`src/jobs/classRegistry.jobs.js`** (línea ~180):
+**`src/jobs/classRegistry.jobs.js`**:
+
+**Para el cronjob de finalización de clases** (línea ~202):
 ```javascript
 // Cambiar de:
 cron.schedule('*/10 * * * * *', async () => {
 // A:
 cron.schedule('0 0 * * *', async () => {
+```
+
+**Para el cronjob de cierre mensual** (línea ~450):
+```javascript
+// Cambiar de:
+cron.schedule('*/10 * * * * *', async () => {
+    // En modo prueba, ejecutar siempre
+// A:
+cron.schedule('0 0 28-31 * *', async () => {
+    if (!isLastDayOfMonth()) return; // Solo ejecutar si es último día del mes
+    await processMonthlyClassClosure();
 ```
 
 ---
@@ -292,6 +476,7 @@ cron.schedule('0 0 * * *', async () => {
 2. **Procesamiento de Enrollments**: 
    - El cronjob de enrollments por impago solo procesa enrollments con `status: 1` (activos)
    - El cronjob de finalización de clases procesa todos los enrollments vencidos, independientemente de su status
+   - El cronjob de cierre mensual procesa todos los enrollments que tengan clases en el mes actual, independientemente de su status
 
 3. **Notificaciones**: 
    - Las notificaciones se crean automáticamente y están disponibles para los usuarios del sistema

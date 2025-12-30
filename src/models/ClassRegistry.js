@@ -138,7 +138,19 @@ const ClassRegistrySchema = new mongoose.Schema({
         default: []
         // Array de IDs de evaluaciones asociadas a esta clase
         // Se usa para acortar las búsquedas de evaluaciones por clase
-    }]
+    }],
+    professorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Professor',
+        default: null
+        // ID del profesor (referencia a la colección Professor) - para manejo de cuestiones administrativas
+    },
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+        // ID del usuario administrador (referencia a la colección User) - para manejo de cuestiones administrativas
+    }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt
 });

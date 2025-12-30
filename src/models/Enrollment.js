@@ -232,7 +232,7 @@ const EnrollmentSchema = new mongoose.Schema({
     cancellationPaymentsEnabled: {
         type: Boolean,
         default: false
-        // pagos de cancelación activados
+        // pagos de cancelación automaticos activados (true) o desactivados (false)
     },
     suspensionDaysAfterEndDate: {
         type: Number,
