@@ -103,6 +103,12 @@ const StudentSchema = new mongoose.Schema({
         default: null
         // cosas que no le gustan
     },
+    strengths: {
+        type: String,
+        trim: true,
+        default: null
+        // fortalezas del estudiante
+    },
     learningStyle: {
         type: String,
         trim: true,

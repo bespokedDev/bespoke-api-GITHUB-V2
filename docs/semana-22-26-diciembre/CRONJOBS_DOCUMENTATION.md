@@ -93,7 +93,148 @@ El cronjob registra en consola:
 
 ---
 
-### **2. Cronjob de Finalización de Clases**
+### **2. Cronjob de Pagos Automáticos**
+
+**Archivo**: `src/jobs/enrollments.jobs.js`  
+**Función**: `processAutomaticPayments`  
+**Inicialización**: `initAutomaticPaymentsCronjob`
+
+#### **Descripción**
+Este cronjob procesa automáticamente los pagos de enrollments que tienen habilitados los pagos automáticos (`cancellationPaymentsEnabled: true`), realizando el cobro cuando el `endDate` coincide con la fecha actual y actualizando los balances y montos de los estudiantes.
+
+#### **Reglas de Negocio**
+
+1. **Búsqueda de Enrollments Elegibles**
+   - Busca todos los enrollments con `cancellationPaymentsEnabled: true`
+   - Filtra enrollments cuyo `endDate` coincida con la fecha actual (mismo día, ignorando la hora)
+
+2. **Verificación de Saldo Antes del Pago**
+   - Si `available_balance < totalAmount` ANTES de procesar el pago:
+     - Se detiene el proceso
+     - Se cambia `cancellationPaymentsEnabled` a `false`
+     - Se crea una notificación de pago automático fallido
+
+3. **Procesamiento del Pago Automático**
+   - Si hay suficiente saldo (`available_balance >= totalAmount`):
+     - Se resta: `available_balance = available_balance - totalAmount`
+     - Se divide el nuevo `available_balance` entre la cantidad de estudiantes en `studentIds`
+     - Se actualiza el campo `amount` de cada estudiante con el resultado de la división
+     - Se verifica el precio actual del plan según `enrollmentType` (`single`, `couple`, `group`)
+     - Si el precio del plan cambió respecto a `totalAmount`, se actualiza `totalAmount`
+
+4. **Validación Post-Pago**
+   - Si después de la resta `available_balance < totalAmount`:
+     - Se cambia `cancellationPaymentsEnabled` a `false`
+     - Se crea una notificación de desactivación de pagos automáticos
+
+#### **Proceso de Ejecución**
+
+1. **Búsqueda de Enrollments**
+   ```javascript
+   const enrollmentsWithAutoPayments = await Enrollment.find({
+       cancellationPaymentsEnabled: true
+   })
+       .populate('planId')
+       .populate('studentIds.studentId')
+       .lean();
+   ```
+
+2. **Filtrado por Fecha**
+   - Normaliza `endDate` a medianoche (ignorando hora)
+   - Compara con la fecha actual normalizada
+   - Solo procesa enrollments cuyo `endDate` coincida exactamente con el día actual
+
+3. **Verificación de Saldo**
+   - Si no hay suficiente saldo: desactiva pagos automáticos y crea notificación
+   - Si hay suficiente saldo: procede con el pago
+
+4. **Cálculo y Actualización**
+   - Calcula nuevo `available_balance` restando `totalAmount`
+   - Divide el nuevo balance entre el número de estudiantes
+   - Actualiza `amount` de cada estudiante en `studentIds`
+   - Verifica y actualiza `totalAmount` según el precio actual del plan
+
+5. **Validación Final**
+   - Verifica si el saldo restante es suficiente para el próximo pago
+   - Si no es suficiente, desactiva pagos automáticos y crea notificación
+
+#### **Notificaciones Generadas**
+
+**Notificación de Pago Automático Fallido:**
+```json
+{
+  "idCategoryNotification": "6941c9b30646c9359c7f9f68",
+  "notification_description": "No se pudo efectuar el pago automático del enrollment [ID] porque no hay suficiente saldo disponible. Estudiantes afectados: [Nombre1] ([Email1]), [Nombre2] ([Email2])",
+  "idPenalization": null,
+  "idEnrollment": "[ID del enrollment]",
+  "idProfessor": null,
+  "idStudent": ["[Array de IDs de estudiantes]"],
+  "isActive": true
+}
+```
+
+**Notificación de Desactivación de Pagos Automáticos:**
+```json
+{
+  "idCategoryNotification": "6941c9b30646c9359c7f9f68",
+  "notification_description": "Los pagos automáticos del enrollment [ID] han sido desactivados debido a saldo insuficiente después del pago automático. Estudiantes afectados: [Nombre1] ([Email1]), [Nombre2] ([Email2])",
+  "idPenalization": null,
+  "idEnrollment": "[ID del enrollment]",
+  "idProfessor": null,
+  "idStudent": ["[Array de IDs de estudiantes]"],
+  "isActive": true
+}
+```
+
+#### **Campos Actualizados**
+
+Cuando el pago automático se procesa exitosamente, se actualizan los siguientes campos:
+
+- **`available_balance`**: Se resta `totalAmount` del valor actual
+- **`studentIds[].amount`**: Se actualiza con el resultado de dividir el nuevo `available_balance` entre el número de estudiantes
+- **`totalAmount`**: Se actualiza si el precio del plan cambió según `enrollmentType`
+- **`cancellationPaymentsEnabled`**: Se cambia a `false` si el saldo es insuficiente (antes o después del pago)
+
+#### **Ejemplo de Cálculo**
+
+**Escenario:**
+- `available_balance`: 1000
+- `totalAmount`: 300
+- Número de estudiantes: 2
+
+**Proceso:**
+1. Verificación: `1000 >= 300` ✅ (hay suficiente saldo)
+2. Resta: `available_balance = 1000 - 300 = 700`
+3. División: `amount por estudiante = 700 / 2 = 350`
+4. Actualización: Cada estudiante en `studentIds` recibe `amount: 350`
+5. Validación: `700 >= 300` ✅ (suficiente para próximo pago, pagos automáticos se mantienen activos)
+
+#### **Logs del Cronjob**
+El cronjob registra en consola:
+- Número de enrollments con pagos automáticos habilitados encontrados
+- Número de enrollments procesados
+- Número de pagos procesados exitosamente
+- Número de pagos fallidos (saldo insuficiente)
+- Número de pagos automáticos desactivados
+- Errores específicos por enrollment (si los hay)
+
+**Ejemplo de Logs:**
+```
+[CRONJOB PAGOS AUTOMÁTICOS] Ejecutando cronjob de pagos automáticos - 2024-12-18T00:00:00.000Z
+[CRONJOB PAGOS AUTOMÁTICOS] Encontrados 3 enrollments con pagos automáticos habilitados
+[CRONJOB PAGOS AUTOMÁTICOS] Procesando enrollment 64f8a1b2c3d4e5f6a7b8c9d0 con endDate 2024-12-18
+[CRONJOB PAGOS AUTOMÁTICOS] Pago automático procesado exitosamente para enrollment 64f8a1b2c3d4e5f6a7b8c9d0
+[CRONJOB PAGOS AUTOMÁTICOS] Pago automático fallido para enrollment 64f8a1b2c3d4e5f6a7b8c9d1 - saldo insuficiente
+[CRONJOB PAGOS AUTOMÁTICOS] Procesamiento completado:
+  - Enrollments procesados: 3
+  - Pagos procesados exitosamente: 1
+  - Pagos fallidos (saldo insuficiente): 1
+  - Pagos automáticos desactivados: 1
+```
+
+---
+
+### **3. Cronjob de Finalización de Clases**
 
 **Archivo**: `src/jobs/classRegistry.jobs.js`  
 **Función**: `processClassFinalization`  
@@ -222,14 +363,14 @@ Todos los cronjobs generan logs detallados en la consola con el prefijo `[CRONJO
 src/
   jobs/
     index.js                    # Inicialización centralizada
-    enrollments.jobs.js         # Cronjob de enrollments por impago
+    enrollments.jobs.js         # Cronjob de enrollments por impago y pagos automáticos
     classRegistry.jobs.js       # Cronjob de finalización de clases
 ```
 
 ### **Dependencias**
 
 - `node-cron`: Librería para programar tareas cron
-- Modelos de Mongoose: `Enrollment`, `ClassRegistry`, `Penalizacion`, `Notification`, `CategoryNotification`
+- Modelos de Mongoose: `Enrollment`, `ClassRegistry`, `Penalizacion`, `Notification`, `CategoryNotification`, `Plan`, `Student`
 
 ### **Inicialización en `src/index.js`**
 
@@ -248,7 +389,8 @@ if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
 
 ### **Checklist Pre-Producción**
 
-1. ✅ Cambiar expresión cron de `'*/10 * * * * *'` a `'0 0 * * *'` en ambos archivos de cronjob
+1. ✅ Cambiar expresión cron de `'*/10 * * * * *'` a `'0 0 * * *'` en los cronjobs diarios
+2. ✅ Cambiar expresión cron del cierre mensual a `'0 0 28-31 * *'` (se ejecuta en días 28-31 y verifica si es el último día del mes)
 2. ✅ Verificar que la zona horaria sea correcta (`America/Caracas` o la zona horaria del proyecto)
 3. ✅ Verificar que los logs estén configurados correctamente
 4. ✅ Probar los cronjobs en un entorno de staging antes de producción
@@ -280,6 +422,7 @@ cron.schedule('0 0 * * *', async () => {
 
 2. **Procesamiento de Enrollments**: 
    - El cronjob de enrollments por impago solo procesa enrollments con `status: 1` (activos)
+   - El cronjob de pagos automáticos procesa enrollments con `cancellationPaymentsEnabled: true`, independientemente del `status`
    - El cronjob de finalización de clases procesa todos los enrollments vencidos, independientemente de su status
 
 3. **Notificaciones**: 

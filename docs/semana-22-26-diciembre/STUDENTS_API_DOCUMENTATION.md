@@ -139,6 +139,7 @@ login('juan.perez@example.com', '1234567890');
   "status": 1,
   "kid": 0,
   "dislike": "No le gustan las clases muy largas",
+  "strengths": "Excelente memoria, muy motivado",
   "learningStyle": "Visual y kinestésico",
   "academicPerformance": "Excelente desempeño académico",
   "rutinePriorBespoke": "Revisa el material antes de cada clase",
@@ -182,6 +183,7 @@ login('juan.perez@example.com', '1234567890');
 - `occupation` (String): Ocupación del estudiante
 - `status` (Number): Estado del estudiante. Valores: `1` (activo), `0` (inactivo). Por defecto: `1`
 - `dislike` (String): Cosas que no le gustan (por defecto: null)
+- `strengths` (String): Fortalezas del estudiante (por defecto: null)
 - `learningStyle` (String): Tipo de aprendizaje (por defecto: null)
 - `academicPerformance` (String): Como son sus calificaciones y su desenvolvimiento académico (por defecto: null)
 - `rutinePriorBespoke` (String): Cual su rutina antes de las clases en la plataforma (por defecto: null)
@@ -236,6 +238,7 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
   "representativeName": null,
   "kid": 0,
   "dislike": "No le gustan las clases muy largas",
+  "strengths": "Excelente memoria, muy motivado",
   "learningStyle": "Visual y kinestésico",
   "academicPerformance": "Excelente desempeño académico",
   "rutinePriorBespoke": "Revisa el material antes de cada clase",
@@ -271,6 +274,7 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
 - `occupation` (String): Ocupación
 - `representativeName` (String): Nombre del representante
 - `dislike` (String): Cosas que no le gustan
+- `strengths` (String): Fortalezas del estudiante
 - `learningStyle` (String): Tipo de aprendizaje
 - `academicPerformance` (String): Como son sus calificaciones y su desenvolvimiento académico
 - `rutinePriorBespoke` (String): Cual su rutina antes de las clases en la plataforma
@@ -304,6 +308,7 @@ Crea un nuevo estudiante en el sistema. El código de estudiante (`studentCode`)
     "status": 1,
     "kid": 0,
     "dislike": "No le gustan las clases muy largas",
+    "strengths": "Excelente memoria, muy motivado",
     "learningStyle": "Visual y kinestésico",
     "academicPerformance": "Excelente desempeño académico",
     "rutinePriorBespoke": "Revisa el material antes de cada clase",
@@ -423,6 +428,7 @@ No requiere body.
     "status": 1,
     "kid": 0,
     "dislike": "No le gustan las clases muy largas",
+    "strengths": "Excelente memoria, muy motivado",
     "learningStyle": "Visual y kinestésico",
     "academicPerformance": "Excelente desempeño académico",
     "rutinePriorBespoke": "Revisa el material antes de cada clase",
@@ -446,6 +452,7 @@ No requiere body.
     "status": 1,
     "kid": 1,
     "dislike": null,
+    "strengths": null,
     "learningStyle": "Auditivo",
     "academicPerformance": "Buen desempeño",
     "rutinePriorBespoke": null,
@@ -1456,6 +1463,7 @@ No requiere body.
   "status": 1,
   "kid": 0,
   "dislike": "No le gustan las clases muy largas",
+  "strengths": "Excelente memoria, muy motivado",
   "learningStyle": "Visual y kinestésico",
   "academicPerformance": "Excelente desempeño académico",
   "rutinePriorBespoke": "Revisa el material antes de cada clase",
@@ -1590,6 +1598,7 @@ Actualiza la información de un estudiante existente. Puedes enviar solo los cam
     "status": 1,
     "kid": 0,
     "dislike": "No le gustan las clases muy largas",
+    "strengths": "Excelente memoria, muy motivado",
     "learningStyle": "Visual y kinestésico",
     "academicPerformance": "Excelente desempeño académico",
     "rutinePriorBespoke": "Revisa el material antes de cada clase",

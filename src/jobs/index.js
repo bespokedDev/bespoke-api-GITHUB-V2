@@ -1,7 +1,7 @@
 // jobs/index.js
 // Archivo principal para inicializar todos los cronjobs
 
-const { initEnrollmentsPaymentCronjob } = require('./enrollments.jobs');
+const { initEnrollmentsPaymentCronjob, initAutomaticPaymentsCronjob } = require('./enrollments.jobs');
 const { initClassFinalizationCronjob, initMonthlyClassClosureCronjob } = require('./classRegistry.jobs');
 
 /**
@@ -13,6 +13,9 @@ const initAllJobs = () => {
 
     // Inicializar cronjob de enrollments por impago
     initEnrollmentsPaymentCronjob();
+
+    // Inicializar cronjob de pagos automáticos
+    initAutomaticPaymentsCronjob();
 
     // Inicializar cronjob de finalización de clases
     initClassFinalizationCronjob();

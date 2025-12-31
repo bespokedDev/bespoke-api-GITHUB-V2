@@ -1351,7 +1351,7 @@ incomesCtrl.list = async (req, res) => {
                 select: 'planId studentIds professorId enrollmentType purchaseDate pricePerStudent totalAmount status alias',
                 populate: [
                     { path: 'planId', select: 'name' },
-                    { path: 'studentIds', select: 'name studentCode' },
+                    { path: 'studentIds.studentId', select: 'name studentCode' },
                     { path: 'professorId', select: 'name ciNumber' }
                 ]
             })
