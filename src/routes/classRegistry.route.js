@@ -24,8 +24,8 @@ router.get('/:id', verifyToken, verifyRole('admin', 'professor'), classRegistryC
 router.put('/:id', verifyToken, verifyRole('admin', 'professor'), classRegistryCtrl.update);
 
 // POST /api/class-registry/:id/reschedule - Crea una nueva clase de tipo reschedule
-// Acceso: professor
-router.post('/:id/reschedule', verifyToken, verifyRole('professor'), classRegistryCtrl.createReschedule);
+// Acceso: admin, professor
+router.post('/:id/reschedule', verifyToken, verifyRole('admin', 'professor'), classRegistryCtrl.createReschedule);
 
 module.exports = router;
 

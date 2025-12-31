@@ -8,8 +8,8 @@ const verifyRole = require('../middlewares/verifyRole');
 // Rutas protegidas con JWT y validación de roles
 
 // POST /api/evaluations - Crea una nueva evaluación
-// Acceso: Solo profesor
-router.post('/', verifyToken, verifyRole('professor'), evaluationCtrl.create);
+// Acceso: admin, professor
+router.post('/', verifyToken, verifyRole('admin', 'professor'), evaluationCtrl.create);
 
 // GET /api/evaluations/enrollment/:enrollmentId - Lista todas las evaluaciones de un enrollment específico
 // Acceso: Profesor, admin y estudiante
