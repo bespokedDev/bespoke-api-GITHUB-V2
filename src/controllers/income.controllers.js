@@ -328,7 +328,7 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             const plan = enrollment.planId;
             const studentList = enrollment.studentIds;
 
-            const period = `${moment(startDate).format("MMM Do")} - ${moment(endDate).format("MMM Do")}`;
+            const period = `${moment.utc(startDate).format("MMM Do")} - ${moment.utc(endDate).format("MMM Do")}`;
             const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';
             const planName = plan ? plan.name : 'N/A';
             const planDisplay = `${planPrefix} - ${planName}`;
@@ -362,7 +362,13 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 reschedule: 0 // Solo clases normales, excluir reschedules
             });
 
-            const totalHours = plan ? (plan.monthlyClasses || 0) : 0; // Mantener para compatibilidad con otros campos
+            // totalHours debe ser el número real de registros de clase del enrollment
+            // Incluye clases normales (reschedule = 0) y clases padre en reschedule (reschedule = 1 o 2)
+            // Excluye los registros de reschedule en sí (los que tienen originalClassId)
+            const totalHours = await ClassRegistry.countDocuments({
+                enrollmentId: enrollment._id,
+                originalClassId: null // Solo clases padre (normales o en reschedule), excluir reschedules en sí
+            });
 
             let pricePerHour = 0;
             if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
@@ -374,10 +380,33 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             }
 
             let pPerHour = 0;
-            const professorType = professorTypesMap.get(professor.typeId.toString());
-            if (professorType && professorType.rates && enrollment.enrollmentType) {
-                const rate = professorType.rates[enrollment.enrollmentType];
-                if (typeof rate === 'number') { pPerHour = rate; }
+            if (professor.typeId) {
+                // Manejar typeId que puede estar poblado como objeto o ser un ObjectId directo
+                let professorTypeIdStr;
+                if (typeof professor.typeId === 'object' && professor.typeId._id) {
+                    professorTypeIdStr = professor.typeId._id.toString();
+                } else if (typeof professor.typeId === 'object' && professor.typeId.toString) {
+                    professorTypeIdStr = professor.typeId.toString();
+                } else {
+                    professorTypeIdStr = String(professor.typeId);
+                }
+                
+                const professorType = professorTypesMap.get(professorTypeIdStr);
+                if (professorType && professorType.rates && enrollment.enrollmentType) {
+                    const rate = professorType.rates[enrollment.enrollmentType];
+                    if (typeof rate === 'number') { 
+                        pPerHour = rate; 
+                    } else {
+                        console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ Rate no es un número para typeId ${professorTypeIdStr}, enrollmentType: ${enrollment.enrollmentType}, rate: ${rate}`);
+                    }
+                } else {
+                    console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ No se encontró professorType o rates para typeId ${professorTypeIdStr}, enrollmentType: ${enrollment.enrollmentType}`);
+                    console.warn(`[generateGeneralProfessorsReportLogic]   - professorType existe: ${!!professorType}`);
+                    console.warn(`[generateGeneralProfessorsReportLogic]   - professorType.rates existe: ${!!(professorType && professorType.rates)}`);
+                    console.warn(`[generateGeneralProfessorsReportLogic]   - enrollment.enrollmentType: ${enrollment.enrollmentType}`);
+                }
+            } else {
+                console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ El profesor ${professor._id || professor} no tiene typeId, usando pPerHour = 0`);
             }
 
             // PARTE 1: Calcular amount y balance basado en available_balance y totalAmount
@@ -491,7 +520,7 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                     const plan = enrollment.planId;
                     const studentList = enrollment.studentIds;
 
-                    const period = `${moment(startDate).format("MMM Do")} - ${moment(endDate).format("MMM Do")}`;
+                    const period = `${moment.utc(startDate).format("MMM Do")} - ${moment.utc(endDate).format("MMM Do")}`;
                     const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';
                     const planName = plan ? plan.name : 'N/A';
                     const planDisplay = `${planPrefix} - ${planName}`;
@@ -524,7 +553,13 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                         reschedule: 0
                     });
 
-                    const totalHours = plan ? (plan.monthlyClasses || 0) : 0;
+                    // totalHours debe ser el número real de registros de clase del enrollment
+                    // Incluye clases normales (reschedule = 0) y clases padre en reschedule (reschedule = 1 o 2)
+                    // Excluye los registros de reschedule en sí (los que tienen originalClassId)
+                    const totalHours = await ClassRegistry.countDocuments({
+                        enrollmentId: enrollment._id,
+                        originalClassId: null // Solo clases padre (normales o en reschedule), excluir reschedules en sí
+                    });
                     let pricePerHour = 0;
                     if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
                         const price = plan.pricing[enrollment.enrollmentType];
@@ -535,10 +570,15 @@ const generateGeneralProfessorsReportLogic = async (month) => {
 
                     // Obtener rates del profesor suplente
                     let substitutePPerHour = 0;
-                    const substituteProfessorType = professorTypesMap.get(substituteProfessor.typeId.toString());
-                    if (substituteProfessorType && substituteProfessorType.rates && enrollment.enrollmentType) {
-                        const rate = substituteProfessorType.rates[enrollment.enrollmentType];
-                        if (typeof rate === 'number') { substitutePPerHour = rate; }
+                    if (substituteProfessor.typeId) {
+                        const substituteTypeIdStr = substituteProfessor.typeId._id ? substituteProfessor.typeId._id.toString() : substituteProfessor.typeId.toString();
+                        const substituteProfessorType = professorTypesMap.get(substituteTypeIdStr);
+                        if (substituteProfessorType && substituteProfessorType.rates && enrollment.enrollmentType) {
+                            const rate = substituteProfessorType.rates[enrollment.enrollmentType];
+                            if (typeof rate === 'number') { substitutePPerHour = rate; }
+                        }
+                    } else {
+                        console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ El profesor suplente ${substituteProfessor._id || substituteProfessor} no tiene typeId, usando substitutePPerHour = 0`);
                     }
 
                     // Calcular amount y balance (mismo que para el enrollment)
@@ -617,7 +657,10 @@ const generateGeneralProfessorsReportLogic = async (month) => {
         if (professorEnrollments && Object.keys(professorEnrollments).length > 0) {
             const firstEnrollment = Object.values(professorEnrollments)[0];
             if (firstEnrollment.professorInfo && firstEnrollment.professorInfo.typeId) {
-                const professorType = professorTypesMap.get(firstEnrollment.professorInfo.typeId.toString());
+                const typeIdStr = firstEnrollment.professorInfo.typeId._id ? 
+                    firstEnrollment.professorInfo.typeId._id.toString() : 
+                    firstEnrollment.professorInfo.typeId.toString();
+                const professorType = professorTypesMap.get(typeIdStr);
                 if (professorType && professorType.rates) {
                     professorRates = {
                         single: professorType.rates.single || 0,
@@ -661,7 +704,7 @@ const generateGeneralProfessorsReportLogic = async (month) => {
         professorsReportMap.set(professorId, {
             professorId: professorId,
             professorName: currentProfessorName,
-            reportDateRange: `${moment(startDate).format("MMM Do YYYY")} - ${moment(endDate).format("MMM Do YYYY")}`,
+            reportDateRange: `${moment.utc(startDate).format("MMM Do YYYY")} - ${moment.utc(endDate).format("MMM Do YYYY")}`,
             rates: professorRates,
             details: professorDetails,
             totalTeacher: parseFloat(totalTeacher.toFixed(2)),
@@ -867,7 +910,13 @@ const generateSpecificProfessorReportLogic = async (month) => {
             reschedule: 0 // Solo clases normales, excluir reschedules
         });
 
-        const totalHours = plan ? (plan.monthlyClasses || 0) : 0; // Mantener para compatibilidad con otros campos
+        // totalHours debe ser el número real de registros de clase del enrollment
+        // Incluye clases normales (reschedule = 0) y clases padre en reschedule (reschedule = 1 o 2)
+        // Excluye los registros de reschedule en sí (los que tienen originalClassId)
+        const totalHours = await ClassRegistry.countDocuments({
+            enrollmentId: enrollment._id,
+            originalClassId: null // Solo clases padre (normales o en reschedule), excluir reschedules en sí
+        });
 
         let pricePerHour = 0;
         if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
@@ -955,7 +1004,10 @@ const generateSpecificProfessorReportLogic = async (month) => {
     if (enrollmentReportMap && enrollmentReportMap.size > 0) {
         const firstEnrollment = Array.from(enrollmentReportMap.values())[0];
         if (firstEnrollment.professorInfo && firstEnrollment.professorInfo.typeId) {
-            const professorType = professorTypesMap.get(firstEnrollment.professorInfo.typeId.toString());
+            const typeIdStr = firstEnrollment.professorInfo.typeId._id ? 
+                firstEnrollment.professorInfo.typeId._id.toString() : 
+                firstEnrollment.professorInfo.typeId.toString();
+            const professorType = professorTypesMap.get(typeIdStr);
             if (professorType && professorType.rates) {
                 professorRates = {
                     single: professorType.rates.single || 0,
@@ -969,7 +1021,7 @@ const generateSpecificProfessorReportLogic = async (month) => {
     const finalReport = {
         professorId: professorId,
         professorName: professorName,
-        reportDateRange: `${moment(startDate).format("MMM Do YYYY")} - ${moment(endDate).format("MMM Do YYYY")}`,
+        reportDateRange: `${moment.utc(startDate).format("MMM Do YYYY")} - ${moment.utc(endDate).format("MMM Do YYYY")}`,
         rates: professorRates,
         details: details,
         subtotal: {
@@ -1116,6 +1168,7 @@ const generateExcedenteReportLogic = async (month) => {
                 enrollmentId: enrollment._id,
                 enrollmentAlias: enrollment.alias || null,
                 studentNames: studentNames,
+                professorName: enrollment.professorId ? (enrollment.professorId.name || 'Profesor Desconocido') : 'Profesor Desconocido',
                 plan: planDisplay,
                 numberOfClasses: classesNotViewed.length,
                 pricePerHour: parseFloat(pricePerHour.toFixed(3)),
@@ -1167,7 +1220,7 @@ const generateExcedenteReportLogic = async (month) => {
     }
 
     return {
-        reportDateRange: `${moment(startDate).format("MMM Do YYYY")} - ${moment(endDate).format("MMM Do YYYY")}`,
+        reportDateRange: `${moment.utc(startDate).format("MMM Do YYYY")} - ${moment.utc(endDate).format("MMM Do YYYY")}`,
         totalExcedente: parseFloat(totalExcedente.toFixed(2)),
         totalExcedenteIncomes: parseFloat(totalExcedenteIncomes.toFixed(2)),
         totalExcedenteClasses: parseFloat(totalExcedenteClasses.toFixed(2)),
