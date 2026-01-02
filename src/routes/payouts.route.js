@@ -19,6 +19,11 @@ router.get('/', verifyToken, verifyRole('admin'), payoutCtrl.list);
 // Acceso: Solo admin
 router.get('/professor/:professorId', verifyToken, verifyRole('admin'), payoutCtrl.getPayoutsByProfessorId);
 
+// GET /api/payouts/preview/:professorId - Genera vista previa de pagos para un profesor en un mes
+// Acceso: Solo admin
+// Query: month (YYYY-MM)
+router.get('/preview/:professorId', verifyToken, verifyRole('admin'), payoutCtrl.preview);
+
 // GET /api/payouts/:id - Gets a payout by its ID
 // Acceso: Solo admin
 // This route should come AFTER specific routes like /professor/:professorId to avoid conflict

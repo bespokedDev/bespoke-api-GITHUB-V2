@@ -2262,9 +2262,9 @@ Balance Remaining = (Amount + Old Balance) - Total
   "totals": {
     "subtotals": {
       "normalProfessors": {
-        "totalTeacher": 1234.56,
-        "totalBespoke": 567.89,
-        "balanceRemaining": 890.12
+    "totalTeacher": 1234.56,
+    "totalBespoke": 567.89,
+    "balanceRemaining": 890.12
       },
       "specialProfessor": {
         "total": 187.50,

@@ -392,8 +392,8 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 }
                 
                 const professorType = professorTypesMap.get(professorTypeIdStr);
-                if (professorType && professorType.rates && enrollment.enrollmentType) {
-                    const rate = professorType.rates[enrollment.enrollmentType];
+            if (professorType && professorType.rates && enrollment.enrollmentType) {
+                const rate = professorType.rates[enrollment.enrollmentType];
                     if (typeof rate === 'number') { 
                         pPerHour = rate; 
                     } else {
@@ -573,9 +573,9 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                     if (substituteProfessor.typeId) {
                         const substituteTypeIdStr = substituteProfessor.typeId._id ? substituteProfessor.typeId._id.toString() : substituteProfessor.typeId.toString();
                         const substituteProfessorType = professorTypesMap.get(substituteTypeIdStr);
-                        if (substituteProfessorType && substituteProfessorType.rates && enrollment.enrollmentType) {
-                            const rate = substituteProfessorType.rates[enrollment.enrollmentType];
-                            if (typeof rate === 'number') { substitutePPerHour = rate; }
+                    if (substituteProfessorType && substituteProfessorType.rates && enrollment.enrollmentType) {
+                        const rate = substituteProfessorType.rates[enrollment.enrollmentType];
+                        if (typeof rate === 'number') { substitutePPerHour = rate; }
                         }
                     } else {
                         console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ El profesor suplente ${substituteProfessor._id || substituteProfessor} no tiene typeId, usando substitutePPerHour = 0`);
@@ -1158,7 +1158,7 @@ const generateExcedenteReportLogic = async (month) => {
                         }
                         return 'Estudiante Desconocido';
                     }).join(' & ')
-                    : 'Estudiante Desconocido';
+                : 'Estudiante Desconocido';
 
             const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';
             const planName = enrollment.planId ? enrollment.planId.name : 'N/A';

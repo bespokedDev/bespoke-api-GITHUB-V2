@@ -94,6 +94,12 @@ const PenalizationRegistrySchema = new mongoose.Schema({
         ref: 'User',
         default: null
         // ID del usuario administrador (referencia a la colección User) - opcional, para penalizaciones dirigidas a administradores
+    },
+    payOutId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payout',
+        default: null
+        // ID del payout (referencia a la colección Payout) - opcional, para enlace administrativo cuando se debe hacer el pago
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

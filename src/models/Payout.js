@@ -1,33 +1,89 @@
 // models/Payout.js
 const mongoose = require('mongoose');
 
-// Esquema para los detalles individuales de un pago
-const PayoutDetailSchema = new mongoose.Schema({
+// Esquema para información de enrollments en el payout
+const EnrollmentInfoSchema = new mongoose.Schema({
     enrollmentId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Enrollment', // Referencia al modelo de Matriculación
+        ref: 'Enrollment',
+        required: true
+        // ID del enrollment
     },
-    hoursTaught: {
-        type: Number,
-        min: 0
-    },
-    totalPerStudent: { // Cantidad pagada por este estudiante/matriculación en particular
-        type: Number,
-        min: 0
-    },
-    description: {
+    studentName: {
         type: String,
-        default: null
+        required: true,
+        trim: true
+        // Nombre del estudiante o alias del enrollment
+    },
+    plan: {
+        type: String,
+        required: true,
+        trim: true
+        // Nombre del plan formateado (ej: "S - Panda")
+    },
+    subtotal: {
+        type: Number,
+        required: true,
+        min: 0
+        // Subtotal de dinero por este enrollment (horas vistas × precio por hora)
+    },
+    totalHours: {
+        type: Number,
+        required: true,
+        min: 0
+        // Total de registros de clase del enrollment
+    },
+    hoursSeen: {
+        type: Number,
+        required: true,
+        min: 0
+        // Horas vistas calculadas (con conversión fraccional de minutos)
+    },
+    pPerHour: {
+        type: Number,
+        required: true,
+        min: 0
+        // Pago por hora específico de este enrollment
+    },
+    period: {
+        type: String,
+        required: true,
+        trim: true
+        // Rango de fechas del enrollment en el mes (ej: "Dec 1st - Dec 31st")
+    }
+}, { _id: false }); // No necesitamos _id para estos subdocumentos
+
+// Esquema para información de penalizaciones en el payout
+const PenalizationInfoSchema = new mongoose.Schema({
+    id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'PenalizationRegistry',
+        required: true
+        // ID del registro de penalización
+    },
+    penalizationMoney: {
+        type: Number,
+        required: true,
+        min: 0
+        // Monto de dinero de la penalización
+    }
+}, { _id: false }); // No necesitamos _id para estos subdocumentos
+
+// Esquema para información de bonos en el payout
+const BonusInfoSchema = new mongoose.Schema({
+    id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Bonus',
+        required: true
+        // ID del bono
     },
     amount: {
         type: Number,
-        default: null
-    },
-    status: {
-        type: Number,
-        default: 1
+        required: true,
+        min: 0
+        // Monto del bono
     }
-}, { _id: true }); // Mongoose añade _id a cada subdocumento por defecto
+}, { _id: false }); // No necesitamos _id para estos subdocumentos
 
 // Esquema principal del Pago
 const PayoutSchema = new mongoose.Schema({
@@ -42,20 +98,10 @@ const PayoutSchema = new mongoose.Schema({
         trim: true,
         match: /^\d{4}-\d{2}$/ // Valida formato YYYY-MM
     },
-    details: [PayoutDetailSchema], // Array de subdocumentos para los detalles de las matriculaciones
-    subtotal: { // Suma de totalPerStudent de todos los detalles
-        type: Number,
-        required: true,
-        min: 0,
-        default: 0
-    },
-    discount: { // Descuentos aplicados al pago
-        type: Number,
-        required: true,
-        min: 0,
-        default: 0
-    },
-    total: { // subtotal - discount
+    enrollmentsInfo: [EnrollmentInfoSchema], // Array con información detallada de cada enrollment
+    penalizationInfo: [PenalizationInfoSchema], // Array con información de penalizaciones que restan al total
+    bonusInfo: [BonusInfoSchema], // Array con información de bonos que suman al total
+    total: { // Total que se pagó (calculado por el frontend: subtotalEnrollments + bonos - penalizaciones)
         type: Number,
         required: true,
         min: 0,
@@ -63,7 +109,8 @@ const PayoutSchema = new mongoose.Schema({
     },
     note: {
         type: String,
-        require: false
+        required: false,
+        default: null
     },
     paymentMethodId: { // ID del método de pago utilizado (ahora apunta a subdocumento de Profesor)
         type: mongoose.Schema.Types.ObjectId, // Almacena el _id del subdocumento paymentData del profesor

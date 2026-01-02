@@ -48,6 +48,7 @@ const headers = {
   "endDate": "2025-01-15T00:00:00.000Z",
   "support_file": "https://storage.example.com/files/evidence-123.pdf",
   "userId": null,
+  "payOutId": null,
   "createdAt": "2025-01-16T10:30:00.000Z",
   "updatedAt": "2025-01-16T10:30:00.000Z"
 }
@@ -68,6 +69,7 @@ const headers = {
 | `endDate` | Date | No | Fecha de fin relacionada con la penalización |
 | `support_file` | String | No | Archivo de soporte o evidencia |
 | `userId` | ObjectId | No | Referencia al usuario administrador (modelo `User`) |
+| `payOutId` | ObjectId | No | Referencia al payout (modelo `Payout`) - Enlace administrativo cuando se debe hacer el pago |
 | `createdAt` | Date | Auto | Fecha de creación (generado automáticamente) |
 | `updatedAt` | Date | Auto | Fecha de última actualización (generado automáticamente) |
 
@@ -153,6 +155,15 @@ POST /api/penalization-registry
 - **`studentId`** (ObjectId): ID del estudiante
   - Si se proporciona, debe ser un ObjectId válido y existir en la colección `students`
 
+- **`userId`** (ObjectId): ID del usuario administrador
+  - Si se proporciona, debe ser un ObjectId válido y existir en la colección `users`
+  - Opcional, para penalizaciones dirigidas a administradores
+
+- **`payOutId`** (ObjectId): ID del payout
+  - Si se proporciona, debe ser un ObjectId válido y existir en la colección `payouts`
+  - Opcional, para enlace administrativo cuando se debe hacer el pago
+  - Permite vincular una penalización con un payout específico
+
 ##### **Campos Opcionales - Detalles**
 - **`penalizationMoney`** (number): Monto de dinero de la penalización
   - Debe ser un número ≥ 0
@@ -218,6 +229,8 @@ Cuando `notification = 0`:
     "lateFee": 7,
     "endDate": "2025-01-15T00:00:00.000Z",
     "support_file": "https://storage.example.com/files/evidence-123.pdf",
+    "userId": null,
+    "payOutId": null,
     "createdAt": "2025-01-16T10:30:00.000Z",
     "updatedAt": "2025-01-16T10:30:00.000Z"
   },
@@ -252,6 +265,8 @@ Cuando `notification = 0`:
     "lateFee": null,
     "endDate": null,
     "support_file": null,
+    "userId": null,
+    "payOutId": null,
     "createdAt": "2025-01-16T10:30:00.000Z",
     "updatedAt": "2025-01-16T10:30:00.000Z"
   }
@@ -669,6 +684,7 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
       "endDate": "2025-01-15T00:00:00.000Z",
       "support_file": "https://storage.example.com/files/evidence-123.pdf",
       "userId": null,
+      "payOutId": null,
       "createdAt": "2025-01-16T10:30:00.000Z",
       "updatedAt": "2025-01-16T10:30:00.000Z"
     }
