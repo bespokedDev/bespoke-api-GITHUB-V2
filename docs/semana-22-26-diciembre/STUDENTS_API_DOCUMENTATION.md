@@ -876,6 +876,10 @@ No requiere body.
 **noShowClasses** (Solo visible para roles `admin` y `professor`):
 - `total` (Number): Total de clases marcadas como "no show" (`classViewed: 3`)
 - `details` (Array): Desglose de cada clase no show:
+
+**classLostClasses** (Solo visible para roles `admin` y `professor`):
+- `total` (Number): Total de clases marcadas como "Class Lost" - clase perdida (`classViewed: 4`)
+- `details` (Array): Desglose de cada clase perdida:
   - `classRegistryId` (String): ID del registro de clase
   - `enrollmentId` (String): ID del enrollment al que pertenece la clase
   - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
@@ -970,6 +974,7 @@ No requiere body.
    - **Clases por ver**: Se cuentan todas las clases con `classViewed: 0`
    - **Clases perdidas** (solo admin): Se cuentan clases con `classViewed: 0` y `classDate > endDate` del enrollment
    - **Clases no show** (solo admin y professor): Se cuentan todas las clases con `classViewed: 3`
+   - **Clases Class Lost** (solo admin y professor): Se cuentan todas las clases con `classViewed: 4` (asignado automáticamente por cronjob cuando el enrollment vence)
 
 5. **Historial de Incomes** (solo student y admin):
    - Se buscan todos los incomes con `idEnrollment` en los enrollments del estudiante
@@ -1005,6 +1010,7 @@ El endpoint retorna información diferente según el rol del usuario autenticado
 
 **Solo Admin y Professor:**
 - `noShowClasses`: Clases marcadas como "no show" (classViewed = 3)
+- `classLostClasses`: Clases marcadas como "Class Lost" - clase perdida (classViewed = 4, asignado automáticamente por cronjob cuando el enrollment vence)
 
 **Solo Student y Admin:**
 - `incomeHistory`: Historial de pagos agrupado por enrollment
@@ -1329,7 +1335,7 @@ No requiere body.
   - `classTime`: Hora de la clase
   - `classType`: Tipo de clase (populado)
   - `contentType`: Tipo de contenido (populado)
-  - `classViewed`: Estado de visualización (0 = pendiente, 1 = vista, 3 = no show)
+  - `classViewed`: Estado de visualización (0 = pendiente, 1 = vista, 2 = parcialmente vista, 3 = no show, 4 = Class Lost - clase perdida)
   - `reschedule`: Si la clase está en reschedule (1) o no (0)
   - `minutesClassDefault`: Duración por defecto en minutos
   - `minutesViewed`: Minutos ya vistos

@@ -228,14 +228,10 @@ const processEnrollmentsPaymentStatus = async () => {
 /**
  * Inicializa el cronjob para procesar enrollments
  * Se ejecuta diariamente a las 00:00 (medianoche)
- * 
- * ⚠️ MODO PRUEBA: Actualmente configurado para ejecutarse cada 10 segundos
- * Cambiar a '0 0 * * *' para producción (diario a medianoche)
  */
 const initEnrollmentsPaymentCronjob = () => {
-    // Cron expression para pruebas: cada 10 segundos
-    // Para producción: '0 0 * * *' = todos los días a las 00:00
-    cron.schedule('*/10 * * * * *', async () => {
+    // Cron expression para producción: '0 0 * * *' = todos los días a las 00:00
+    cron.schedule('0 0 * * *', async () => {
         console.log(`[CRONJOB] Ejecutando cronjob de enrollments por impago - ${new Date().toISOString()}`);
         await processEnrollmentsPaymentStatus();
     }, {
@@ -243,8 +239,7 @@ const initEnrollmentsPaymentCronjob = () => {
         timezone: "America/Caracas" // Ajustar según tu zona horaria
     });
 
-    console.log('[CRONJOB] Cronjob de enrollments por impago configurado (cada 10 segundos - MODO PRUEBA)');
-    console.log('[CRONJOB] ⚠️ RECORDATORIO: Cambiar a "0 0 * * *" para producción (diario a medianoche)');
+    console.log('[CRONJOB] Cronjob de enrollments por impago configurado (diario a medianoche - PRODUCCIÓN)');
 };
 
 /**
@@ -536,14 +531,10 @@ const processAutomaticPayments = async () => {
 /**
  * Inicializa el cronjob para procesar pagos automáticos
  * Se ejecuta diariamente a las 00:00 (medianoche)
- * 
- * ⚠️ MODO PRUEBA: Actualmente configurado para ejecutarse cada 10 segundos
- * Cambiar a '0 0 * * *' para producción (diario a medianoche)
  */
 const initAutomaticPaymentsCronjob = () => {
-    // Cron expression para pruebas: cada 10 segundos
-    // Para producción: '0 0 * * *' = todos los días a las 00:00
-    cron.schedule('*/10 * * * * *', async () => {
+    // Cron expression para producción: '0 0 * * *' = todos los días a las 00:00
+    cron.schedule('0 0 * * *', async () => {
         console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Ejecutando cronjob de pagos automáticos - ${new Date().toISOString()}`);
         await processAutomaticPayments();
     }, {
@@ -551,8 +542,7 @@ const initAutomaticPaymentsCronjob = () => {
         timezone: "America/Caracas" // Ajustar según tu zona horaria
     });
 
-    console.log('[CRONJOB PAGOS AUTOMÁTICOS] Cronjob de pagos automáticos configurado (cada 10 segundos - MODO PRUEBA)');
-    console.log('[CRONJOB PAGOS AUTOMÁTICOS] ⚠️ RECORDATORIO: Cambiar a "0 0 * * *" para producción (diario a medianoche)');
+    console.log('[CRONJOB PAGOS AUTOMÁTICOS] Cronjob de pagos automáticos configurado (diario a medianoche - PRODUCCIÓN)');
 };
 
 module.exports = {

@@ -246,33 +246,20 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
  */
 const generateGeneralProfessorsReportLogic = async (month) => {
     const [year, monthNum] = month.split('-').map(Number);
-    const startDate = new Date(year, monthNum - 1, 1, 0, 0, 0);
-    const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+    // Usar UTC para evitar problemas de zona horaria
+    const startDate = new Date(Date.UTC(year, monthNum - 1, 1, 0, 0, 0));
+    const endDate = new Date(Date.UTC(year, monthNum, 0, 23, 59, 59, 999));
 
     const EXCLUDED_PROFESSOR_ID = new mongoose.Types.ObjectId("685a1caa6c566777c1b5dc4b");
 
-    // PARTE 3: Filtrar enrollments cuyo startDate o endDate estén dentro del rango del mes
-    // Buscar enrollments donde startDate O endDate coincidan con alguna fecha del rango del mes
+    // PARTE 3: Filtrar enrollments que se superponen con el mes
+    // Buscar enrollments donde el rango del enrollment se superpone con el rango del mes
+    // Un enrollment se superpone si: startDate <= endDate del mes Y endDate >= startDate del mes
     const enrollments = await Enrollment.find({
-        professorId: { $ne: EXCLUDED_PROFESSOR_ID },
-        professorId: { $exists: true, $ne: null },
+        professorId: { $ne: EXCLUDED_PROFESSOR_ID, $exists: true, $ne: null },
         status: 1, // Solo enrollments activos
-        $or: [
-            {
-                // startDate está dentro del rango del mes
-                startDate: {
-                    $gte: startDate,
-                    $lte: endDate
-                }
-            },
-            {
-                // endDate está dentro del rango del mes
-                endDate: {
-                    $gte: startDate,
-                    $lte: endDate
-                }
-            }
-        ]
+        startDate: { $lte: endDate }, // startDate del enrollment <= fin del mes
+        endDate: { $gte: startDate }  // endDate del enrollment >= inicio del mes
     })
     .populate({
         path: 'planId',
@@ -280,10 +267,14 @@ const generateGeneralProfessorsReportLogic = async (month) => {
     })
     .populate({
         path: 'professorId',
-        select: 'name ciNumber typeId'
+        select: 'name ciNumber typeId',
+        populate: {
+            path: 'typeId',
+            select: 'rates'
+        }
     })
     .populate({
-        path: 'studentIds',
+        path: 'studentIds.studentId',
         select: 'name'
     })
     .lean();
@@ -299,6 +290,11 @@ const generateGeneralProfessorsReportLogic = async (month) => {
     for (const enrollment of enrollments) {
         const professorId = enrollment.professorId ? enrollment.professorId._id.toString() : 'unknown_professor';
         const enrollmentId = enrollment._id.toString();
+
+        // Excluir explícitamente al profesor especial (Andrea Wias)
+        if (professorId === EXCLUDED_PROFESSOR_ID.toString()) {
+            continue;
+        }
 
         if (!enrollment.professorId || !enrollment.professorId.typeId || !enrollment.planId) {
             console.warn(`Skipping enrollment ${enrollment._id} due to missing professor, professorType or plan info.`);
@@ -340,18 +336,23 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             // Ordenar estudiantes alfabéticamente
             const sortedStudentList = studentList && studentList.length > 0
                 ? [...studentList].sort((a, b) => {
-                    const nameA = (a.name || '').toLowerCase().trim();
-                    const nameB = (b.name || '').toLowerCase().trim();
+                    const nameA = (a.studentId && a.studentId.name ? a.studentId.name : '').toLowerCase().trim();
+                    const nameB = (b.studentId && b.studentId.name ? b.studentId.name : '').toLowerCase().trim();
                     return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
                 })
                 : [];
             
-            // Usar alias si existe, sino concatenar nombres de estudiantes ordenados
-            const hasAlias = enrollment.alias && enrollment.alias.trim() !== '';
+            // Usar alias si existe (diferente de null), sino concatenar nombres de estudiantes ordenados
+            const hasAlias = enrollment.alias !== null && enrollment.alias !== undefined;
             const studentNamesConcatenated = hasAlias
-                ? enrollment.alias.trim()
+                ? (typeof enrollment.alias === 'string' ? enrollment.alias.trim() : String(enrollment.alias))
                 : sortedStudentList.length > 0
-                    ? sortedStudentList.map(s => s.name || 'Estudiante Desconocido').join(' & ')
+                    ? sortedStudentList.map(s => {
+                        if (s.studentId && s.studentId.name) {
+                            return s.studentId.name;
+                        }
+                        return 'Estudiante Desconocido';
+                    }).join(' & ')
                     : 'Estudiante Desconocido';
             
             // PARTE 2: Calcular pricePerHour dividiendo el precio del plan entre el total de ClassRegistry normales
@@ -498,8 +499,8 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                     // Ordenar estudiantes alfabéticamente
                     const sortedStudentList = studentList && studentList.length > 0
                         ? [...studentList].sort((a, b) => {
-                            const nameA = (a.name || '').toLowerCase().trim();
-                            const nameB = (b.name || '').toLowerCase().trim();
+                            const nameA = (a.studentId && a.studentId.name ? a.studentId.name : '').toLowerCase().trim();
+                            const nameB = (b.studentId && b.studentId.name ? b.studentId.name : '').toLowerCase().trim();
                             return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
                         })
                         : [];
@@ -509,7 +510,12 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                     const studentNamesConcatenated = hasAlias
                         ? enrollment.alias.trim()
                         : sortedStudentList.length > 0
-                            ? sortedStudentList.map(s => s.name || 'Estudiante Desconocido').join(' & ')
+                            ? sortedStudentList.map(s => {
+                                if (s.studentId && s.studentId.name) {
+                                    return s.studentId.name;
+                                }
+                                return 'Estudiante Desconocido';
+                            }).join(' & ')
                             : 'Estudiante Desconocido';
 
                     // Calcular pricePerHour (mismo cálculo que para el enrollment)
@@ -647,12 +653,20 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             createdAt: bonus.createdAt
         }));
 
+        // Calcular sumatorias de totalTeacher, totalBespoke y totalBalanceRemaining para este profesor
+        const totalTeacher = professorDetails.reduce((sum, detail) => sum + (detail.totalTeacher || 0), 0);
+        const totalBespoke = professorDetails.reduce((sum, detail) => sum + (detail.totalBespoke || 0), 0);
+        const totalBalanceRemaining = professorDetails.reduce((sum, detail) => sum + (detail.balanceRemaining || 0), 0);
+
         professorsReportMap.set(professorId, {
             professorId: professorId,
             professorName: currentProfessorName,
             reportDateRange: `${moment(startDate).format("MMM Do YYYY")} - ${moment(endDate).format("MMM Do YYYY")}`,
             rates: professorRates,
             details: professorDetails,
+            totalTeacher: parseFloat(totalTeacher.toFixed(2)),
+            totalBespoke: parseFloat(totalBespoke.toFixed(2)),
+            totalBalanceRemaining: parseFloat(totalBalanceRemaining.toFixed(2)),
             abonos: { // PARTE 11: Sección de abonos (bonos)
                 total: parseFloat(totalBonuses.toFixed(2)),
                 details: abonosDetails
@@ -660,7 +674,13 @@ const generateGeneralProfessorsReportLogic = async (month) => {
         });
     }
 
-    const finalReport = Array.from(professorsReportMap.values());
+    const finalReport = Array.from(professorsReportMap.values())
+        .filter(professor => {
+            // Excluir explícitamente al profesor especial (Andrea Wias)
+            const professorIdStr = professor.professorId.toString();
+            const excludedIdStr = EXCLUDED_PROFESSOR_ID.toString();
+            return professorIdStr !== excludedIdStr;
+        });
     finalReport.sort((a, b) => a.professorName.localeCompare(b.professorName));
 
     // PARTE 8: Calcular sumatorias totales de Total Teacher, Total Bespoke y Balance Remaining
@@ -705,27 +725,17 @@ const generateSpecificProfessorReportLogic = async (month) => {
 
     const TARGET_PROFESSOR_ID = new mongoose.Types.ObjectId("685a1caa6c566777c1b5dc4b"); // ID del profesor Andrea Wias
 
-    // PARTE 3: Filtrar enrollments cuyo startDate o endDate estén dentro del rango del mes
-    // Buscar enrollments donde startDate O endDate coincidan con alguna fecha del rango del mes
+    console.log(`[generateSpecificProfessorReportLogic] Buscando enrollments para profesor ${TARGET_PROFESSOR_ID} en mes ${month}`);
+    console.log(`[generateSpecificProfessorReportLogic] Rango de fechas: ${startDate.toISOString()} a ${endDate.toISOString()}`);
+
+    // PARTE 3: Filtrar enrollments que se superponen con el mes
+    // Buscar enrollments donde el rango del enrollment se superpone con el rango del mes
+    // Un enrollment se superpone si: startDate <= endDate del mes Y endDate >= startDate del mes
     const enrollments = await Enrollment.find({
         professorId: TARGET_PROFESSOR_ID,
         status: 1, // Solo enrollments activos
-        $or: [
-            {
-                // startDate está dentro del rango del mes
-                startDate: {
-                    $gte: startDate,
-                    $lte: endDate
-                }
-            },
-            {
-                // endDate está dentro del rango del mes
-                endDate: {
-                    $gte: startDate,
-                    $lte: endDate
-                }
-            }
-        ]
+        startDate: { $lte: endDate }, // startDate del enrollment <= fin del mes
+        endDate: { $gte: startDate }  // endDate del enrollment >= inicio del mes
     })
     .populate({
         path: 'planId',
@@ -733,17 +743,38 @@ const generateSpecificProfessorReportLogic = async (month) => {
     })
     .populate({
         path: 'professorId',
-        select: 'name ciNumber typeId'
+        select: 'name ciNumber typeId',
+        populate: {
+            path: 'typeId',
+            select: 'rates'
+        }
     })
     .populate({
-        path: 'studentIds',
+        path: 'studentIds.studentId',
         select: 'name'
     })
     .lean();
 
+    console.log(`[generateSpecificProfessorReportLogic] Enrollments encontrados: ${enrollments ? enrollments.length : 0}`);
+    
+    // Debug: Mostrar todos los enrollments del profesor (sin filtro de fecha) para verificar
+    const allEnrollmentsForProfessor = await Enrollment.find({
+        professorId: TARGET_PROFESSOR_ID,
+        status: 1
+    }).select('_id startDate endDate status').lean();
+    console.log(`[generateSpecificProfessorReportLogic] Total enrollments activos del profesor (sin filtro de fecha): ${allEnrollmentsForProfessor.length}`);
+    allEnrollmentsForProfessor.forEach((e, idx) => {
+        console.log(`[generateSpecificProfessorReportLogic] Enrollment ${idx + 1}: ID=${e._id}, startDate=${e.startDate}, endDate=${e.endDate}, status=${e.status}`);
+        console.log(`[generateSpecificProfessorReportLogic]   - startDate <= endDate del mes (${endDate.toISOString()}): ${e.startDate <= endDate}`);
+        console.log(`[generateSpecificProfessorReportLogic]   - endDate >= startDate del mes (${startDate.toISOString()}): ${e.endDate >= startDate}`);
+    });
+
     if (!enrollments || enrollments.length === 0) {
+        console.log(`[generateSpecificProfessorReportLogic] No se encontraron enrollments. Retornando null.`);
         return null; // Retorna null si no hay datos
     }
+
+    console.log(`[generateSpecificProfessorReportLogic] Procesando ${enrollments.length} enrollments encontrados...`);
 
     const enrollmentReportMap = new Map();
     let professorName = 'Profesor Desconocido';
@@ -751,9 +782,19 @@ const generateSpecificProfessorReportLogic = async (month) => {
 
     for (const enrollment of enrollments) {
         const enrollmentId = enrollment._id.toString();
+        console.log(`[generateSpecificProfessorReportLogic] Procesando enrollment ${enrollmentId}`);
+        console.log(`[generateSpecificProfessorReportLogic] - professorId: ${enrollment.professorId ? (enrollment.professorId._id || enrollment.professorId) : 'null'}`);
+        console.log(`[generateSpecificProfessorReportLogic] - professorId.typeId: ${enrollment.professorId && enrollment.professorId.typeId ? enrollment.professorId.typeId : 'null'}`);
+        console.log(`[generateSpecificProfessorReportLogic] - planId: ${enrollment.planId ? (enrollment.planId._id || enrollment.planId) : 'null'}`);
+        console.log(`[generateSpecificProfessorReportLogic] - status: ${enrollment.status}`);
+        console.log(`[generateSpecificProfessorReportLogic] - startDate: ${enrollment.startDate}`);
+        console.log(`[generateSpecificProfessorReportLogic] - endDate: ${enrollment.endDate}`);
 
         if (!enrollment.professorId || !enrollment.professorId.typeId || !enrollment.planId) {
-            console.warn(`Skipping enrollment ${enrollment._id} due to missing professor, professorType or plan info.`);
+            console.warn(`[generateSpecificProfessorReportLogic] ⚠️ Skipping enrollment ${enrollment._id} due to missing professor, professorType or plan info.`);
+            console.warn(`[generateSpecificProfessorReportLogic]   - professorId exists: ${!!enrollment.professorId}`);
+            console.warn(`[generateSpecificProfessorReportLogic]   - professorId.typeId exists: ${!!(enrollment.professorId && enrollment.professorId.typeId)}`);
+            console.warn(`[generateSpecificProfessorReportLogic]   - planId exists: ${!!enrollment.planId}`);
             continue;
         }
 
@@ -762,6 +803,7 @@ const generateSpecificProfessorReportLogic = async (month) => {
                 enrollmentInfo: enrollment,
                 professorInfo: enrollment.professorId
             });
+            console.log(`[generateSpecificProfessorReportLogic] ✅ Enrollment ${enrollmentId} agregado al mapa`);
         }
 
         if (professorName === 'Profesor Desconocido' && enrollment.professorId.name) {
@@ -769,7 +811,10 @@ const generateSpecificProfessorReportLogic = async (month) => {
         }
     }
 
+    console.log(`[generateSpecificProfessorReportLogic] Enrollments válidos después de filtrar: ${enrollmentReportMap.size}`);
+
     if (enrollmentReportMap.size === 0) {
+        console.log(`[generateSpecificProfessorReportLogic] ⚠️ No hay enrollments válidos. Retornando null.`);
         return null;
     }
 
@@ -795,18 +840,23 @@ const generateSpecificProfessorReportLogic = async (month) => {
         // Ordenar estudiantes alfabéticamente (corregido)
         const sortedStudentList = studentList && studentList.length > 0
             ? [...studentList].sort((a, b) => {
-                const nameA = (a.name || '').toLowerCase().trim();
-                const nameB = (b.name || '').toLowerCase().trim();
+                const nameA = (a.studentId && a.studentId.name ? a.studentId.name : '').toLowerCase().trim();
+                const nameB = (b.studentId && b.studentId.name ? b.studentId.name : '').toLowerCase().trim();
                 return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
             })
             : [];
         
-        // Usar alias si existe, sino concatenar nombres de estudiantes ordenados
-        const hasAlias = enrollment.alias && enrollment.alias.trim() !== '';
+        // Usar alias si existe (diferente de null), sino concatenar nombres de estudiantes ordenados
+        const hasAlias = enrollment.alias !== null && enrollment.alias !== undefined;
         const studentNamesConcatenated = hasAlias
-            ? enrollment.alias.trim()
+            ? (typeof enrollment.alias === 'string' ? enrollment.alias.trim() : String(enrollment.alias))
             : sortedStudentList.length > 0
-                ? sortedStudentList.map(s => s.name || 'Estudiante Desconocido').join(' & ')
+                ? sortedStudentList.map(s => {
+                    if (s.studentId && s.studentId.name) {
+                        return s.studentId.name;
+                    }
+                    return 'Estudiante Desconocido';
+                }).join(' & ')
                 : 'Estudiante Desconocido';
         
         
@@ -939,8 +989,9 @@ const generateSpecificProfessorReportLogic = async (month) => {
  */
 const generateExcedenteReportLogic = async (month) => {
     const [year, monthNum] = month.split('-').map(Number);
-    const startDate = new Date(year, monthNum - 1, 1, 0, 0, 0);
-    const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+    // Usar UTC para evitar problemas de zona horaria
+    const startDate = new Date(Date.UTC(year, monthNum - 1, 1, 0, 0, 0));
+    const endDate = new Date(Date.UTC(year, monthNum, 0, 23, 59, 59, 999));
 
     // Formatear fechas del mes para comparar con classDate (string YYYY-MM-DD)
     const monthStartStr = moment(startDate).format('YYYY-MM-DD');
@@ -999,7 +1050,10 @@ const generateExcedenteReportLogic = async (month) => {
         ]
     })
     .populate('planId', 'name pricing')
-    .populate('studentIds', 'name')
+    .populate({
+        path: 'studentIds.studentId',
+        select: 'name'
+    })
     .lean();
 
     const classNotViewedDetails = [];
@@ -1041,10 +1095,18 @@ const generateExcedenteReportLogic = async (month) => {
             const excedenteForEnrollment = classesNotViewed.length * pricePerHour;
             totalExcedenteClasses += excedenteForEnrollment;
 
-            // Obtener nombres de estudiantes
-            const studentNames = enrollment.studentIds && enrollment.studentIds.length > 0
-                ? enrollment.studentIds.map(s => s.name || 'Estudiante Desconocido').join(' & ')
-                : 'Estudiante Desconocido';
+            // Obtener nombres de estudiantes (usar alias si existe, sino concatenar nombres)
+            const hasAlias = enrollment.alias !== null && enrollment.alias !== undefined;
+            const studentNames = hasAlias
+                ? (typeof enrollment.alias === 'string' ? enrollment.alias.trim() : String(enrollment.alias))
+                : enrollment.studentIds && enrollment.studentIds.length > 0
+                    ? enrollment.studentIds.map(s => {
+                        if (s.studentId && s.studentId.name) {
+                            return s.studentId.name;
+                        }
+                        return 'Estudiante Desconocido';
+                    }).join(' & ')
+                    : 'Estudiante Desconocido';
 
             const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';
             const planName = enrollment.planId ? enrollment.planId.name : 'N/A';
@@ -1598,7 +1660,7 @@ incomesCtrl.professorsPayoutReport = async (req, res) => {
         // Generar el reporte de profesores generales (excluyendo a Andrea Wias)
         const reportData = await generateGeneralProfessorsReportLogic(month);
         const report = reportData.professors || reportData; // Array de profesores
-        const totals = reportData.totals || null; // Sumatorias totales (Parte 8)
+        const normalProfessorsTotals = reportData.totals || { totalTeacher: 0, totalBespoke: 0, balanceRemaining: 0 }; // Sumatorias de profesores normales
 
         // Generar el reporte del profesor especial (Andrea Wias)
         const specialProfessorReport = await generateSpecificProfessorReportLogic(month);
@@ -1606,10 +1668,53 @@ incomesCtrl.professorsPayoutReport = async (req, res) => {
         // 🆕 NUEVO: Generar el reporte de excedentes
         const excedenteReport = await generateExcedenteReportLogic(month);
 
+        // Calcular subtotales del profesor especial
+        const specialProfessorSubtotal = specialProfessorReport ? {
+            total: specialProfessorReport.subtotal ? specialProfessorReport.subtotal.total : 0,
+            balanceRemaining: specialProfessorReport.subtotal ? specialProfessorReport.subtotal.balanceRemaining : 0
+        } : {
+            total: 0,
+            balanceRemaining: 0
+        };
+
+        // Calcular subtotal de excedentes
+        const excedentsSubtotal = excedenteReport ? {
+            totalExcedente: excedenteReport.totalExcedente || 0
+        } : {
+            totalExcedente: 0
+        };
+
+        // Calcular total general (suma de balanceRemaining de las tres secciones)
+        const grandTotalBalanceRemaining = 
+            (normalProfessorsTotals.balanceRemaining || 0) + 
+            (specialProfessorSubtotal.balanceRemaining || 0) + 
+            (excedentsSubtotal.totalExcedente || 0);
+
+        // Estructura completa de totals con subtotales y total general
+        const totals = {
+            subtotals: {
+                normalProfessors: {
+                    totalTeacher: normalProfessorsTotals.totalTeacher || 0,
+                    totalBespoke: normalProfessorsTotals.totalBespoke || 0,
+                    balanceRemaining: normalProfessorsTotals.balanceRemaining || 0
+                },
+                specialProfessor: {
+                    total: parseFloat(specialProfessorSubtotal.total.toFixed(2)),
+                    balanceRemaining: parseFloat(specialProfessorSubtotal.balanceRemaining.toFixed(2))
+                },
+                excedents: {
+                    totalExcedente: parseFloat(excedentsSubtotal.totalExcedente.toFixed(2))
+                }
+            },
+            grandTotal: {
+                balanceRemaining: parseFloat(grandTotalBalanceRemaining.toFixed(2))
+            }
+        };
+
         res.status(200).json({
             message: `Reportes de pagos de profesores para el mes ${month} generados exitosamente.`,
             report: report, // Array de profesores
-            totals: totals, // PARTE 8: Sumatorias totales (Total Teacher, Total Bespoke, Balance Remaining)
+            totals: totals, // Subtotales por sección y total general
             specialProfessorReport: specialProfessorReport, // Objeto del profesor singular (o null si no hay data)
             excedents: excedenteReport // 🆕 NUEVO: Reporte de excedentes (o null si no hay data)
         });

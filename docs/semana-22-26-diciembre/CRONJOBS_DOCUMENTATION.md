@@ -241,7 +241,7 @@ El cronjob registra en consola:
 **Inicialización**: `initClassFinalizationCronjob`
 
 #### **Descripción**
-Este cronjob finaliza automáticamente las clases de enrollments que han vencido su `endDate`, marcando las clases no vistas como "no show" y generando notificaciones con estadísticas detalladas.
+Este cronjob finaliza automáticamente las clases de enrollments que han vencido su `endDate`, marcando las clases no vistas como "Class Lost" (clase perdida) y generando notificaciones con estadísticas detalladas.
 
 #### **Reglas de Negocio**
 
@@ -252,11 +252,11 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
 2. **Actualización de Clases No Vistas**
    - Para cada enrollment vencido, busca todas sus ClassRegistry
    - Si una clase tiene `classViewed: 0` y `reschedule: 0`:
-     - Actualiza `classViewed` a `3` (no show)
+     - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
 
 3. **Generación de Estadísticas**
    - Cuenta las clases por tipo:
-     - **Tipo 3 (No Show)**: Clases con `classViewed: 3`
+     - **Tipo 4 (Class Lost - Clase Perdida)**: Clases con `classViewed: 4`
      - **Tipo 1 (Vistas)**: Clases con `classViewed: 1`
      - **Tipo 2 (Parcialmente Vista)**: Clases con `classViewed: 2`
      - **Tipo 2 con Reschedule**: Clases con `classViewed: 2` cuyo `originalClassId` apunta a una clase con `reschedule: 1`
@@ -276,7 +276,7 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
 
 2. **Actualización de Clases**
    - Para cada enrollment, busca todas sus ClassRegistry
-   - Actualiza las clases con `classViewed: 0` y `reschedule: 0` a `classViewed: 3`
+   - Actualiza las clases con `classViewed: 0` y `reschedule: 0` a `classViewed: 4` (Class Lost)
 
 3. **Cálculo de Estadísticas**
    - Recorre todas las clases del enrollment
@@ -292,7 +292,7 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
 ```json
 {
   "idCategoryNotification": "6941c9b30646c9359c7f9f68",
-  "notification_description": "Finalización de clases del enrollment [ID]. Total: [X] clase(s) de tipo 3 (no show), [Y] clase(s) de tipo 1 (vistas), [Z] clase(s) de tipo 2 (parcialmente vista), [W] clase(s) de tipo 2 con reschedule.",
+  "notification_description": "Finalización de clases del enrollment [ID]. Total: [X] clase(s) de tipo 4 (Class Lost - clase perdida), [Y] clase(s) de tipo 1 (vistas), [Z] clase(s) de tipo 2 (parcialmente vista), [W] clase(s) de tipo 2 con reschedule.",
   "idEnrollment": "[ID del enrollment]",
   "idStudent": [],
   "isActive": true
@@ -301,7 +301,7 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
 
 **Ejemplo de Descripción:**
 ```
-Finalización de clases del enrollment 64f8a1b2c3d4e5f6a7b8c9d0. Total: 3 clase(s) de tipo 3 (no show), 5 clase(s) de tipo 1 (vistas), 2 clase(s) de tipo 2 (parcialmente vista), 1 clase(s) de tipo 2 con reschedule.
+Finalización de clases del enrollment 64f8a1b2c3d4e5f6a7b8c9d0. Total: 3 clase(s) de tipo 4 (Class Lost - clase perdida), 5 clase(s) de tipo 1 (vistas), 2 clase(s) de tipo 2 (parcialmente vista), 1 clase(s) de tipo 2 con reschedule.
 ```
 
 **Nota**: La descripción solo incluye los tipos de clases que tienen al menos una ocurrencia. Si un tipo no tiene clases, no se menciona en la descripción.
@@ -322,7 +322,7 @@ Finalización de clases del enrollment 64f8a1b2c3d4e5f6a7b8c9d0. Total: 3 clase(
 #### **Logs del Cronjob**
 El cronjob registra en consola:
 - Número de enrollments vencidos encontrados
-- Número de clases actualizadas a "no show"
+- Número de clases actualizadas a Class Lost (4)
 - Número de notificaciones creadas
 - Estadísticas detalladas por enrollment procesado
 - Errores específicos por enrollment (si los hay)

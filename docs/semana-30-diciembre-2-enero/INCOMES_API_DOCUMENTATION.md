@@ -769,6 +769,9 @@ GET /api/incomes/professors-payout-report?month=2025-01
           "status": 1
         }
       ],
+      "totalTeacher": 97.50,
+      "totalBespoke": 24.38,
+      "totalBalanceRemaining": 48.12,
       "abonos": {
         "total": 50.00,
         "details": [
@@ -924,7 +927,7 @@ El reporte de excedentes ahora incluye tres componentes:
 
 #### **🆕 Estructura Mejorada de Reportes con Ordenamiento**
 
-**Ejemplo de Reporte General (con ordenamiento aplicado y abonos):**
+**Ejemplo de Reporte General (con ordenamiento aplicado, abonos y sumatorias):**
 ```json
 {
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d1",
@@ -1011,6 +1014,9 @@ El reporte de excedentes ahora incluye tres componentes:
       "originalEnrollmentProfessorId": "64f8a1b2c3d4e5f6a7b8c9d1"
     }
   ],
+  "totalTeacher": 321.00,
+  "totalBespoke": 77.59,
+  "totalBalanceRemaining": 273.17,
   "abonos": {
     "total": 50.00,
     "details": [
@@ -1168,13 +1174,92 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses - totalBonuses
 2. **Por Plan**: Dentro de cada profesor, los enrollments se ordenan alfabéticamente por nombre del plan
 3. **Por Estudiante**: Dentro de cada enrollment, los estudiantes se ordenan alfabéticamente (solo cuando se concatenan nombres)
 
+#### **🆕 Sumatorias por Profesor**
+Cada objeto en el array `report` ahora incluye tres campos de sumatorias que agregan los valores de todos los `details` del profesor:
+
+- **`totalTeacher`** (number): Suma de todos los valores `totalTeacher` de los enrollments en `details`. Representa el total a pagar al profesor por las horas vistas.
+- **`totalBespoke`** (number): Suma de todos los valores `totalBespoke` de los enrollments en `details`. Representa el total que queda para Bespoke después de pagar al profesor.
+- **`totalBalanceRemaining`** (number): Suma de todos los valores `balanceRemaining` de los enrollments en `details`. Representa el balance total restante después de todos los cálculos.
+
+**Ejemplo:**
+```json
+{
+  "professorId": "...",
+  "professorName": "Juan Pérez",
+  "details": [
+    { "totalTeacher": 97.50, "totalBespoke": 24.38, "balanceRemaining": 48.12 },
+    { "totalTeacher": 103.00, "totalBespoke": 30.63, "balanceRemaining": 46.37 }
+  ],
+  "totalTeacher": 200.50,        // 97.50 + 103.00
+  "totalBespoke": 55.01,         // 24.38 + 30.63
+  "totalBalanceRemaining": 94.49 // 48.12 + 46.37
+}
+```
+
+#### **🆕 Estructura de Subtotales y Total General**
+El campo `totals` ahora incluye una estructura completa con subtotales por sección y un total general:
+
+**Estructura:**
+```json
+{
+  "totals": {
+    "subtotals": {
+      "normalProfessors": {
+        "totalTeacher": 1234.56,      // Suma de totalTeacher de todos los profesores normales
+        "totalBespoke": 567.89,       // Suma de totalBespoke de todos los profesores normales
+        "balanceRemaining": 890.12    // Suma de balanceRemaining de todos los profesores normales
+      },
+      "specialProfessor": {
+        "total": 187.50,              // Suma de 'total' del profesor especial (equivalente a totalTeacher + totalBespoke)
+        "balanceRemaining": 62.50     // balanceRemaining del profesor especial (de subtotal.balanceRemaining)
+      },
+      "excedents": {
+        "totalExcedente": 1300.00     // Total de excedentes (ingresos + clases no vistas - bonos)
+      }
+    },
+    "grandTotal": {
+      "balanceRemaining": 2252.62     // Suma de balanceRemaining de las tres secciones: 890.12 + 62.50 + 1300.00
+    }
+  }
+}
+```
+
+**Descripción de Campos:**
+
+1. **`subtotals.normalProfessors`**: Sumatorias de todos los profesores normales (excluyendo al profesor especial)
+   - `totalTeacher`: Total a pagar a todos los profesores normales
+   - `totalBespoke`: Total que queda para Bespoke de profesores normales
+   - `balanceRemaining`: Balance restante total de profesores normales
+
+2. **`subtotals.specialProfessor`**: Sumatorias del profesor especial (Andrea Wias)
+   - `total`: Suma de todos los valores `total` del profesor especial (equivalente a totalTeacher + totalBespoke)
+   - `balanceRemaining`: Balance restante del profesor especial
+
+3. **`subtotals.excedents`**: Total de excedentes
+   - `totalExcedente`: Suma de ingresos excedentes + excedentes por clases no vistas - bonos de profesores
+
+4. **`grandTotal.balanceRemaining`**: Total general del reporte
+   - Suma de los `balanceRemaining` de las tres secciones:
+     - `balanceRemaining` de profesores normales
+     - `balanceRemaining` del profesor especial
+     - `totalExcedente` de excedentes
+
+**Fórmula del Total General:**
+```
+grandTotal.balanceRemaining = 
+  subtotals.normalProfessors.balanceRemaining + 
+  subtotals.specialProfessor.balanceRemaining + 
+  subtotals.excedents.totalExcedente
+```
+
 #### **Notas Importantes**
-- **`report`**: Array de profesores generales (excluye a Andrea Wias) - **CON ORDENAMIENTO APLICADO**
+- **`report`**: Array de profesores generales (excluye a Andrea Wias) - **CON ORDENAMIENTO APLICADO Y SUMATORIAS**
 - **`specialProfessorReport`**: Reporte específico de Andrea Wias (puede ser `null`) - **CON ORDENAMIENTO APLICADO**
 - **🆕 `excedente`**: Nuevo campo que puede ser `null` si no hay ingresos excedentes
 - El formato de fecha debe ser exactamente `YYYY-MM`
 - Los ingresos excedentes se identifican por no tener `idEnrollment` ni `idProfessor`
 - **🆕 Ordenamiento**: Los datos ahora vienen pre-ordenados desde el backend
+- **🆕 Sumatorias**: Cada profesor incluye sumatorias de `totalTeacher`, `totalBespoke` y `totalBalanceRemaining`
 
 #### **Errores Posibles**
 - **400**: Parámetro `month` faltante o formato inválido
@@ -2173,18 +2258,32 @@ Balance Remaining = (Amount + Old Balance) - Total
 #### **Estructura del Reporte:**
 ```json
 {
-  "professors": [...],  // Array de profesores
+  "professors": [...],  // Array de profesores normales
   "totals": {
-    "totalTeacher": 1234.56,
-    "totalBespoke": 567.89,
-    "balanceRemaining": 890.12
+    "subtotals": {
+      "normalProfessors": {
+        "totalTeacher": 1234.56,
+        "totalBespoke": 567.89,
+        "balanceRemaining": 890.12
+      },
+      "specialProfessor": {
+        "total": 187.50,
+        "balanceRemaining": 62.50
+      },
+      "excedents": {
+        "totalExcedente": 1300.00
+      }
+    },
+    "grandTotal": {
+      "balanceRemaining": 2252.62  // 890.12 + 62.50 + 1300.00
+    }
   }
 }
 ```
 
 #### **Aplicado en:**
 - Endpoint `/api/incomes/professors-payout-report`
-- Respuesta incluye campo `totals` con las sumatorias
+- Respuesta incluye campo `totals` con subtotales por sección y total general
 
 ---
 

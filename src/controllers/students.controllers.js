@@ -317,8 +317,8 @@ studentCtrl.studentInfo = async (req, res) => {
         .lean();
         console.log('✅ Enrollments encontrados:', enrollments.length);
 
-        // Calcular el total sumando todos los amounts del estudiante
-        let totalAmount = 0;
+        // Calcular el total sumando todos los available_balance de los enrollments del estudiante
+        let totalAvailableBalance = 0;
         const enrollmentDetails = [];
 
         enrollments.forEach(enrollment => {
@@ -331,15 +331,16 @@ studentCtrl.studentInfo = async (req, res) => {
                 }
             );
 
-            if (studentInfo && studentInfo.amount) {
-                const amount = studentInfo.amount;
-                totalAmount += amount;
+            if (studentInfo) {
+                // Sumar el available_balance del enrollment (si existe, sino 0)
+                const availableBalance = enrollment.available_balance || 0;
+                totalAvailableBalance += availableBalance;
 
                 // Agregar información detallada del enrollment
                 enrollmentDetails.push({
                     enrollmentId: enrollment._id,
                     planName: enrollment.planId ? enrollment.planId.name : null,
-                    amount: amount,
+                    amount: studentInfo.amount || 0,
                     rescheduleHours: enrollment.rescheduleHours || 0,
                     enrollmentType: enrollment.enrollmentType,
                     startDate: enrollment.startDate,
@@ -349,7 +350,7 @@ studentCtrl.studentInfo = async (req, res) => {
             }
         });
 
-        console.log('📊 Total calculado:', totalAmount);
+        console.log('📊 Total available balance calculado:', totalAvailableBalance);
         console.log('📋 Detalles de enrollments:', enrollmentDetails.length);
 
         // Obtener todos los IDs de enrollments del estudiante
@@ -367,16 +368,18 @@ studentCtrl.studentInfo = async (req, res) => {
         
         console.log('✅ Total de clases encontradas:', allClasses.length);
 
-        // 1. Calcular tiempo disponible de reschedules (solo clases con reschedule = 1)
+        // 1. Calcular tiempo disponible de reschedules (solo clases con reschedule = 1 Y classViewed = 0)
         console.log('🔎 Calculando tiempo disponible de reschedules...');
-        const rescheduleClasses = allClasses.filter(classRecord => classRecord.reschedule === 1);
-        console.log('✅ Clases en reschedule encontradas:', rescheduleClasses.length);
+        const rescheduleClassesNotViewed = allClasses.filter(classRecord => 
+            classRecord.reschedule === 1 && classRecord.classViewed === 0
+        );
+        console.log('✅ Clases en reschedule no vistas encontradas:', rescheduleClassesNotViewed.length);
 
         // Calcular el tiempo disponible para cada clase y el total
         let totalRescheduleMinutes = 0;
         const rescheduleDetails = [];
 
-        rescheduleClasses.forEach(classRecord => {
+        rescheduleClassesNotViewed.forEach(classRecord => {
             // Calcular tiempo disponible: minutesClassDefault - minutesViewed
             const minutesClassDefault = classRecord.minutesClassDefault || 60; // Por defecto 60 minutos
             const minutesViewed = classRecord.minutesViewed || 0; // Si no tiene, es 0
@@ -403,9 +406,11 @@ studentCtrl.studentInfo = async (req, res) => {
         console.log('⏱️ Tiempo total disponible de reschedules:', totalRescheduleMinutes, 'minutos (', totalRescheduleHours, 'horas)');
         console.log('📋 Detalles de reschedules:', rescheduleDetails.length);
 
-        // 1. Contar clases con reschedule = 1
-        console.log('🔎 Contando clases con reschedule = 1...');
-        const classesWithReschedule = allClasses.filter(classRecord => classRecord.reschedule === 1);
+        // 1. Contar clases reschedule que están por verse (reschedule = 1 Y classViewed = 0)
+        console.log('🔎 Contando clases reschedule por verse (reschedule=1 Y classViewed=0)...');
+        const classesWithReschedule = allClasses.filter(classRecord => 
+            classRecord.reschedule === 1 && classRecord.classViewed === 0
+        );
         const rescheduleCountDetails = classesWithReschedule.map(classRecord => ({
             classRegistryId: classRecord._id,
             enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
@@ -434,36 +439,18 @@ studentCtrl.studentInfo = async (req, res) => {
             classTime: classRecord.classTime
         }));
 
-        // 4. Contar clases perdidas (classViewed = 0 y classDate > endDate del enrollment) - SOLO ADMIN
+        // 4. Contar clases perdidas (classViewed = 4 - Class Lost) - SOLO ADMIN
         let lostClassesCount = 0;
         let lostClassesDetails = [];
         if (userRole === 'admin') {
-            console.log('🔎 Contando clases perdidas (solo admin)...');
-            const currentDate = new Date();
-            currentDate.setUTCHours(0, 0, 0, 0); // Normalizar a medianoche UTC
-
-            const lostClasses = allClasses.filter(classRecord => {
-                if (classRecord.classViewed !== 0) return false;
-                
-                // Verificar si la clase tiene enrollmentId y endDate
-                if (!classRecord.enrollmentId || !classRecord.enrollmentId.endDate) return false;
-                
-                // Convertir classDate a Date para comparar
-                const classDateObj = new Date(classRecord.classDate + 'T00:00:00.000Z');
-                const endDateObj = new Date(classRecord.enrollmentId.endDate);
-                endDateObj.setUTCHours(0, 0, 0, 0);
-                
-                // La clase está perdida si classDate > endDate
-                return classDateObj > endDateObj;
-            });
-
+            console.log('🔎 Contando clases perdidas (classViewed=4 - solo admin)...');
+            const lostClasses = allClasses.filter(classRecord => classRecord.classViewed === 4);
             lostClassesCount = lostClasses.length;
             lostClassesDetails = lostClasses.map(classRecord => ({
                 classRegistryId: classRecord._id,
                 enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
                 classDate: classRecord.classDate,
-                classTime: classRecord.classTime,
-                enrollmentEndDate: classRecord.enrollmentId ? classRecord.enrollmentId.endDate : null
+                classTime: classRecord.classTime
             }));
             console.log('✅ Clases perdidas encontradas:', lostClassesCount);
         }
@@ -572,7 +559,7 @@ studentCtrl.studentInfo = async (req, res) => {
                 email: student.email,
                 studentCode: student.studentCode
             },
-            totalAvailableBalance: totalAmount,
+            totalAvailableBalance: totalAvailableBalance,
             enrollmentDetails: enrollmentDetails,
             rescheduleTime: {
                 totalAvailableMinutes: totalRescheduleMinutes,
@@ -607,6 +594,18 @@ studentCtrl.studentInfo = async (req, res) => {
                 total: noShowClassesCount,
                 details: noShowClassesDetails
             };
+            
+            // Agregar classLostClasses (classViewed = 4)
+            const classLostClasses = allClasses.filter(classRecord => classRecord.classViewed === 4);
+            response.classLostClasses = {
+                total: classLostClasses.length,
+                details: classLostClasses.map(classRecord => ({
+                    classRegistryId: classRecord._id,
+                    enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime
+                }))
+            };
         }
 
         // Agregar historial de incomes solo si el rol es student o admin
@@ -628,14 +627,14 @@ studentCtrl.studentInfo = async (req, res) => {
                 classRecord.enrollmentId._id.toString() === enrollmentIdStr
             );
 
-            // Calcular reschedule time para este enrollment
-            const enrollmentRescheduleClasses = enrollmentClasses.filter(
-                classRecord => classRecord.reschedule === 1
+            // Calcular reschedule time para este enrollment (solo clases reschedule con classViewed=0)
+            const enrollmentRescheduleClassesNotViewed = enrollmentClasses.filter(
+                classRecord => classRecord.reschedule === 1 && classRecord.classViewed === 0
             );
             let enrollmentRescheduleMinutes = 0;
             const enrollmentRescheduleDetails = [];
 
-            enrollmentRescheduleClasses.forEach(classRecord => {
+            enrollmentRescheduleClassesNotViewed.forEach(classRecord => {
                 const minutesClassDefault = classRecord.minutesClassDefault || 60;
                 const minutesViewed = classRecord.minutesViewed || 0;
                 const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed);
@@ -654,9 +653,9 @@ studentCtrl.studentInfo = async (req, res) => {
 
             const enrollmentRescheduleHours = (enrollmentRescheduleMinutes / 60).toFixed(2);
 
-            // Contar clases con reschedule = 1
+            // Contar clases reschedule que están por verse (reschedule = 1 Y classViewed = 0)
             const enrollmentClassesWithReschedule = enrollmentClasses.filter(
-                classRecord => classRecord.reschedule === 1
+                classRecord => classRecord.reschedule === 1 && classRecord.classViewed === 0
             );
 
             // Contar clases vistas (classViewed = 1)
@@ -669,30 +668,18 @@ studentCtrl.studentInfo = async (req, res) => {
                 classRecord => classRecord.classViewed === 0
             );
 
-            // Contar clases perdidas (classViewed = 0 y classDate > endDate) - SOLO ADMIN
+            // Contar clases perdidas (classViewed = 4 - Class Lost) - SOLO ADMIN
             let enrollmentLostClassesCount = 0;
             let enrollmentLostClassesDetails = [];
             if (userRole === 'admin') {
-                const currentDate = new Date();
-                currentDate.setUTCHours(0, 0, 0, 0);
-
-                const enrollmentLostClasses = enrollmentClasses.filter(classRecord => {
-                    if (classRecord.classViewed !== 0) return false;
-                    if (!enrollment.endDate) return false;
-                    
-                    const classDateObj = new Date(classRecord.classDate + 'T00:00:00.000Z');
-                    const endDateObj = new Date(enrollment.endDate);
-                    endDateObj.setUTCHours(0, 0, 0, 0);
-                    
-                    return classDateObj > endDateObj;
-                });
-
+                const enrollmentLostClasses = enrollmentClasses.filter(
+                    classRecord => classRecord.classViewed === 4
+                );
                 enrollmentLostClassesCount = enrollmentLostClasses.length;
                 enrollmentLostClassesDetails = enrollmentLostClasses.map(classRecord => ({
                     classRegistryId: classRecord._id,
                     classDate: classRecord.classDate,
-                    classTime: classRecord.classTime,
-                    enrollmentEndDate: enrollment.endDate
+                    classTime: classRecord.classTime
                 }));
             }
 
@@ -766,6 +753,19 @@ studentCtrl.studentInfo = async (req, res) => {
                 enrollmentStats.noShowClasses = {
                     total: enrollmentNoShowClassesCount,
                     details: enrollmentNoShowClassesDetails
+                };
+                
+                // Agregar classLostClasses (classViewed = 4)
+                const enrollmentClassLostClasses = enrollmentClasses.filter(
+                    classRecord => classRecord.classViewed === 4
+                );
+                enrollmentStats.classLostClasses = {
+                    total: enrollmentClassLostClasses.length,
+                    details: enrollmentClassLostClasses.map(classRecord => ({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime
+                    }))
                 };
             }
 
@@ -875,12 +875,14 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
         console.log('✅ Clases encontradas:', classes.length);
 
         // Calcular estadísticas del enrollment
-        // 1. Reschedule time
-        const rescheduleClasses = classes.filter(classRecord => classRecord.reschedule === 1);
+        // 1. Reschedule time - solo clases reschedule que aún no se han visto (reschedule=1 Y classViewed=0)
+        const rescheduleClassesNotViewed = classes.filter(classRecord => 
+            classRecord.reschedule === 1 && classRecord.classViewed === 0
+        );
         let totalRescheduleMinutes = 0;
         const rescheduleDetails = [];
 
-        rescheduleClasses.forEach(classRecord => {
+        rescheduleClassesNotViewed.forEach(classRecord => {
             const minutesClassDefault = classRecord.minutesClassDefault || 60;
             const minutesViewed = classRecord.minutesViewed || 0;
             const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed);
@@ -899,8 +901,10 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
 
         const totalRescheduleHours = (totalRescheduleMinutes / 60).toFixed(2);
 
-        // 2. Contar clases con reschedule = 1
-        const classesWithReschedule = classes.filter(classRecord => classRecord.reschedule === 1);
+        // 2. Contar clases reschedule que están por verse (reschedule = 1 Y classViewed = 0)
+        const classesWithReschedule = classes.filter(classRecord => 
+            classRecord.reschedule === 1 && classRecord.classViewed === 0
+        );
 
         // 3. Contar clases vistas (classViewed = 1)
         const viewedClasses = classes.filter(classRecord => classRecord.classViewed === 1);
@@ -908,27 +912,16 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
         // 4. Contar clases pendientes (classViewed = 0)
         const pendingClasses = classes.filter(classRecord => classRecord.classViewed === 0);
 
-        // 5. Contar clases perdidas (classViewed = 0 y classDate > endDate) - SOLO ADMIN
+        // 5. Contar clases perdidas (classViewed = 4 - Class Lost) - SOLO ADMIN
         let lostClassesCount = 0;
         let lostClassesDetails = [];
         if (userRole === 'admin') {
-            const lostClasses = classes.filter(classRecord => {
-                if (classRecord.classViewed !== 0) return false;
-                if (!enrollment.endDate) return false;
-                
-                const classDateObj = new Date(classRecord.classDate + 'T00:00:00.000Z');
-                const endDateObj = new Date(enrollment.endDate);
-                endDateObj.setUTCHours(0, 0, 0, 0);
-                
-                return classDateObj > endDateObj;
-            });
-
+            const lostClasses = classes.filter(classRecord => classRecord.classViewed === 4);
             lostClassesCount = lostClasses.length;
             lostClassesDetails = lostClasses.map(classRecord => ({
                 classRegistryId: classRecord._id,
                 classDate: classRecord.classDate,
-                classTime: classRecord.classTime,
-                enrollmentEndDate: enrollment.endDate
+                classTime: classRecord.classTime
             }));
         }
 
@@ -1075,6 +1068,17 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
             response.statistics.noShowClasses = {
                 total: noShowClassesCount,
                 details: noShowClassesDetails
+            };
+            
+            // Agregar classLostClasses (classViewed = 4)
+            const classLostClasses = classes.filter(classRecord => classRecord.classViewed === 4);
+            response.statistics.classLostClasses = {
+                total: classLostClasses.length,
+                details: classLostClasses.map(classRecord => ({
+                    classRegistryId: classRecord._id,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime
+                }))
             };
         }
 

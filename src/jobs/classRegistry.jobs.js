@@ -22,8 +22,8 @@ const createClassFinalizationNotification = async (enrollment, stats) => {
         
         const parts = [];
         
-        if (stats.noShowCount > 0) {
-            parts.push(`${stats.noShowCount} clase(s) de tipo 3 (no show)`);
+        if (stats.classLostCount > 0) {
+            parts.push(`${stats.classLostCount} clase(s) de tipo 4 (Class Lost - clase perdida)`);
         }
         
         if (stats.viewedCount > 0) {
@@ -72,9 +72,9 @@ const createClassFinalizationNotification = async (enrollment, stats) => {
  * 1. Buscar enrollments cuyo endDate < fecha actual
  * 2. Para cada enrollment:
  *    - Revisar todas sus ClassRegistry
- *    - Si classViewed = 0 y reschedule = 0 → cambiar a classViewed = 3 (no show)
+ *    - Si classViewed = 0 y reschedule = 0 → cambiar a classViewed = 4 (Class Lost - clase perdida)
  *    - Generar notificación con estadísticas:
- *      - Clases tipo 3 (no show)
+ *      - Clases tipo 4 (Class Lost - clase perdida)
  *      - Clases tipo 1 (vistas)
  *      - Clases tipo 2 (parcialmente vista)
  *      - Clases tipo 2 con reschedule (originalClassId apunta a clase con reschedule = 1)
@@ -110,7 +110,7 @@ const processClassFinalization = async () => {
                     continue;
                 }
 
-                // Actualizar clases con classViewed = 0 y reschedule = 0 → cambiar a classViewed = 3
+                // Actualizar clases con classViewed = 0 y reschedule = 0 → cambiar a classViewed = 4 (Class Lost)
                 const classesToUpdate = classRegistries.filter(
                     cr => cr.classViewed === 0 && cr.reschedule === 0
                 );
@@ -123,11 +123,11 @@ const processClassFinalization = async () => {
                             reschedule: 0
                         },
                         {
-                            $set: { classViewed: 3 } // Cambiar a no show
+                            $set: { classViewed: 4 } // Cambiar a Class Lost (clase perdida)
                         }
                     );
                     updatedClassesCount += updateResult.modifiedCount;
-                    console.log(`[CRONJOB] Actualizadas ${updateResult.modifiedCount} clases a no show para enrollment ${enrollment._id}`);
+                    console.log(`[CRONJOB] Actualizadas ${updateResult.modifiedCount} clases a Class Lost (4) para enrollment ${enrollment._id}`);
                 }
 
                 // Obtener todas las clases actualizadas (incluyendo las que acabamos de actualizar)
@@ -137,7 +137,7 @@ const processClassFinalization = async () => {
 
                 // Contar estadísticas
                 const stats = {
-                    noShowCount: 0, // classViewed = 3
+                    classLostCount: 0, // classViewed = 4 (Class Lost - clase perdida)
                     viewedCount: 0, // classViewed = 1
                     partiallyViewedCount: 0, // classViewed = 2
                     partiallyViewedWithRescheduleCount: 0 // classViewed = 2 y originalClassId apunta a clase con reschedule = 1
@@ -149,8 +149,8 @@ const processClassFinalization = async () => {
                     .map(cr => cr._id.toString());
 
                 for (const classRecord of allClasses) {
-                    if (classRecord.classViewed === 3) {
-                        stats.noShowCount++;
+                    if (classRecord.classViewed === 4) {
+                        stats.classLostCount++;
                     } else if (classRecord.classViewed === 1) {
                         stats.viewedCount++;
                     } else if (classRecord.classViewed === 2) {
@@ -171,7 +171,7 @@ const processClassFinalization = async () => {
                 notificationsCreated++;
 
                 processedCount++;
-                console.log(`[CRONJOB] Enrollment ${enrollment._id} procesado: ${stats.noShowCount} no show, ${stats.viewedCount} vistas, ${stats.partiallyViewedCount} parcialmente vistas, ${stats.partiallyViewedWithRescheduleCount} parcialmente vistas con reschedule`);
+                console.log(`[CRONJOB] Enrollment ${enrollment._id} procesado: ${stats.classLostCount} Class Lost, ${stats.viewedCount} vistas, ${stats.partiallyViewedCount} parcialmente vistas, ${stats.partiallyViewedWithRescheduleCount} parcialmente vistas con reschedule`);
             } catch (error) {
                 console.error(`[CRONJOB] Error procesando enrollment ${enrollment._id}:`, error.message);
                 // Continuar con el siguiente enrollment
@@ -180,7 +180,7 @@ const processClassFinalization = async () => {
 
         console.log(`[CRONJOB] Procesamiento de finalización de clases completado:`);
         console.log(`  - Enrollments procesados: ${processedCount}`);
-        console.log(`  - Clases actualizadas a no show: ${updatedClassesCount}`);
+        console.log(`  - Clases actualizadas a Class Lost (4): ${updatedClassesCount}`);
         console.log(`  - Notificaciones creadas: ${notificationsCreated}`);
         console.log('[CRONJOB] Finalizando procesamiento de finalización de clases');
 
@@ -192,14 +192,10 @@ const processClassFinalization = async () => {
 /**
  * Inicializa el cronjob para procesar finalización de clases
  * Se ejecuta diariamente a las 00:00 (medianoche)
- * 
- * ⚠️ MODO PRUEBA: Actualmente configurado para ejecutarse cada 10 segundos
- * Cambiar a '0 0 * * *' para producción (diario a medianoche)
  */
 const initClassFinalizationCronjob = () => {
-    // Cron expression para pruebas: cada 10 segundos
-    // Para producción: '0 0 * * *' = todos los días a las 00:00
-    cron.schedule('*/10 * * * * *', async () => {
+    // Cron expression para producción: '0 0 * * *' = todos los días a las 00:00
+    cron.schedule('0 0 * * *', async () => {
         console.log(`[CRONJOB] Ejecutando cronjob de finalización de clases - ${new Date().toISOString()}`);
         await processClassFinalization();
     }, {
@@ -207,8 +203,7 @@ const initClassFinalizationCronjob = () => {
         timezone: "America/Caracas" // Ajustar según tu zona horaria
     });
 
-    console.log('[CRONJOB] Cronjob de finalización de clases configurado (cada 10 segundos - MODO PRUEBA)');
-    console.log('[CRONJOB] ⚠️ RECORDATORIO: Cambiar a "0 0 * * *" para producción (diario a medianoche)');
+    console.log('[CRONJOB] Cronjob de finalización de clases configurado (diario a medianoche - PRODUCCIÓN)');
 };
 
 /**
@@ -233,8 +228,8 @@ const createMonthlyClassClosureNotification = async (enrollment, monthYear, stat
         
         const parts = [];
         
-        if (stats.noShowMarked > 0) {
-            parts.push(`${stats.noShowMarked} clase(s) marcada(s) como no show del mes de ${monthName}`);
+        if (stats.classLostMarked > 0) {
+            parts.push(`${stats.classLostMarked} clase(s) marcada(s) como Class Lost (clase perdida) del mes de ${monthName}`);
         }
         
         if (stats.totalClassesInMonth > 0) {
@@ -249,8 +244,8 @@ const createMonthlyClassClosureNotification = async (enrollment, monthYear, stat
             parts.push(`${stats.partiallyViewedInMonth} parcialmente vista(s)`);
         }
 
-        if (stats.alreadyNoShowInMonth > 0) {
-            parts.push(`${stats.alreadyNoShowInMonth} ya marcada(s) como no show`);
+        if (stats.alreadyClassLostInMonth > 0) {
+            parts.push(`${stats.alreadyClassLostInMonth} ya marcada(s) como Class Lost`);
         }
 
         if (parts.length > 0) {
@@ -288,13 +283,13 @@ const createMonthlyClassClosureNotification = async (enrollment, monthYear, stat
  * 2. Para cada enrollment:
  *    - Revisar todas sus ClassRegistry
  *    - Filtrar clases cuya classDate esté dentro del mes actual que está terminando
- *    - Si classViewed = 0 → cambiar a classViewed = 3 (no show) SOLO para clases del mes actual
+ *    - Si classViewed = 0 → cambiar a classViewed = 4 (Class Lost - clase perdida) SOLO para clases del mes actual
  *    - Generar notificación con estadísticas del mes:
- *      - Clases marcadas como no show en este procesamiento
+ *      - Clases marcadas como Class Lost en este procesamiento
  *      - Total de clases del mes
  *      - Clases vistas del mes
  *      - Clases parcialmente vistas del mes
- *      - Clases ya marcadas como no show del mes
+ *      - Clases ya marcadas como Class Lost del mes
  */
 const processMonthlyClassClosure = async () => {
     try {
@@ -364,7 +359,7 @@ const processMonthlyClassClosure = async () => {
                     continue;
                 }
 
-                // Actualizar clases con classViewed = 0 → cambiar a classViewed = 3 (solo del mes actual)
+                // Actualizar clases con classViewed = 0 → cambiar a classViewed = 4 (Class Lost) (solo del mes actual)
                 const classesToUpdate = classesInMonth.filter(
                     cr => cr.classViewed === 0
                 );
@@ -377,11 +372,11 @@ const processMonthlyClassClosure = async () => {
                             classViewed: 0
                         },
                         {
-                            $set: { classViewed: 3 } // Cambiar a no show
+                            $set: { classViewed: 4 } // Cambiar a Class Lost (clase perdida)
                         }
                     );
                     updatedClassesCount += updateResult.modifiedCount;
-                    console.log(`[CRONJOB MENSUAL] Actualizadas ${updateResult.modifiedCount} clases a no show para enrollment ${enrollment._id} (mes ${monthYear})`);
+                    console.log(`[CRONJOB MENSUAL] Actualizadas ${updateResult.modifiedCount} clases a Class Lost (4) para enrollment ${enrollment._id} (mes ${monthYear})`);
                 }
 
                 // Obtener todas las clases del mes actualizadas (incluyendo las que acabamos de actualizar)
@@ -392,11 +387,11 @@ const processMonthlyClassClosure = async () => {
 
                 // Contar estadísticas del mes
                 const stats = {
-                    noShowMarked: classesToUpdate.length, // Clases marcadas como no show en este procesamiento
+                    classLostMarked: classesToUpdate.length, // Clases marcadas como Class Lost en este procesamiento
                     totalClassesInMonth: allClassesInMonth.length, // Total de clases del mes
                     viewedInMonth: 0, // classViewed = 1
                     partiallyViewedInMonth: 0, // classViewed = 2
-                    alreadyNoShowInMonth: 0 // classViewed = 3 (ya estaban marcadas antes)
+                    alreadyClassLostInMonth: 0 // classViewed = 4 (ya estaban marcadas antes)
                 };
 
                 for (const classRecord of allClassesInMonth) {
@@ -404,8 +399,8 @@ const processMonthlyClassClosure = async () => {
                         stats.viewedInMonth++;
                     } else if (classRecord.classViewed === 2) {
                         stats.partiallyViewedInMonth++;
-                    } else if (classRecord.classViewed === 3) {
-                        stats.alreadyNoShowInMonth++;
+                    } else if (classRecord.classViewed === 4) {
+                        stats.alreadyClassLostInMonth++;
                     }
                 }
 
@@ -414,7 +409,7 @@ const processMonthlyClassClosure = async () => {
                 notificationsCreated++;
 
                 processedCount++;
-                console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} procesado (mes ${monthYear}): ${stats.noShowMarked} marcadas como no show, ${stats.viewedInMonth} vistas, ${stats.partiallyViewedInMonth} parcialmente vistas, ${stats.alreadyNoShowInMonth} ya no show`);
+                console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} procesado (mes ${monthYear}): ${stats.classLostMarked} marcadas como Class Lost, ${stats.viewedInMonth} vistas, ${stats.partiallyViewedInMonth} parcialmente vistas, ${stats.alreadyClassLostInMonth} ya Class Lost`);
             } catch (error) {
                 console.error(`[CRONJOB MENSUAL] Error procesando enrollment ${enrollment._id}:`, error.message);
                 // Continuar con el siguiente enrollment
@@ -424,7 +419,7 @@ const processMonthlyClassClosure = async () => {
         console.log(`[CRONJOB MENSUAL] Procesamiento de cierre mensual completado:`);
         console.log(`  - Mes procesado: ${monthYear}`);
         console.log(`  - Enrollments procesados: ${processedCount}`);
-        console.log(`  - Clases actualizadas a no show: ${updatedClassesCount}`);
+        console.log(`  - Clases actualizadas a Class Lost (4): ${updatedClassesCount}`);
         console.log(`  - Notificaciones creadas: ${notificationsCreated}`);
         console.log('[CRONJOB MENSUAL] Finalizando procesamiento de cierre mensual de clases');
 
@@ -449,17 +444,13 @@ const isLastDayOfMonth = () => {
 /**
  * Inicializa el cronjob para procesar cierre mensual de clases
  * Se ejecuta el último día de cada mes a las 00:00 (medianoche)
- * 
- * ⚠️ MODO PRUEBA: Actualmente configurado para ejecutarse cada 10 segundos
- * Cambiar a '0 0 28-31 * *' para producción (días 28-31 a medianoche, verifica si es último día)
+ * Se programa para ejecutarse en días 28-31 y verifica si es el último día del mes
  */
 const initMonthlyClassClosureCronjob = () => {
-    // Cron expression para pruebas: cada 10 segundos
-    // Para producción: '0 0 28-31 * *' = días 28-31 a las 00:00, luego verifica si es último día
-    cron.schedule('*/10 * * * * *', async () => {
-        // En modo prueba, ejecutar siempre
-        // En producción, descomentar la siguiente línea y comentar la anterior
-        // if (!isLastDayOfMonth()) return;
+    // Cron expression para producción: '0 0 28-31 * *' = días 28-31 a las 00:00, luego verifica si es último día
+    cron.schedule('0 0 28-31 * *', async () => {
+        // Verificar si es el último día del mes
+        if (!isLastDayOfMonth()) return;
         
         console.log(`[CRONJOB MENSUAL] Ejecutando cronjob de cierre mensual de clases - ${new Date().toISOString()}`);
         await processMonthlyClassClosure();
@@ -468,8 +459,7 @@ const initMonthlyClassClosureCronjob = () => {
         timezone: "America/Caracas"
     });
 
-    console.log('[CRONJOB MENSUAL] Cronjob de cierre mensual de clases configurado (cada 10 segundos - MODO PRUEBA)');
-    console.log('[CRONJOB MENSUAL] ⚠️ RECORDATORIO: Cambiar a "0 0 28-31 * *" para producción (último día del mes a medianoche)');
+    console.log('[CRONJOB MENSUAL] Cronjob de cierre mensual de clases configurado (último día del mes a medianoche - PRODUCCIÓN)');
 };
 
 module.exports = {
