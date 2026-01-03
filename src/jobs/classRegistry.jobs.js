@@ -166,9 +166,11 @@ const processClassFinalization = async () => {
                     }
                 }
 
-                // Crear notificación con las estadísticas
-                await createClassFinalizationNotification(enrollment, stats);
-                notificationsCreated++;
+                // Crear notificación con las estadísticas (solo si no existe ya)
+                const notificationCreated = await createClassFinalizationNotification(enrollment, stats);
+                if (notificationCreated) {
+                    notificationsCreated++;
+                }
 
                 processedCount++;
                 console.log(`[CRONJOB] Enrollment ${enrollment._id} procesado: ${stats.classLostCount} Class Lost, ${stats.viewedCount} vistas, ${stats.partiallyViewedCount} parcialmente vistas, ${stats.partiallyViewedWithRescheduleCount} parcialmente vistas con reschedule`);
@@ -223,6 +225,21 @@ const createMonthlyClassClosureNotification = async (enrollment, monthYear, stat
                            'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         const [year, month] = monthYear.split('-');
         const monthName = monthNames[parseInt(month) - 1];
+
+        // Verificar si ya existe una notificación de cierre mensual para este enrollment y mes
+        // Buscar notificaciones con el mismo idEnrollment, idCategoryNotification y que contengan el mes/año en la descripción
+        const monthYearPattern = `${monthName.toUpperCase()} ${year}`;
+        const existingNotification = await Notification.findOne({
+            idEnrollment: enrollment._id,
+            idCategoryNotification: categoryNotificationId,
+            notification_description: { $regex: monthYearPattern, $options: 'i' }, // Case-insensitive
+            isActive: true
+        });
+
+        if (existingNotification) {
+            console.log(`[CRONJOB MENSUAL] Notificación de cierre mensual ya existe para enrollment ${enrollment._id} - ${monthYear}. Omitiendo creación.`);
+            return false; // Ya existe, no crear duplicado
+        }
 
         let description = `Cierre mensual de clases - ${monthName.toUpperCase()} ${year}. Enrollment ${enrollment._id}. `;
         
@@ -404,9 +421,11 @@ const processMonthlyClassClosure = async () => {
                     }
                 }
 
-                // Crear notificación con las estadísticas del mes
-                await createMonthlyClassClosureNotification(enrollment, monthYear, stats);
-                notificationsCreated++;
+                // Crear notificación con las estadísticas del mes (solo si no existe ya)
+                const notificationCreated = await createMonthlyClassClosureNotification(enrollment, monthYear, stats);
+                if (notificationCreated) {
+                    notificationsCreated++;
+                }
 
                 processedCount++;
                 console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} procesado (mes ${monthYear}): ${stats.classLostMarked} marcadas como Class Lost, ${stats.viewedInMonth} vistas, ${stats.partiallyViewedInMonth} parcialmente vistas, ${stats.alreadyClassLostInMonth} ya Class Lost`);

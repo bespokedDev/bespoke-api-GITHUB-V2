@@ -78,11 +78,13 @@ const convertMinutesToFractionalHours = (minutes) => {
 // Solo considera clases donde classRegistry.professorId coincide con enrollment.professorId
 const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, monthEndDate, enrollmentProfessorId) => {
     // Formatear fechas del mes para comparar con classDate (string YYYY-MM-DD)
-    const monthStartStr = moment(monthStartDate).format('YYYY-MM-DD');
-    const monthEndStr = moment(monthEndDate).format('YYYY-MM-DD');
+    // Usar moment.utc() para evitar problemas de zona horaria
+    const monthStartStr = moment.utc(monthStartDate).format('YYYY-MM-DD');
+    const monthEndStr = moment.utc(monthEndDate).format('YYYY-MM-DD');
 
     // Buscar todas las clases dentro del mes con classViewed = 1, 2 o 3
     // Solo clases donde professorId del ClassRegistry coincida con el enrollment.professorId
+    // Si professorId es null, se considera como del profesor del enrollment
     const classRegistriesInMonth = await ClassRegistry.find({
         enrollmentId: enrollment._id,
         classDate: {
@@ -90,10 +92,20 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
             $lte: monthEndStr
         },
         classViewed: { $in: [1, 2, 3] }, // Solo clases vistas (1), parcialmente vistas (2) o no show (3)
-        professorId: new mongoose.Types.ObjectId(enrollmentProfessorId) // Solo clases del profesor del enrollment
+        $or: [
+            { professorId: new mongoose.Types.ObjectId(enrollmentProfessorId) }, // Clases del profesor del enrollment
+            { professorId: null } // Clases sin profesor asignado (se consideran del profesor del enrollment)
+        ]
     })
     .populate('originalClassId', 'minutesViewed minutesClassDefault')
     .lean();
+
+    console.log(`[processClassRegistryForPayoutPreview] Enrollment: ${enrollment._id}, Profesor: ${enrollmentProfessorId}`);
+    console.log(`[processClassRegistryForPayoutPreview] Rango de fechas: ${monthStartStr} a ${monthEndStr}`);
+    console.log(`[processClassRegistryForPayoutPreview] Clases encontradas: ${classRegistriesInMonth.length}`);
+    classRegistriesInMonth.forEach((cr, idx) => {
+        console.log(`[processClassRegistryForPayoutPreview] Clase ${idx + 1}: ID=${cr._id}, classDate=${cr.classDate}, classViewed=${cr.classViewed}, reschedule=${cr.reschedule}, minutesViewed=${cr.minutesViewed}, minutesClassDefault=${cr.minutesClassDefault}, originalClassId=${cr.originalClassId ? cr.originalClassId._id : 'null'}`);
+    });
 
     let totalHours = 0;
     let totalMinutes = 0;
@@ -111,7 +123,10 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
         },
         originalClassId: { $in: normalClassIds },
         reschedule: { $in: [1, 2] }, // Clases en reschedule
-        professorId: new mongoose.Types.ObjectId(enrollmentProfessorId) // Solo reschedules del mismo profesor
+        $or: [
+            { professorId: new mongoose.Types.ObjectId(enrollmentProfessorId) }, // Reschedules del profesor del enrollment
+            { professorId: null } // Reschedules sin profesor asignado (se consideran del profesor del enrollment)
+        ]
     })
     .populate('originalClassId', '_id')
     .lean() : [];
@@ -131,7 +146,10 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
     // Procesar cada clase normal
     for (const classRecord of classRegistriesInMonth) {
         // Solo procesar clases normales (reschedule = 0)
-        if (classRecord.reschedule !== 0) continue;
+        if (classRecord.reschedule !== 0) {
+            console.log(`[processClassRegistryForPayoutPreview] ⚠️ Saltando clase ${classRecord._id} porque reschedule=${classRecord.reschedule} (no es clase normal)`);
+            continue;
+        }
 
         let minutesToUse = 0;
 
@@ -139,28 +157,34 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
         if (classRecord.classViewed === 3) {
             // classViewed = 3: usar minutesClassDefault (60 minutos) = 1 hora completa
             minutesToUse = classRecord.minutesClassDefault || 60;
+            console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: classViewed=3, usando minutesClassDefault=${minutesToUse}`);
         } else {
             // classViewed = 1 o 2: usar minutesViewed
             minutesToUse = classRecord.minutesViewed || 0;
+            console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: classViewed=${classRecord.classViewed}, usando minutesViewed=${minutesToUse}`);
         }
 
         // Buscar reschedules de esta clase normal dentro del mes
         const classRecordId = classRecord._id.toString();
         const reschedulesForThisClass = reschedulesMap.get(classRecordId) || [];
+        console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: encontró ${reschedulesForThisClass.length} reschedules asociados`);
 
         // Si hay reschedules, sumar sus minutos
         for (const reschedule of reschedulesForThisClass) {
             if (reschedule.minutesViewed) {
+                console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: sumando ${reschedule.minutesViewed} minutos del reschedule ${reschedule._id}`);
                 minutesToUse += reschedule.minutesViewed;
             }
         }
 
         // Convertir minutos a horas fraccionales y acumular
         const fractionalHours = convertMinutesToFractionalHours(minutesToUse);
+        console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: minutos totales=${minutesToUse}, horas fraccionales=${fractionalHours}`);
         totalHours += fractionalHours;
         totalMinutes += minutesToUse;
     }
 
+    console.log(`[processClassRegistryForPayoutPreview] Total final: ${totalHours} horas, ${totalMinutes} minutos`);
     return { totalHours, totalMinutes };
 };
 
@@ -803,6 +827,8 @@ payoutCtrl.preview = async (req, res) => {
         // Calcular rango de fechas del mes (UTC)
         const [year, monthNum] = month.split('-').map(Number);
         const startDate = new Date(Date.UTC(year, monthNum - 1, 1, 0, 0, 0));
+        // Para obtener el último día del mes, usamos el día 0 del mes siguiente
+        // monthNum es el mes (1-12), así que monthNum + 1 es el mes siguiente
         const endDate = new Date(Date.UTC(year, monthNum, 0, 23, 59, 59, 999));
 
         // Buscar todos los enrollments del profesor que se superponen con el mes (todos los status)
@@ -941,7 +967,8 @@ payoutCtrl.preview = async (req, res) => {
             }
 
             // Calcular subtotal para este enrollment (dinero por clases)
-            const enrollmentSubtotal = hoursSeen * pricePerHour;
+            // El subtotal debe ser hoursSeen * pPerHour (pago por hora del profesor)
+            const enrollmentSubtotal = hoursSeen * pPerHour;
 
             // Plan display
             const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';

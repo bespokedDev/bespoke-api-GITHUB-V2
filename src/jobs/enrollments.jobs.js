@@ -39,6 +39,19 @@ const createEnrollmentDeactivationNotification = async (enrollment) => {
             })
             .filter(id => id !== null && id !== undefined);
 
+        // Verificar si ya existe una notificación de anulación para este enrollment
+        const existingNotification = await Notification.findOne({
+            idEnrollment: enrollment._id,
+            idCategoryNotification: categoryNotification._id,
+            notification_description: { $regex: 'Enrollment anulado por vencimiento de fecha de pago', $options: 'i' },
+            isActive: true
+        });
+
+        if (existingNotification) {
+            console.log(`[CRONJOB] Notificación de anulación ya existe para enrollment ${enrollment._id}. Omitiendo creación.`);
+            return false; // Ya existe, no crear duplicado
+        }
+
         // Crear notificación de anulación
         if (studentIds.length > 0) {
             const newNotification = new Notification({
@@ -168,9 +181,18 @@ const processEnrollmentsPaymentStatus = async () => {
                                     })
                                     .filter(id => id !== null && id !== undefined);
 
-                                // Crear notificación
+                                // Verificar si ya existe una notificación de penalización para este enrollment
+                                const existingPenalizationNotification = await Notification.findOne({
+                                    idEnrollment: enrollment._id,
+                                    idCategoryNotification: categoryNotification._id,
+                                    idPenalization: penalizationType._id,
+                                    notification_description: 'penalización por vencimiento de dias de pago',
+                                    isActive: true
+                                });
+
+                                // Crear notificación solo si no existe ya
                                 // La notificación apunta al tipo de penalización (Penalizacion), no al registro
-                                if (studentIds.length > 0) {
+                                if (!existingPenalizationNotification && studentIds.length > 0) {
                                     const newNotification = new Notification({
                                         idCategoryNotification: categoryNotification._id,
                                         notification_description: 'penalización por vencimiento de dias de pago',
@@ -183,6 +205,8 @@ const processEnrollmentsPaymentStatus = async () => {
 
                                     await newNotification.save();
                                     console.log(`[CRONJOB] Notificación creada para enrollment ${enrollment._id}`);
+                                } else if (existingPenalizationNotification) {
+                                    console.log(`[CRONJOB] Notificación de penalización ya existe para enrollment ${enrollment._id}. Omitiendo creación.`);
                                 }
 
                                 console.log(`[CRONJOB] Registro de penalización creado para enrollment ${enrollment._id}`);
@@ -304,6 +328,19 @@ const createAutomaticPaymentsDisabledNotification = async (enrollment, students)
         }).join(', ');
 
         const description = `Los pagos automáticos del enrollment ${enrollment._id} han sido desactivados debido a saldo insuficiente después del pago automático. Estudiantes afectados: ${studentInfo}`;
+
+        // Verificar si ya existe una notificación de desactivación de pagos automáticos para este enrollment
+        const existingNotification = await Notification.findOne({
+            idEnrollment: enrollment._id,
+            idCategoryNotification: categoryNotificationId,
+            notification_description: { $regex: 'Los pagos automáticos.*han sido desactivados', $options: 'i' },
+            isActive: true
+        });
+
+        if (existingNotification) {
+            console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Notificación de desactivación de pagos automáticos ya existe para enrollment ${enrollment._id}. Omitiendo creación.`);
+            return false; // Ya existe, no crear duplicado
+        }
 
         // Extraer IDs de estudiantes
         const studentIds = students.map(s => s._id);
