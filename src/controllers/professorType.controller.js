@@ -12,9 +12,13 @@ const professorTypeCtrl = {};
  */
 professorTypeCtrl.create = async (req, res) => {
     try {
-        const { rates } = req.body;
+        const { name, rates } = req.body;
 
         // Validaciones básicas
+        if (!name || typeof name !== 'string' || name.trim() === '') {
+            return res.status(400).json({ message: 'El nombre del tipo de profesor es requerido.' });
+        }
+
         if (!rates || typeof rates !== 'object') {
             return res.status(400).json({ message: 'El campo rates es requerido y debe ser un objeto.' });
         }
@@ -48,6 +52,7 @@ professorTypeCtrl.create = async (req, res) => {
         }
 
         const newProfessorType = new ProfessorType({
+            name: name.trim(),
             rates: {
                 single,
                 couple,
@@ -70,6 +75,10 @@ professorTypeCtrl.create = async (req, res) => {
 
     } catch (error) {
         console.error('Error al crear tipo de profesor:', error);
+
+        // Manejo de errores de duplicidad
+        const handled = utilsFunctions.handleDuplicateKeyError(error, 'nombre del tipo de profesor');
+        if (handled) return res.status(handled.status).json(handled.json);
 
         // Manejo de errores de validación de Mongoose
         if (error.name === 'ValidationError') {
@@ -145,52 +154,67 @@ professorTypeCtrl.getById = async (req, res) => {
 professorTypeCtrl.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { rates } = req.body;
+        const { name, rates } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID de tipo de profesor inválido.' });
         }
 
-        // Validar que se proporcione el campo rates
-        if (!rates || typeof rates !== 'object') {
-            return res.status(400).json({ message: 'Se requiere el campo rates para actualizar el tipo de profesor.' });
+        // Validar que se proporcione al menos un campo
+        if (!name && !rates) {
+            return res.status(400).json({ message: 'Se requiere al menos uno de los campos: name o rates para actualizar el tipo de profesor.' });
         }
 
-        const { single, couple, group } = rates;
+        const updateFields = {};
 
-        // Validar que todos los campos estén presentes
-        if (single === undefined || couple === undefined || group === undefined) {
-            return res.status(400).json({ 
-                message: 'Los campos single, couple y group son requeridos en rates.' 
-            });
+        // Validar y agregar name si se proporciona
+        if (name !== undefined) {
+            if (typeof name !== 'string' || name.trim() === '') {
+                return res.status(400).json({ message: 'El nombre del tipo de profesor no puede estar vacío.' });
+            }
+            updateFields.name = name.trim();
         }
 
-        // Validar que sean números y mayores o iguales a 0
-        if (typeof single !== 'number' || single < 0) {
-            return res.status(400).json({ 
-                message: 'El campo single debe ser un número mayor o igual a 0.' 
-            });
-        }
+        // Validar y agregar rates si se proporciona
+        if (rates !== undefined) {
+            if (typeof rates !== 'object') {
+                return res.status(400).json({ message: 'El campo rates debe ser un objeto.' });
+            }
 
-        if (typeof couple !== 'number' || couple < 0) {
-            return res.status(400).json({ 
-                message: 'El campo couple debe ser un número mayor o igual a 0.' 
-            });
-        }
+            const { single, couple, group } = rates;
 
-        if (typeof group !== 'number' || group < 0) {
-            return res.status(400).json({ 
-                message: 'El campo group debe ser un número mayor o igual a 0.' 
-            });
-        }
+            // Validar que todos los campos estén presentes
+            if (single === undefined || couple === undefined || group === undefined) {
+                return res.status(400).json({ 
+                    message: 'Los campos single, couple y group son requeridos en rates.' 
+                });
+            }
 
-        const updateFields = {
-            rates: {
+            // Validar que sean números y mayores o iguales a 0
+            if (typeof single !== 'number' || single < 0) {
+                return res.status(400).json({ 
+                    message: 'El campo single debe ser un número mayor o igual a 0.' 
+                });
+            }
+
+            if (typeof couple !== 'number' || couple < 0) {
+                return res.status(400).json({ 
+                    message: 'El campo couple debe ser un número mayor o igual a 0.' 
+                });
+            }
+
+            if (typeof group !== 'number' || group < 0) {
+                return res.status(400).json({ 
+                    message: 'El campo group debe ser un número mayor o igual a 0.' 
+                });
+            }
+
+            updateFields.rates = {
                 single,
                 couple,
                 group
-            }
-        };
+            };
+        }
 
         const updatedProfessorType = await ProfessorType.findByIdAndUpdate(id, updateFields, { new: true, runValidators: true }).lean();
 
@@ -211,6 +235,9 @@ professorTypeCtrl.update = async (req, res) => {
 
     } catch (error) {
         console.error('Error al actualizar tipo de profesor:', error);
+        
+        const handled = utilsFunctions.handleDuplicateKeyError(error, 'nombre del tipo de profesor');
+        if (handled) return res.status(handled.status).json(handled.json);
         
         if (error.name === 'CastError') {
             return res.status(400).json({ message: 'ID de tipo de profesor inválido.' });

@@ -74,6 +74,12 @@ const RatesSchema = new mongoose.Schema({
 }, { _id: false }); // No necesitamos un _id para este subdocumento
 
 const ProfessorTypeSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
     rates: {
         single: {
             type: Number,
@@ -106,6 +112,7 @@ module.exports = mongoose.model('ProfessorTypes', ProfessorTypeSchema, 'Professo
 | Campo | Tipo | Requerido | Por Defecto | Validaciones | Descripción |
 |-------|------|-----------|-------------|--------------|-------------|
 | `_id` | ObjectId | Auto | Auto-generado | - | ID único del tipo de profesor (generado automáticamente por MongoDB) |
+| `name` | String | Sí | - | `unique: true`, `trim: true` | Nombre del tipo de profesor (debe ser único, se eliminan espacios en blanco al inicio y final) |
 | `rates` | Object | Sí | - | - | Objeto que contiene las tarifas del profesor |
 | `rates.single` | Number | Sí | - | `min: 0` | Tarifa para clase individual (debe ser ≥ 0) |
 | `rates.couple` | Number | Sí | - | `min: 0` | Tarifa para clase en pareja (debe ser ≥ 0) |
@@ -120,6 +127,7 @@ module.exports = mongoose.model('ProfessorTypes', ProfessorTypeSchema, 'Professo
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+  "name": "Profesor Senior",
   "rates": {
     "single": 25.50,
     "couple": 20.00,
@@ -137,6 +145,7 @@ module.exports = mongoose.model('ProfessorTypes', ProfessorTypeSchema, 'Professo
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+  "name": "Profesor Senior",
   "rates": {
     "single": 25.50,
     "couple": 20.00,
@@ -151,34 +160,41 @@ module.exports = mongoose.model('ProfessorTypes', ProfessorTypeSchema, 'Professo
 
 ### **Características Importantes**
 
-1. **Campo `rates`**: 
+1. **Campo `name`**: 
+   - Es un campo de tipo String que identifica el nombre del tipo de profesor
+   - Es requerido y debe ser único en toda la colección
+   - Se aplica `trim: true` para eliminar espacios en blanco al inicio y final automáticamente
+   - No puede estar vacío ni ser solo espacios en blanco
+
+2. **Campo `rates`**: 
    - Es un objeto embebido (no un subdocumento con Schema separado en el modelo final, aunque existe un `RatesSchema` que se define pero no se usa directamente)
    - Contiene tres campos numéricos obligatorios: `single`, `couple`, `group`
    - Todos los campos deben ser números mayores o iguales a 0
    - No tiene `_id` propio (es un objeto plano)
 
-2. **Campo `status`**: 
+3. **Campo `status`**: 
    - Solo puede tener dos valores: `1` (Activo) o `2` (Anulado)
    - Por defecto es `1` (Activo) cuando se crea un nuevo tipo de profesor
    - Solo puede modificarse mediante los endpoints específicos (`/activate` y `/anular`)
 
-3. **Timestamps**: 
+4. **Timestamps**: 
    - El modelo tiene `timestamps: true`, lo que automáticamente añade y actualiza los campos `createdAt` y `updatedAt`
    - `createdAt` se establece una vez cuando se crea el documento
    - `updatedAt` se actualiza automáticamente cada vez que se modifica el documento
 
-4. **Referencias**:
+5. **Referencias**:
    - Este modelo es referenciado por el modelo `Professor` mediante el campo `typeId`
    - Un profesor puede tener un `typeId` que apunta a un `ProfessorType`
    - La referencia se hace mediante `mongoose.Schema.Types.ObjectId` con `ref: 'ProfessorTypes'`
 
-5. **Uso del Modelo**:
+6. **Uso del Modelo**:
    - El modelo se exporta como `mongoose.model('ProfessorTypes', ProfessorTypeSchema, 'ProfessorType')`
    - El primer parámetro (`'ProfessorTypes'`) es el nombre del modelo para usar en referencias
    - El tercer parámetro (`'ProfessorType'`) es el nombre exacto de la colección en MongoDB
 
 ### **Validaciones del Modelo**
 
+- **`name`**: Debe ser un string único, no puede estar vacío ni ser solo espacios en blanco (se aplica `trim` automáticamente)
 - **`rates.single`**: Debe ser un número ≥ 0
 - **`rates.couple`**: Debe ser un número ≥ 0
 - **`rates.group`**: Debe ser un número ≥ 0
@@ -221,6 +237,7 @@ POST /api/professor-types
 #### **Request Body**
 ```json
 {
+  "name": "Profesor Senior",
   "rates": {
     "single": 25.50,
     "couple": 20.00,
@@ -230,6 +247,11 @@ POST /api/professor-types
 ```
 
 #### **Campos Requeridos**
+- `name` (string): Nombre del tipo de profesor (requerido, único)
+  - **Requisitos**: 
+    - No puede estar vacío
+    - No puede ser solo espacios en blanco
+    - Debe ser único (no puede existir otro tipo de profesor con el mismo nombre)
 - `rates` (object): Objeto con las tarifas del profesor
   - `single` (number): Tarifa para clase individual (requerido, ≥ 0)
   - `couple` (number): Tarifa para clase en pareja (requerido, ≥ 0)
@@ -246,6 +268,7 @@ POST /api/professor-types
   "message": "Tipo de profesor creado exitosamente",
   "professorType": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Profesor Senior",
     "rates": {
       "single": 25.50,
       "couple": 20.00,
@@ -262,6 +285,13 @@ POST /api/professor-types
 #### **Errores Posibles**
 
 **400 - Bad Request**
+```json
+{
+  "message": "El nombre del tipo de profesor es requerido."
+}
+```
+- **Causa**: El campo `name` no fue proporcionado, está vacío o es solo espacios en blanco
+
 ```json
 {
   "message": "El campo rates es requerido y debe ser un objeto."
@@ -282,6 +312,14 @@ POST /api/professor-types
 }
 ```
 - **Causa**: El campo `single` no es un número válido o es negativo (lo mismo aplica para `couple` y `group`)
+
+**409 - Conflict**
+```json
+{
+  "message": "Ya existe un nombre del tipo de profesor con el mismo name: 'Profesor Senior'. Este campo debe ser único."
+}
+```
+- **Causa**: Ya existe un tipo de profesor con el mismo nombre
 
 **401 - Unauthorized**
 ```json
@@ -376,6 +414,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pr
 [
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Profesor Senior",
     "rates": {
       "single": 25.50,
       "couple": 20.00,
@@ -388,6 +427,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pr
   },
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+    "name": "Profesor Junior",
     "rates": {
       "single": 30.00,
       "couple": 25.00,
@@ -400,6 +440,7 @@ Este endpoint no requiere parámetros de consulta. Retorna todos los tipos de pr
   },
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
+    "name": "Profesor Asistente",
     "rates": {
       "single": 20.00,
       "couple": 15.00,
@@ -495,6 +536,7 @@ GET /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+  "name": "Profesor Senior",
   "rates": {
     "single": 25.50,
     "couple": 20.00,
@@ -599,6 +641,7 @@ PUT /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
 #### **Request Body**
 ```json
 {
+  "name": "Profesor Senior Actualizado",
   "rates": {
     "single": 30.00,
     "couple": 25.00,
@@ -608,14 +651,19 @@ PUT /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
 ```
 
 #### **Campos Disponibles para Actualización**
-- `rates` (object): Objeto con las tarifas del profesor
-  - `single` (number): Tarifa para clase individual (requerido, ≥ 0)
-  - `couple` (number): Tarifa para clase en pareja (requerido, ≥ 0)
-  - `group` (number): Tarifa para clase grupal (requerido, ≥ 0)
+- `name` (string, opcional): Nombre del tipo de profesor
+  - **Requisitos**: 
+    - Si se proporciona, no puede estar vacío
+    - No puede ser solo espacios en blanco
+    - Debe ser único (no puede existir otro tipo de profesor con el mismo nombre)
+- `rates` (object, opcional): Objeto con las tarifas del profesor
+  - `single` (number): Tarifa para clase individual (requerido si se proporciona rates, ≥ 0)
+  - `couple` (number): Tarifa para clase en pareja (requerido si se proporciona rates, ≥ 0)
+  - `group` (number): Tarifa para clase grupal (requerido si se proporciona rates, ≥ 0)
 
 #### **Notas Importantes**
-- El campo `rates` es **requerido** en el request body
-- Solo se actualiza el campo `rates`
+- Se requiere **al menos uno** de los campos: `name` o `rates`
+- Se pueden actualizar ambos campos (`name` y `rates`) en la misma petición
 - **NO se puede actualizar el campo `status`** - usar endpoints específicos para activar/anular
 - El campo `updatedAt` se actualiza automáticamente
 
@@ -625,6 +673,7 @@ PUT /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
   "message": "Tipo de profesor actualizado exitosamente",
   "professorType": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Profesor Senior Actualizado",
     "rates": {
       "single": 30.00,
       "couple": 25.00,
@@ -650,10 +699,10 @@ PUT /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
 
 ```json
 {
-  "message": "Se requiere el campo rates para actualizar el tipo de profesor."
+  "message": "Se requiere al menos uno de los campos: name o rates para actualizar el tipo de profesor."
 }
 ```
-- **Causa**: No se proporcionó el campo `rates` en el request body
+- **Causa**: No se proporcionó ningún campo para actualizar (se requiere al menos `name` o `rates`)
 
 ```json
 {
@@ -676,6 +725,14 @@ PUT /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
 }
 ```
 - **Causa**: No existe un tipo de profesor con el ID proporcionado
+
+**409 - Conflict**
+```json
+{
+  "message": "Ya existe un nombre del tipo de profesor con el mismo name: 'Profesor Senior'. Este campo debe ser único."
+}
+```
+- **Causa**: Ya existe otro tipo de profesor con el mismo nombre
 
 **401 - Unauthorized**
 ```json
@@ -701,21 +758,27 @@ PUT /api/professor-types/64f8a1b2c3d4e5f6a7b8c9d0
 
 #### **Ejemplo de Uso (JavaScript/Fetch)**
 ```javascript
-const actualizarTipoProfesor = async (id, rates) => {
+const actualizarTipoProfesor = async (id, updateData) => {
   try {
+    const body = {};
+    if (updateData.name !== undefined) {
+      body.name = updateData.name;
+    }
+    if (updateData.rates !== undefined) {
+      body.rates = {
+        single: updateData.rates.single,
+        couple: updateData.rates.couple,
+        group: updateData.rates.group
+      };
+    }
+
     const response = await fetch(`http://localhost:3000/api/professor-types/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({
-        rates: {
-          single: rates.single,
-          couple: rates.couple,
-          group: rates.group
-        }
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -731,6 +794,30 @@ const actualizarTipoProfesor = async (id, rates) => {
     throw error;
   }
 };
+
+// Uso: actualizar solo name
+await actualizarTipoProfesor('64f8a1b2c3d4e5f6a7b8c9d0', {
+  name: 'Profesor Senior Actualizado'
+});
+
+// Uso: actualizar solo rates
+await actualizarTipoProfesor('64f8a1b2c3d4e5f6a7b8c9d0', {
+  rates: {
+    single: 30.00,
+    couple: 25.00,
+    group: 18.50
+  }
+});
+
+// Uso: actualizar ambos
+await actualizarTipoProfesor('64f8a1b2c3d4e5f6a7b8c9d0', {
+  name: 'Profesor Senior Actualizado',
+  rates: {
+    single: 30.00,
+    couple: 25.00,
+    group: 18.50
+  }
+});
 ```
 
 ---
@@ -764,6 +851,7 @@ Este endpoint no requiere body, solo el ID en la URL.
   "message": "Tipo de profesor activado exitosamente",
   "professorType": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Profesor Senior",
     "rates": {
       "single": 25.50,
       "couple": 20.00,
@@ -881,6 +969,7 @@ Este endpoint no requiere body, solo el ID en la URL.
   "message": "Tipo de profesor anulado exitosamente",
   "professorType": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Profesor Senior",
     "rates": {
       "single": 25.50,
       "couple": 20.00,
@@ -974,7 +1063,7 @@ const anularTipoProfesor = async (id) => {
 ### **Flujo 1: Crear y Activar un Tipo de Profesor**
 ```javascript
 // 1. Crear tipo de profesor
-const nuevoTipoProfesor = await crearTipoProfesor({
+const nuevoTipoProfesor = await crearTipoProfesor('Profesor Senior', {
   single: 25.50,
   couple: 20.00,
   group: 15.75
@@ -982,6 +1071,7 @@ const nuevoTipoProfesor = await crearTipoProfesor({
 
 // 2. El tipo de profesor se crea automáticamente como activo (status = 1)
 console.log(nuevoTipoProfesor.statusText); // "Activo"
+console.log(nuevoTipoProfesor.name); // "Profesor Senior"
 ```
 
 ### **Flujo 2: Anular y Reactivar un Tipo de Profesor**
@@ -998,20 +1088,24 @@ const tipoProfesorReactivated = await activarTipoProfesor(tipoProfesor._id);
 console.log(tipoProfesorReactivated.statusText); // "Activo"
 ```
 
-### **Flujo 3: Actualizar Tarifas de Tipo de Profesor**
+### **Flujo 3: Actualizar Nombre y Tarifas de Tipo de Profesor**
 ```javascript
 // 1. Obtener tipo de profesor
 const tipoProfesor = await obtenerTipoProfesorPorId("64f8a1b2c3d4e5f6a7b8c9d0");
 
-// 2. Actualizar tarifas
+// 2. Actualizar nombre y tarifas
 const tipoProfesorActualizado = await actualizarTipoProfesor(
   tipoProfesor._id, 
   {
-    single: 30.00,
-    couple: 25.00,
-    group: 18.50
+    name: 'Profesor Senior Actualizado',
+    rates: {
+      single: 30.00,
+      couple: 25.00,
+      group: 18.50
+    }
   }
 );
+console.log(tipoProfesorActualizado.name); // "Profesor Senior Actualizado"
 console.log(tipoProfesorActualizado.rates.single); // 30.00
 ```
 
@@ -1027,6 +1121,7 @@ console.log(tipoProfesorActualizado.rates.single); // 30.00
 | `401` | Unauthorized | Token no proporcionado |
 | `403` | Forbidden | Token inválido o expirado, o falta de permisos |
 | `404` | Not Found | Recurso no encontrado |
+| `409` | Conflict | Conflicto (ej: nombre duplicado) |
 | `500` | Internal Server Error | Error interno del servidor |
 
 ---
@@ -1038,9 +1133,12 @@ console.log(tipoProfesorActualizado.rates.single); // 30.00
 3. **Roles**: Usuarios con rol `professor` solo pueden listar y obtener tipos de profesor por ID
 4. **Status**: El campo `status` solo puede modificarse mediante los endpoints específicos (`/activate` y `/anular`)
 5. **IDs**: Los IDs son ObjectIds de MongoDB y deben tener un formato válido
-6. **Validaciones**: Las tarifas deben ser números mayores o iguales a 0
+6. **Validaciones**: 
+   - El campo `name` debe ser único y no puede estar vacío
+   - Las tarifas deben ser números mayores o iguales a 0
 7. **Timestamps**: Los campos `createdAt` y `updatedAt` se gestionan automáticamente
-8. **Rates**: El campo `rates` es requerido y debe contener los tres campos: `single`, `couple`, y `group`
+8. **Name**: El campo `name` es requerido al crear y opcional al actualizar (pero debe ser único si se proporciona)
+9. **Rates**: El campo `rates` es requerido al crear y opcional al actualizar, pero si se proporciona debe contener los tres campos: `single`, `couple`, y `group`
 
 ---
 

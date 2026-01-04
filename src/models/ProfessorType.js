@@ -21,6 +21,12 @@ const RatesSchema = new mongoose.Schema({
 }, { _id: false }); // No necesitamos un _id para este subdocumento
 
 const ProfessorTypeSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
     rates: { // ¡CAMPO 'rates' definido como RatesSchema!
         single: {
             type: Number,
