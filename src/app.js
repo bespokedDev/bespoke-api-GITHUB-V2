@@ -33,6 +33,7 @@ const rolesRoutes = require('./routes/roles.route');
 const canvaDocRoutes = require('./routes/canvaDoc.route');
 const categoryNotificationRoutes = require('./routes/categoryNotification.route');
 const notificationRoutes = require('./routes/notification.route');
+const professorTypeRoutes = require('./routes/professorType.route');
 const cors = require('cors');
 
 // ¡FORZAR CARGA DEL MODELO PROFESSORTYPE TEMPRANO! (Mantener si sigue siendo necesario para profesores)
@@ -83,6 +84,7 @@ app.use('/api/roles', rolesRoutes);
 app.use('/api/canva-docs', canvaDocRoutes);
 app.use('/api/category-notifications', categoryNotificationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/professor-types', professorTypeRoutes);
 
 // Ruta de health check para Vercel
 app.get('/', (req, res) => {

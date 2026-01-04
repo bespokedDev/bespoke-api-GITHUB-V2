@@ -34,6 +34,12 @@ const ProfessorTypeSchema = new mongoose.Schema({
             type: Number,
             min: 0
         }
+    },
+    status: {
+        type: Number,
+        required: true,
+        default: 1, // 1 = activo, 2 = anulado
+        enum: [1, 2]
     }
 }, {
     timestamps: true // Añade createdAt y updatedAt
