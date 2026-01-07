@@ -13,12 +13,12 @@ const planCtrl = {};
 planCtrl.create = async (req, res) => {
     try {
         // Validar que los campos requeridos estén presentes
-        const { name, weeklyClasses, pricing } = req.body;
+        const { name, weeklyClasses, pricing, planType, weeks } = req.body;
         
-        if (!name || !weeklyClasses || !pricing) {
+        if (!name || !weeklyClasses || !pricing || planType === undefined) {
             return res.status(400).json({
                 message: 'Faltan campos requeridos',
-                required: ['name', 'weeklyClasses', 'pricing'],
+                required: ['name', 'weeklyClasses', 'pricing', 'planType'],
                 received: Object.keys(req.body)
             });
         }
@@ -29,6 +29,24 @@ planCtrl.create = async (req, res) => {
                 message: 'weeklyClasses debe ser un número mayor o igual a 0',
                 received: weeklyClasses
             });
+        }
+
+        // Validar que planType sea 1 o 2
+        if (planType !== 1 && planType !== 2) {
+            return res.status(400).json({
+                message: 'planType debe ser 1 (mensual) o 2 (semanal)',
+                received: planType
+            });
+        }
+
+        // Validar weeks si se proporciona
+        if (weeks !== undefined && weeks !== null) {
+            if (typeof weeks !== 'number' || weeks < 0) {
+                return res.status(400).json({
+                    message: 'weeks debe ser un número mayor o igual a 0 o null',
+                    received: weeks
+                });
+            }
         }
 
         // Validar que pricing tenga la estructura correcta
@@ -55,6 +73,8 @@ planCtrl.create = async (req, res) => {
         const newPlan = new Plan({
             name: name.trim(),
             weeklyClasses,
+            planType,
+            weeks: weeks !== undefined ? weeks : null,
             pricing: {
                 single,
                 couple,
