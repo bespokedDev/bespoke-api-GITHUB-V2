@@ -319,6 +319,8 @@ studentCtrl.studentInfo = async (req, res) => {
 
         // Calcular el total sumando todos los available_balance de los enrollments del estudiante
         let totalAvailableBalance = 0;
+        // Calcular el total sumando todos los balance_per_class de los enrollments del estudiante
+        let totalBalancePerClass = 0;
         const enrollmentDetails = [];
 
         enrollments.forEach(enrollment => {
@@ -336,11 +338,16 @@ studentCtrl.studentInfo = async (req, res) => {
                 const availableBalance = enrollment.available_balance || 0;
                 totalAvailableBalance += availableBalance;
 
+                // Sumar el balance_per_class del enrollment (si existe, sino 0)
+                const balancePerClass = enrollment.balance_per_class || 0;
+                totalBalancePerClass += balancePerClass;
+
                 // Agregar información detallada del enrollment
+                // amount ahora es el balance_per_class del enrollment (no el amount del studentInfo)
                 enrollmentDetails.push({
                     enrollmentId: enrollment._id,
                     planName: enrollment.planId ? enrollment.planId.name : null,
-                    amount: studentInfo.amount || 0,
+                    amount: enrollment.balance_per_class || 0, // Usar balance_per_class en lugar de studentInfo.amount
                     rescheduleHours: enrollment.rescheduleHours || 0,
                     enrollmentType: enrollment.enrollmentType,
                     startDate: enrollment.startDate,
@@ -351,6 +358,7 @@ studentCtrl.studentInfo = async (req, res) => {
         });
 
         console.log('📊 Total available balance calculado:', totalAvailableBalance);
+        console.log('📊 Total balance per class calculado:', totalBalancePerClass);
         console.log('📋 Detalles de enrollments:', enrollmentDetails.length);
 
         // Obtener todos los IDs de enrollments del estudiante
@@ -560,6 +568,7 @@ studentCtrl.studentInfo = async (req, res) => {
                 studentCode: student.studentCode
             },
             totalAvailableBalance: totalAvailableBalance,
+            totalBalancePerClass: totalBalancePerClass,
             enrollmentDetails: enrollmentDetails,
             rescheduleTime: {
                 totalAvailableMinutes: totalRescheduleMinutes,

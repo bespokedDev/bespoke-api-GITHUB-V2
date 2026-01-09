@@ -101,6 +101,7 @@ const headers = {
   "pricePerStudent": 100,
   "totalAmount": 100,
   "available_balance": 100,
+  "balance_per_class": 0,
   "disolve_reason": null,
   "disolve_user": null,
   "rescheduleHours": 0,
@@ -165,6 +166,7 @@ const headers = {
   - `enrollmentType: "group"` → `plan.pricing.group`
 - `totalAmount` (number): **Calculado automáticamente** - Monto total. Se calcula como `precio_del_plan × número_de_estudiantes`
 - `available_balance` (number): **Calculado automáticamente** - Balance disponible. Se inicializa con el mismo valor de `totalAmount` al crear el enrollment
+- `balance_per_class` (number): **Calculado automáticamente** - Valor del dinero que le queda por cada clase que han visto los estudiantes. Se inicializa en `0` al crear el enrollment y se actualiza automáticamente cuando se crean incomes o se procesan pagos automáticos. Este valor nunca puede ser mayor que `totalAmount`
 - `disolve_reason` (string): Razón de disolución del enrollment (por defecto: null)
 - `disolve_user` (ObjectId): Referencia al usuario que realizó el disolve del enrollment (por defecto: null)
   - Se guarda automáticamente cuando se ejecuta el endpoint de disolución
@@ -482,6 +484,14 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
 - Se inicializa con el mismo valor de `totalAmount`
 - Ejemplo: Si `totalAmount = 360` → `available_balance = 360`
 
+**4. `balance_per_class`:**
+- Se inicializa en `0` al crear el enrollment
+- Se actualiza automáticamente cuando se crean incomes o se procesan pagos automáticos
+- Lógica de actualización:
+  - Si `available_balance >= totalAmount` → `balance_per_class = totalAmount`
+  - Si `available_balance < totalAmount` → `balance_per_class = available_balance`
+- Este valor nunca puede ser mayor que `totalAmount`
+
 **4. `amount` (por estudiante en `studentIds`):**
 
 - Se obtiene directamente del precio del plan según `enrollmentType` (sin dividir entre el número de estudiantes)
@@ -497,6 +507,7 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
   - `pricePerStudent = 100`
   - `totalAmount = 100 × 1 = 100`
   - `available_balance = 100`
+  - `balance_per_class = 0`
   - `amount` (por estudiante) = `100` (precio del plan según enrollmentType)
 
 **Ejemplo 2 - Enrollment Couple:**
@@ -507,6 +518,7 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
   - `pricePerStudent = 180`
   - `totalAmount = 180 × 2 = 360`
   - `available_balance = 360`
+  - `balance_per_class = 0`
   - `amount` (por estudiante) = `180` (precio del plan según enrollmentType, cada estudiante tiene el mismo amount)
 
 **Ejemplo 3 - Enrollment Group:**
@@ -517,9 +529,10 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
   - `pricePerStudent = 250`
   - `totalAmount = 250 × 3 = 750`
   - `available_balance = 750`
+  - `balance_per_class = 0`
   - `amount` (por estudiante) = `250` (precio del plan según enrollmentType, cada estudiante tiene el mismo amount)
 
-**Nota importante:** Todos estos campos (`pricePerStudent`, `totalAmount`, `available_balance`, y `amount` por estudiante) se calculan automáticamente al crear el enrollment. No es necesario enviarlos en el request body, y si se envían, serán sobrescritos por los cálculos automáticos.
+**Nota importante:** Todos estos campos (`pricePerStudent`, `totalAmount`, `available_balance`, `balance_per_class`, y `amount` por estudiante) se calculan automáticamente al crear el enrollment. No es necesario enviarlos en el request body, y si se envían, serán sobrescritos por los cálculos automáticos.
 
 #### **Lógica de Generación de Clases**
 
@@ -729,6 +742,7 @@ El cálculo depende del `planType` del plan:
     "pricePerStudent": 100,
     "totalAmount": 100,
     "available_balance": 100,
+    "balance_per_class": 0,
     "disolve_reason": null,
     "rescheduleHours": 0,
     "substituteProfessor": null,
@@ -1003,6 +1017,7 @@ Los siguientes campos sensibles **NO** se incluyen en la respuesta:
 - `pricePerStudent`
 - `totalAmount`
 - `available_balance`
+- `balance_per_class`
 - `rescheduleHours`
 - `graceDays`
 - `latePaymentPenalty`

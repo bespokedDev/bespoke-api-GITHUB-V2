@@ -1323,7 +1323,17 @@ incomesCtrl.create = async (req, res) => {
                                 amount: parseFloat(amountPerStudent.toFixed(2))
                             }));
 
-                            // 6. Verificar lógica de cancellationPaymentsEnabled
+                            // 6. Calcular nuevo balance_per_class
+                            // Lógica: Si (newAvailableBalance >= newTotalAmount) -> balance_per_class = newTotalAmount
+                            //         Si (newAvailableBalance < newTotalAmount) -> balance_per_class = newAvailableBalance
+                            let newBalancePerClass;
+                            if (newAvailableBalance >= newTotalAmount) {
+                                newBalancePerClass = parseFloat(newTotalAmount.toFixed(2));
+                            } else {
+                                newBalancePerClass = parseFloat(newAvailableBalance.toFixed(2));
+                            }
+
+                            // 7. Verificar lógica de cancellationPaymentsEnabled
                             const previousCancellationPaymentsEnabled = enrollment.cancellationPaymentsEnabled || false;
                             let newCancellationPaymentsEnabled = previousCancellationPaymentsEnabled;
 
@@ -1334,7 +1344,7 @@ incomesCtrl.create = async (req, res) => {
                                 // Desactivar pagos automáticos si el saldo es menor al total y estaba activado
                                 newCancellationPaymentsEnabled = false;
 
-                                // 7. Crear notificación cuando cancellationPaymentsEnabled cambia de true a false
+                                // 8. Crear notificación cuando cancellationPaymentsEnabled cambia de true a false
                                 try {
                                     const categoryNotificationId = new mongoose.Types.ObjectId('6941c9b30646c9359c7f9f68');
                                     
@@ -1400,21 +1410,24 @@ incomesCtrl.create = async (req, res) => {
                                 }
                             }
 
-                            // 8. Actualizar el enrollment con todos los cambios
+                            // 9. Actualizar el enrollment con todos los cambios
                             await Enrollment.findByIdAndUpdate(
                                 enrollment._id,
                                 {
                                     available_balance: parseFloat(newAvailableBalance.toFixed(2)),
                                     totalAmount: parseFloat(newTotalAmount.toFixed(2)),
+                                    balance_per_class: newBalancePerClass,
                                     studentIds: updatedStudentIds,
                                     cancellationPaymentsEnabled: newCancellationPaymentsEnabled
                                 },
                                 { new: true, runValidators: true }
                             );
 
+                            const currentBalancePerClass = enrollment.balance_per_class || 0;
                             console.log(`[INCOME CREATE] Enrollment ${enrollment._id} actualizado:`);
                             console.log(`  - available_balance: ${currentAvailableBalance} → ${newAvailableBalance.toFixed(2)}`);
                             console.log(`  - totalAmount: ${enrollment.totalAmount} → ${newTotalAmount.toFixed(2)}`);
+                            console.log(`  - balance_per_class: ${currentBalancePerClass} → ${newBalancePerClass}`);
                             console.log(`  - cancellationPaymentsEnabled: ${previousCancellationPaymentsEnabled} → ${newCancellationPaymentsEnabled}`);
                         }
                     }
@@ -1425,7 +1438,84 @@ incomesCtrl.create = async (req, res) => {
             }
         }
         // ====================================================================
-        // CASO 2: Income sin idEnrollment ni idProfessor (excedente)
+        // CASO 2: Income con idEnrollment pero sin idProfessor
+        // Solo actualizar balance_per_class (no se aplican otras reglas de negocio)
+        // ====================================================================
+        else if (saved.idEnrollment && saved.amountInDollars && !saved.idProfessor) {
+            try {
+                // Obtener el enrollment
+                const enrollment = await Enrollment.findById(saved.idEnrollment)
+                    .populate('planId')
+                    .lean();
+
+                if (!enrollment) {
+                    console.warn(`[INCOME CREATE] Enrollment ${saved.idEnrollment} no encontrado para actualizar balance_per_class`);
+                } else {
+                    // Calcular nuevo available_balance
+                    const currentAvailableBalance = enrollment.available_balance || 0;
+                    const newAvailableBalance = currentAvailableBalance + (saved.amountInDollars || 0);
+
+                    // Obtener el plan para calcular totalAmount
+                    const plan = enrollment.planId;
+                    if (!plan || !plan.pricing) {
+                        console.warn(`[INCOME CREATE] Plan no encontrado o sin pricing para enrollment ${enrollment._id}`);
+                    } else {
+                        // Calcular nuevo totalAmount según enrollmentType
+                        const currentTotalAmount = enrollment.totalAmount || 0;
+                        let newTotalAmount = currentTotalAmount;
+                        const numberOfStudents = enrollment.studentIds ? enrollment.studentIds.length : 0;
+
+                        if (numberOfStudents > 0) {
+                            let calculatedTotalAmount = 0;
+                            if (enrollment.enrollmentType === 'single') {
+                                calculatedTotalAmount = (plan.pricing.single || 0) * 1;
+                            } else if (enrollment.enrollmentType === 'couple') {
+                                calculatedTotalAmount = (plan.pricing.couple || 0) * 2;
+                            } else if (enrollment.enrollmentType === 'group') {
+                                calculatedTotalAmount = (plan.pricing.group || 0) * numberOfStudents;
+                            }
+
+                            // Solo actualizar totalAmount si el precio calculado es diferente al actual
+                            if (Math.abs(calculatedTotalAmount - currentTotalAmount) > 0.01) {
+                                newTotalAmount = calculatedTotalAmount;
+                            }
+
+                            // Calcular nuevo balance_per_class
+                            // Lógica: Si (newAvailableBalance >= newTotalAmount) -> balance_per_class = newTotalAmount
+                            //         Si (newAvailableBalance < newTotalAmount) -> balance_per_class = newAvailableBalance
+                            let newBalancePerClass;
+                            if (newAvailableBalance >= newTotalAmount) {
+                                newBalancePerClass = parseFloat(newTotalAmount.toFixed(2));
+                            } else {
+                                newBalancePerClass = parseFloat(newAvailableBalance.toFixed(2));
+                            }
+
+                            // Actualizar solo balance_per_class y available_balance
+                            await Enrollment.findByIdAndUpdate(
+                                enrollment._id,
+                                {
+                                    available_balance: parseFloat(newAvailableBalance.toFixed(2)),
+                                    totalAmount: parseFloat(newTotalAmount.toFixed(2)),
+                                    balance_per_class: newBalancePerClass
+                                },
+                                { new: true, runValidators: true }
+                            );
+
+                            const currentBalancePerClass = enrollment.balance_per_class || 0;
+                            console.log(`[INCOME CREATE] Enrollment ${enrollment._id} actualizado (sin idProfessor):`);
+                            console.log(`  - available_balance: ${currentAvailableBalance} → ${newAvailableBalance.toFixed(2)}`);
+                            console.log(`  - totalAmount: ${enrollment.totalAmount} → ${newTotalAmount.toFixed(2)}`);
+                            console.log(`  - balance_per_class: ${currentBalancePerClass} → ${newBalancePerClass}`);
+                        }
+                    }
+                }
+            } catch (enrollmentError) {
+                console.error(`[INCOME CREATE] Error actualizando balance_per_class para enrollment:`, enrollmentError.message);
+                // No fallar la creación del income si falla el procesamiento del enrollment
+            }
+        }
+        // ====================================================================
+        // CASO 3: Income sin idEnrollment ni idProfessor (excedente)
         // No se aplican reglas de negocio
         // ====================================================================
 

@@ -234,8 +234,8 @@ classRegistryCtrl.update = async (req, res) => {
         }
 
         if (classViewed !== undefined) {
-            if (![0, 1, 2].includes(classViewed)) {
-                return res.status(400).json({ message: 'El campo classViewed debe ser 0, 1 o 2.' });
+            if (![0, 1, 2, 3, 4].includes(classViewed)) {
+                return res.status(400).json({ message: 'El campo classViewed debe ser 0, 1, 2, 3 o 4.' });
             }
             updateFields.classViewed = classViewed;
         }
@@ -253,6 +253,100 @@ classRegistryCtrl.update = async (req, res) => {
 
         if (vocabularyContent !== undefined) {
             updateFields.vocabularyContent = vocabularyContent === null || vocabularyContent === '' ? null : vocabularyContent.trim();
+        }
+
+        // Lógica para actualizar balance_per_class cuando classViewed cambia a 1, 2 o 3
+        if (classViewed !== undefined && [1, 2, 3].includes(classViewed)) {
+            // Verificar que el classViewed anterior no sea ya 1, 2 o 3 (solo aplicar si cambia)
+            const previousClassViewed = existingClass.classViewed;
+            
+            if (previousClassViewed !== 1 && previousClassViewed !== 2 && previousClassViewed !== 3) {
+                // Obtener el enrollment relacionado
+                const enrollment = await Enrollment.findById(existingClass.enrollmentId).lean();
+                
+                if (!enrollment) {
+                    return res.status(404).json({ message: 'Enrollment no encontrado para esta clase.' });
+                }
+
+                // Contar clases originales (reschedule = 0) para este enrollment
+                const totalClasesOriginales = await ClassRegistry.countDocuments({
+                    enrollmentId: enrollment._id,
+                    reschedule: 0
+                });
+
+                if (totalClasesOriginales === 0) {
+                    return res.status(400).json({ 
+                        message: 'No se pueden calcular costos: el enrollment no tiene clases originales registradas.' 
+                    });
+                }
+
+                // Calcular valor por clase
+                const valorPorClase = enrollment.totalAmount / totalClasesOriginales;
+
+                // Calcular valor a restar según el tipo de classViewed
+                let valorARestar = 0;
+
+                if (classViewed === 1 || classViewed === 3) {
+                    // Clase vista completa o no show: restar el valor completo
+                    valorARestar = valorPorClase;
+                } else if (classViewed === 2) {
+                    // Clase parcialmente vista: validar minutesViewed y calcular proporción
+                    const minutes = minutesViewed !== undefined ? minutesViewed : existingClass.minutesViewed;
+                    
+                    if (minutes === null || minutes === undefined) {
+                        return res.status(400).json({ 
+                            message: 'El campo minutesViewed es requerido cuando classViewed es 2 (clase parcialmente vista).' 
+                        });
+                    }
+
+                    if (minutes < 15) {
+                        return res.status(400).json({ 
+                            message: 'El campo minutesViewed debe ser mayor o igual a 15 cuando classViewed es 2.' 
+                        });
+                    }
+
+                    // Calcular multiplicador según minutos
+                    let multiplicador = 0;
+                    if (minutes >= 0 && minutes <= 15) {
+                        multiplicador = 0.25;
+                    } else if (minutes > 15 && minutes <= 30) {
+                        multiplicador = 0.5;
+                    } else if (minutes > 30 && minutes <= 45) {
+                        multiplicador = 0.75;
+                    } else if (minutes > 45 && minutes <= 60) {
+                        multiplicador = 1.0;
+                    } else {
+                        // Si es más de 60 minutos, se considera como 1.0 (clase completa)
+                        multiplicador = 1.0;
+                    }
+
+                    valorARestar = valorPorClase * multiplicador;
+                }
+
+                // Validar que balance_per_class no quede negativo
+                const nuevoBalancePerClass = enrollment.balance_per_class - valorARestar;
+                
+                if (nuevoBalancePerClass < 0) {
+                    return res.status(400).json({ 
+                        message: `No se puede actualizar la clase: el balance_per_class quedaría negativo (${nuevoBalancePerClass.toFixed(2)}). Balance actual: ${enrollment.balance_per_class.toFixed(2)}, Valor a restar: ${valorARestar.toFixed(2)}.` 
+                    });
+                }
+
+                // Actualizar balance_per_class en el enrollment
+                await Enrollment.findByIdAndUpdate(
+                    enrollment._id,
+                    { 
+                        balance_per_class: parseFloat(nuevoBalancePerClass.toFixed(2))
+                    },
+                    { new: true, runValidators: true }
+                );
+
+                console.log(`[CLASS REGISTRY] Balance actualizado para enrollment ${enrollment._id}:`);
+                console.log(`  - Balance anterior: ${enrollment.balance_per_class.toFixed(2)}`);
+                console.log(`  - Valor restado: ${valorARestar.toFixed(2)}`);
+                console.log(`  - Balance nuevo: ${nuevoBalancePerClass.toFixed(2)}`);
+                console.log(`  - Clase: ${existingClass._id}, classViewed: ${classViewed}, reschedule: ${existingClass.reschedule}`);
+            }
         }
 
         const updatedClass = await ClassRegistry.findByIdAndUpdate(

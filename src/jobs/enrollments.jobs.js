@@ -506,11 +506,23 @@ const processAutomaticPayments = async () => {
                     }
                 }
 
+                // Calcular nuevo balance_per_class
+                // Lógica: Si (newAvailableBalance >= newTotalAmount) -> balance_per_class = newTotalAmount
+                //         Si (newAvailableBalance < newTotalAmount) -> balance_per_class = newAvailableBalance
+                // El balance_per_class nunca puede ser mayor que totalAmount
+                let newBalancePerClass;
+                if (newAvailableBalance >= newTotalAmount) {
+                    newBalancePerClass = parseFloat(newTotalAmount.toFixed(2));
+                } else {
+                    newBalancePerClass = parseFloat(newAvailableBalance.toFixed(2));
+                }
+
                 // Preparar actualización del enrollment
                 const updateData = {
-                    available_balance: newAvailableBalance,
+                    available_balance: parseFloat(newAvailableBalance.toFixed(2)),
+                    balance_per_class: newBalancePerClass,
                     studentIds: updatedStudentIds,
-                    totalAmount: newTotalAmount
+                    totalAmount: parseFloat(newTotalAmount.toFixed(2))
                 };
 
                 // Verificar si después de la resta el saldo es insuficiente para el próximo pago
@@ -537,11 +549,15 @@ const processAutomaticPayments = async () => {
 
                     // Crear notificación de desactivación
                     await createAutomaticPaymentsDisabledNotification(enrollment, students);
+                    const currentBalancePerClass = enrollment.balance_per_class || 0;
                     console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pagos automáticos desactivados para enrollment ${enrollment._id} - saldo insuficiente después del pago`);
+                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] balance_per_class actualizado: ${currentBalancePerClass} → ${newBalancePerClass}`);
                 } else {
                     // Actualizar enrollment sin desactivar pagos automáticos
                     await Enrollment.findByIdAndUpdate(enrollment._id, updateData);
+                    const currentBalancePerClass = enrollment.balance_per_class || 0;
                     console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pago automático procesado exitosamente para enrollment ${enrollment._id}`);
+                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] balance_per_class actualizado: ${currentBalancePerClass} → ${newBalancePerClass}`);
                 }
 
                 paymentsProcessed++;
@@ -582,10 +598,100 @@ const initAutomaticPaymentsCronjob = () => {
     console.log('[CRONJOB PAGOS AUTOMÁTICOS] Cronjob de pagos automáticos configurado (diario a medianoche - PRODUCCIÓN)');
 };
 
+/**
+ * Procesa enrollments con profesores suplentes expirados
+ * Busca enrollments donde substituteProfessor.expiryDate coincide con el día actual o ya pasó
+ * y establece substituteProfessor en null
+ */
+const processExpiredSubstituteProfessors = async () => {
+    try {
+        console.log('[CRONJOB PROFESORES SUPLENTES] Iniciando procesamiento de profesores suplentes expirados...');
+
+        // Obtener la fecha actual a medianoche (solo fecha, sin hora)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(today);
+        todayEnd.setHours(23, 59, 59, 999);
+
+        // Buscar enrollments con substituteProfessor no null
+        const enrollmentsWithSubstitute = await Enrollment.find({
+            substituteProfessor: { $ne: null },
+            'substituteProfessor.expiryDate': { $exists: true }
+        }).lean();
+
+        console.log(`[CRONJOB PROFESORES SUPLENTES] Enrollments con profesor suplente encontrados: ${enrollmentsWithSubstitute.length}`);
+
+        let processedCount = 0;
+        let expiredCount = 0;
+
+        for (const enrollment of enrollmentsWithSubstitute) {
+            try {
+                if (!enrollment.substituteProfessor || !enrollment.substituteProfessor.expiryDate) {
+                    continue;
+                }
+
+                // Obtener la fecha de expiración
+                const expiryDate = new Date(enrollment.substituteProfessor.expiryDate);
+                expiryDate.setHours(0, 0, 0, 0);
+
+                // Comparar solo las fechas (sin hora)
+                // Si expiryDate es menor o igual a today, el profesor suplente ha expirado
+                if (expiryDate <= today) {
+                    // Actualizar el enrollment poniendo substituteProfessor en null
+                    await Enrollment.findByIdAndUpdate(
+                        enrollment._id,
+                        { $set: { substituteProfessor: null } },
+                        { new: true, runValidators: true }
+                    );
+
+                    console.log(`[CRONJOB PROFESORES SUPLENTES] Profesor suplente removido del enrollment ${enrollment._id}`);
+                    console.log(`  - Fecha de expiración: ${expiryDate.toISOString().split('T')[0]}`);
+                    console.log(`  - Fecha actual: ${today.toISOString().split('T')[0]}`);
+                    console.log(`  - Profesor suplente ID: ${enrollment.substituteProfessor.professorId}`);
+
+                    expiredCount++;
+                }
+
+                processedCount++;
+            } catch (error) {
+                console.error(`[CRONJOB PROFESORES SUPLENTES] Error procesando enrollment ${enrollment._id}:`, error.message);
+                processedCount++;
+            }
+        }
+
+        console.log(`[CRONJOB PROFESORES SUPLENTES] Procesamiento completado:`);
+        console.log(`  - Enrollments procesados: ${processedCount}`);
+        console.log(`  - Profesores suplentes expirados y removidos: ${expiredCount}`);
+        console.log('[CRONJOB PROFESORES SUPLENTES] Finalizando procesamiento de profesores suplentes expirados');
+
+    } catch (error) {
+        console.error('[CRONJOB PROFESORES SUPLENTES] Error en procesamiento de profesores suplentes expirados:', error);
+    }
+};
+
+/**
+ * Inicializa el cronjob para procesar profesores suplentes expirados
+ * Se ejecuta diariamente a las 00:00 (medianoche)
+ */
+const initSubstituteProfessorExpiryCronjob = () => {
+    // Cron expression para producción: '0 0 * * *' = todos los días a las 00:00
+    cron.schedule('0 0 * * *', async () => {
+        console.log(`[CRONJOB PROFESORES SUPLENTES] Ejecutando cronjob de profesores suplentes expirados - ${new Date().toISOString()}`);
+        await processExpiredSubstituteProfessors();
+    }, {
+        scheduled: true,
+        timezone: "America/Caracas" // Ajustar según tu zona horaria
+    });
+
+    console.log('[CRONJOB PROFESORES SUPLENTES] Cronjob de profesores suplentes expirados configurado (diario a medianoche - PRODUCCIÓN)');
+};
+
 module.exports = {
     processEnrollmentsPaymentStatus,
     initEnrollmentsPaymentCronjob,
     processAutomaticPayments,
-    initAutomaticPaymentsCronjob
+    initAutomaticPaymentsCronjob,
+    processExpiredSubstituteProfessors,
+    initSubstituteProfessorExpiryCronjob
 };
 
