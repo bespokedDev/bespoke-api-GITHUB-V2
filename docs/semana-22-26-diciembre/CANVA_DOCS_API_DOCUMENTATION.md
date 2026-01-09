@@ -7,7 +7,7 @@
 - **Header**: `Authorization: Bearer <token>`
 - **Acceso**: Todas las rutas requieren autenticación
 - **Middleware**: `verifyToken` y `verifyRole`
-- **Rol Requerido**: Solo `admin`
+- **Roles Permitidos**: `admin`, `professor`, `student` (según el endpoint)
 
 ### **Ejemplo de Headers**
 ```javascript
@@ -17,6 +17,23 @@ const headers = {
 };
 ```
 
+### **Control de Acceso por Rol**
+
+#### **Admin**
+- ✅ Acceso completo a todos los endpoints sin restricciones
+- ✅ Puede crear, ver, actualizar, anular y activar documentos de cualquier estudiante
+
+#### **Profesor**
+- ✅ Puede crear documentos solo para estudiantes con enrollments activos asignados a él
+- ✅ Puede ver solo documentos de estudiantes con enrollments activos asignados a él
+- ✅ Puede actualizar, anular y activar solo documentos de estudiantes con enrollments activos asignados a él
+- ⚠️ Si intenta trabajar con un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
+
+#### **Estudiante**
+- ✅ Puede ver solo sus propios documentos (listar y obtener por ID)
+- ❌ No puede crear, actualizar, anular ni activar documentos
+- ⚠️ Si intenta acceder a documentos de otros estudiantes, recibirá un error `403 Forbidden`
+
 ---
 
 ## 🚀 **Endpoints Disponibles**
@@ -24,12 +41,12 @@ const headers = {
 ### **📋 Resumen de Endpoints**
 | Método | Ruta | Descripción | Acceso |
 |--------|------|-------------|--------|
-| `POST` | `/api/canva-docs` | Crear nuevo documento Canva | Solo admin |
-| `GET` | `/api/canva-docs` | Listar todos los documentos Canva | Solo admin |
-| `GET` | `/api/canva-docs/:id` | Obtener documento Canva por ID | Solo admin |
-| `PUT` | `/api/canva-docs/:id` | Actualizar documento Canva | Solo admin |
-| `PATCH` | `/api/canva-docs/:id/anular` | Anular documento Canva | Solo admin |
-| `PATCH` | `/api/canva-docs/:id/activate` | Activar documento Canva | Solo admin |
+| `POST` | `/api/canva-docs` | Crear nuevo documento Canva | Admin, Profesor |
+| `GET` | `/api/canva-docs` | Listar todos los documentos Canva | Admin, Profesor, Estudiante |
+| `GET` | `/api/canva-docs/:id` | Obtener documento Canva por ID | Admin, Profesor, Estudiante |
+| `PUT` | `/api/canva-docs/:id` | Actualizar documento Canva | Admin, Profesor |
+| `PATCH` | `/api/canva-docs/:id/anular` | Anular documento Canva | Admin, Profesor |
+| `PATCH` | `/api/canva-docs/:id/activate` | Activar documento Canva | Admin, Profesor |
 
 ---
 
@@ -75,6 +92,12 @@ const headers = {
 #### **POST** `/api/canva-docs`
 
 Crea un nuevo documento Canva en el sistema.
+
+**Acceso**: `admin`, `professor`
+
+**Restricciones**:
+- **Admin**: Puede crear documentos para cualquier estudiante
+- **Profesor**: Solo puede crear documentos para estudiantes que tengan un enrollment activo (`status: 1`) asignado a él. Si intenta crear un documento para un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
 
 #### **Headers**
 ```javascript
@@ -128,6 +151,9 @@ Crea un nuevo documento Canva en el sistema.
 - Campos requeridos faltantes
 - ID de estudiante inválido
 - Descripción vacía
+
+**403 Forbidden**
+- (Profesor) No tienes permisos para crear documentos para este estudiante. Debes tener un enrollment activo con el estudiante.
 
 **404 Not Found**
 - Estudiante no encontrado
@@ -186,6 +212,13 @@ createCanvaDoc({
 
 Obtiene una lista de todos los documentos Canva registrados en el sistema. Permite filtros opcionales.
 
+**Acceso**: `admin`, `professor`, `student`
+
+**Restricciones**:
+- **Admin**: Puede ver todos los documentos. Puede usar el filtro `studentId` para filtrar por estudiante específico
+- **Profesor**: Solo ve documentos de estudiantes que tengan un enrollment activo (`status: 1`) asignado a él. El filtro `studentId` se ignora si se proporciona (se aplica automáticamente el filtro por sus estudiantes)
+- **Estudiante**: Solo ve sus propios documentos (automáticamente filtrados por su `studentId`). El filtro `studentId` se ignora si se proporciona
+
 #### **Headers**
 ```javascript
 {
@@ -194,8 +227,10 @@ Obtiene una lista de todos los documentos Canva registrados en el sistema. Permi
 ```
 
 #### **Query Parameters (Opcionales)**
-- `studentId` (String): Filtrar por ID de estudiante
+- `studentId` (String): Filtrar por ID de estudiante (solo para admin)
 - `isActive` (Boolean/String): Filtrar por estado activo/inactivo (`true` o `false`)
+
+**⚠️ Nota**: Los parámetros de query se aplican según el rol del usuario. Para profesores y estudiantes, el filtro de `studentId` se aplica automáticamente según sus permisos.
 
 #### **Request Body**
 No requiere body.
@@ -299,6 +334,13 @@ listCanvaDocs({ studentId: '64f8a1b2c3d4e5f6a7b8c9d1', isActive: true });
 
 Obtiene la información completa de un documento Canva específico por su ID.
 
+**Acceso**: `admin`, `professor`, `student`
+
+**Restricciones**:
+- **Admin**: Puede ver cualquier documento
+- **Profesor**: Solo puede ver documentos de estudiantes que tengan un enrollment activo (`status: 1`) asignado a él. Si intenta acceder a un documento de un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
+- **Estudiante**: Solo puede ver sus propios documentos. Si intenta acceder a un documento de otro estudiante, recibirá un error `403 Forbidden`
+
 #### **Headers**
 ```javascript
 {
@@ -337,6 +379,10 @@ No requiere body.
 
 **400 Bad Request**
 - ID de documento Canva inválido
+
+**403 Forbidden**
+- (Profesor) No tienes permisos para ver este documento. Debes tener un enrollment activo con el estudiante.
+- (Estudiante) No tienes permisos para ver este documento
 
 **404 Not Found**
 - Documento Canva no encontrado
@@ -385,6 +431,12 @@ getCanvaDocById('64f8a1b2c3d4e5f6a7b8c9d0');
 
 Actualiza la información de un documento Canva existente. Puedes enviar solo los campos que deseas actualizar.
 
+**Acceso**: `admin`, `professor`
+
+**Restricciones**:
+- **Admin**: Puede actualizar cualquier documento y asignarlo a cualquier estudiante
+- **Profesor**: Solo puede actualizar documentos de estudiantes que tengan un enrollment activo (`status: 1`) asignado a él. Si intenta actualizar un documento de un estudiante sin enrollment activo, o asignar el documento a un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
+
 #### **Headers**
 ```javascript
 {
@@ -407,7 +459,7 @@ Actualiza la información de un documento Canva existente. Puedes enviar solo lo
 
 **Campos Opcionales:**
 - `description` (String): Nueva descripción del documento Canva
-- `studentId` (String/ObjectId): Nuevo ID del estudiante
+- `studentId` (String/ObjectId): Nuevo ID del estudiante (si se actualiza, el profesor debe tener un enrollment activo con el nuevo estudiante)
 - `isActive` (Boolean): Nuevo estado del documento
 
 **⚠️ Nota:** Solo envía los campos que deseas actualizar. Los campos no enviados permanecerán sin cambios.
@@ -439,6 +491,10 @@ Actualiza la información de un documento Canva existente. Puedes enviar solo lo
 - ID de estudiante inválido
 - Descripción vacía
 - isActive no es booleano
+
+**403 Forbidden**
+- (Profesor) No tienes permisos para actualizar este documento. Debes tener un enrollment activo con el estudiante.
+- (Profesor) No tienes permisos para asignar este documento a este estudiante. Debes tener un enrollment activo con el estudiante.
 
 **404 Not Found**
 - Documento Canva no encontrado
@@ -496,6 +552,12 @@ updateCanvaDoc('64f8a1b2c3d4e5f6a7b8c9d0', {
 
 Anula un documento Canva estableciendo `isActive` a `false`.
 
+**Acceso**: `admin`, `professor`
+
+**Restricciones**:
+- **Admin**: Puede anular cualquier documento
+- **Profesor**: Solo puede anular documentos de estudiantes que tengan un enrollment activo (`status: 1`) asignado a él. Si intenta anular un documento de un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
+
 #### **Headers**
 ```javascript
 {
@@ -534,6 +596,9 @@ No requiere body.
 **400 Bad Request**
 - ID de documento Canva inválido
 - El documento Canva ya está anulado
+
+**403 Forbidden**
+- (Profesor) No tienes permisos para anular este documento. Debes tener un enrollment activo con el estudiante.
 
 **404 Not Found**
 - Documento Canva no encontrado
@@ -582,6 +647,12 @@ anularCanvaDoc('64f8a1b2c3d4e5f6a7b8c9d0');
 
 Activa un documento Canva estableciendo `isActive` a `true`.
 
+**Acceso**: `admin`, `professor`
+
+**Restricciones**:
+- **Admin**: Puede activar cualquier documento
+- **Profesor**: Solo puede activar documentos de estudiantes que tengan un enrollment activo (`status: 1`) asignado a él. Si intenta activar un documento de un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
+
 #### **Headers**
 ```javascript
 {
@@ -620,6 +691,9 @@ No requiere body.
 **400 Bad Request**
 - ID de documento Canva inválido
 - El documento Canva ya está activado
+
+**403 Forbidden**
+- (Profesor) No tienes permisos para activar este documento. Debes tener un enrollment activo con el estudiante.
 
 **404 Not Found**
 - Documento Canva no encontrado
@@ -748,10 +822,24 @@ En algunos casos, también puede incluir:
 }
 ```
 
-#### **403 Forbidden**
+#### **403 Forbidden - Rol Insuficiente**
 ```json
 {
-  "message": "Token inválido o expirado"
+  "message": "Acceso denegado: Se requiere uno de los siguientes roles: admin, professor"
+}
+```
+
+#### **403 Forbidden - Sin Permisos (Profesor)**
+```json
+{
+  "message": "No tienes permisos para crear documentos para este estudiante. Debes tener un enrollment activo con el estudiante."
+}
+```
+
+#### **403 Forbidden - Sin Permisos (Estudiante)**
+```json
+{
+  "message": "No tienes permisos para ver este documento"
 }
 ```
 
@@ -759,10 +847,30 @@ En algunos casos, también puede incluir:
 
 ## 📌 **Notas Importantes**
 
-### **Control de Acceso**
-- **Todas las rutas** requieren autenticación JWT
-- **Solo el rol `admin`** puede acceder a todas las rutas
-- Si intentas acceder sin el rol adecuado, recibirás un error `403 Forbidden`
+### **Control de Acceso por Rol**
+
+#### **Admin**
+- ✅ Acceso completo a todos los endpoints sin restricciones
+- ✅ Puede crear, ver, actualizar, anular y activar documentos de cualquier estudiante
+- ✅ Puede usar todos los filtros de query sin restricciones
+
+#### **Profesor**
+- ✅ Puede crear documentos solo para estudiantes con enrollments activos (`status: 1`) asignados a él
+- ✅ Puede ver solo documentos de estudiantes con enrollments activos asignados a él
+- ✅ Puede actualizar, anular y activar solo documentos de estudiantes con enrollments activos asignados a él
+- ⚠️ Si intenta trabajar con un estudiante sin enrollment activo, recibirá un error `403 Forbidden`
+- ⚠️ El filtro `studentId` en query se ignora automáticamente (se filtra por sus estudiantes asignados)
+
+#### **Estudiante**
+- ✅ Puede ver solo sus propios documentos (automáticamente filtrados por su `studentId`)
+- ❌ No puede crear, actualizar, anular ni activar documentos
+- ⚠️ Si intenta acceder a documentos de otros estudiantes, recibirá un error `403 Forbidden`
+- ⚠️ El filtro `studentId` en query se ignora automáticamente (se filtra por su propio ID)
+
+### **Enrollments Activos**
+- Un enrollment activo es aquel que tiene `status: 1` en la colección `Enrollment`
+- Los profesores solo pueden trabajar con estudiantes que tengan enrollments activos donde el `professorId` coincida con el ID del profesor autenticado
+- Si un enrollment se desactiva o se disuelve, el profesor perderá acceso a los documentos de ese estudiante hasta que se cree un nuevo enrollment activo
 
 ### **Validaciones**
 - `description`: Debe ser un string no vacío
@@ -781,8 +889,10 @@ En algunos casos, también puede incluir:
 
 ### **Filtros en List**
 - Puedes filtrar los documentos Canva por:
-  - `studentId`: Para obtener solo los documentos de un estudiante específico
+  - `studentId`: Para obtener solo los documentos de un estudiante específico (solo admin puede usar este filtro de manera explícita)
   - `isActive`: Para obtener solo documentos activos (`true`) o anulados (`false`)
+  
+**⚠️ Importante**: Para profesores y estudiantes, el filtro por `studentId` se aplica automáticamente según sus permisos y no puede ser sobrescrito mediante query parameters.
 
 ---
 
@@ -835,5 +945,16 @@ Si tienes preguntas o encuentras problemas con la API, contacta al equipo de des
 
 ---
 
-**Última actualización:** Enero 2024
+**Última actualización:** Enero 2025
+
+---
+
+## 📝 **Cambios Recientes**
+
+### **Actualización de Roles y Permisos (Enero 2025)**
+- ✅ Los profesores ahora pueden crear, ver, actualizar, anular y activar documentos Canva para estudiantes con enrollments activos asignados
+- ✅ Los estudiantes ahora pueden ver sus propios documentos Canva
+- ✅ Implementada validación automática de enrollments activos para profesores
+- ✅ Filtrado automático por `studentId` según el rol del usuario
+- ✅ Agregados nuevos mensajes de error `403 Forbidden` para casos de permisos insuficientes
 

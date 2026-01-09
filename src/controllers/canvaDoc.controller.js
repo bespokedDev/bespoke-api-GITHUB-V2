@@ -1,19 +1,43 @@
 // controllers/canvaDoc.controller.js
 const CanvaDoc = require('../models/CanvaDoc');
 const Student = require('../models/Student');
+const Enrollment = require('../models/Enrollment');
 const utilsFunctions = require('../utils/utilsFunctions');
 const mongoose = require('mongoose');
 
 const canvaDocCtrl = {};
 
 /**
+ * Función helper para verificar si un profesor tiene un enrollment activo con un estudiante
+ * @param {String} professorId - ID del profesor
+ * @param {String} studentId - ID del estudiante
+ * @returns {Boolean} - true si existe un enrollment activo, false en caso contrario
+ */
+const hasActiveEnrollmentWithStudent = async (professorId, studentId) => {
+    try {
+        const enrollment = await Enrollment.findOne({
+            professorId: new mongoose.Types.ObjectId(professorId),
+            'studentIds.studentId': new mongoose.Types.ObjectId(studentId),
+            status: 1 // Solo enrollments activos
+        }).lean();
+
+        return !!enrollment;
+    } catch (error) {
+        console.error('Error verificando enrollment activo:', error);
+        return false;
+    }
+};
+
+/**
  * @route POST /api/canva-docs
  * @description Crea un nuevo documento Canva
- * @access Private (Requiere JWT - Solo admin)
+ * @access Private (Requiere JWT - Admin y profesor)
  */
 canvaDocCtrl.create = async (req, res) => {
     try {
         const { description, studentId } = req.body;
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
 
         // Validar campos requeridos
         if (!description || !studentId) {
@@ -44,6 +68,16 @@ canvaDocCtrl.create = async (req, res) => {
             return res.status(404).json({
                 message: 'Estudiante no encontrado'
             });
+        }
+
+        // Si el rol es profesor, verificar que tenga un enrollment activo con el estudiante
+        if (userRole === 'professor' && userId) {
+            const hasAccess = await hasActiveEnrollmentWithStudent(userId, studentId);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'No tienes permisos para crear documentos para este estudiante. Debes tener un enrollment activo con el estudiante.'
+                });
+            }
         }
 
         // Crear el nuevo documento Canva
@@ -92,21 +126,60 @@ canvaDocCtrl.create = async (req, res) => {
 /**
  * @route GET /api/canva-docs
  * @description Lista todos los documentos Canva con filtros opcionales
- * @access Private (Requiere JWT - Solo admin)
+ * @access Private (Requiere JWT - Admin, profesor y estudiante)
  */
 canvaDocCtrl.list = async (req, res) => {
     try {
         const { studentId, isActive } = req.query;
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
         const query = {};
 
-        // Filtro por studentId
-        if (studentId) {
+        // Si el rol es estudiante, solo puede ver sus propios documentos
+        if (userRole === 'student' && userId) {
+            query.studentId = new mongoose.Types.ObjectId(userId);
+        }
+        // Si el rol es profesor, solo puede ver documentos de estudiantes con enrollments activos
+        else if (userRole === 'professor' && userId) {
+            // Buscar todos los enrollments activos del profesor
+            const enrollments = await Enrollment.find({
+                professorId: new mongoose.Types.ObjectId(userId),
+                status: 1 // Solo enrollments activos
+            }).select('studentIds.studentId').lean();
+
+            // Extraer IDs únicos de estudiantes
+            const studentIds = [];
+            enrollments.forEach(enrollment => {
+                if (enrollment.studentIds && Array.isArray(enrollment.studentIds)) {
+                    enrollment.studentIds.forEach(studentInfo => {
+                        const id = studentInfo.studentId?.toString() || studentInfo.studentId;
+                        if (id && !studentIds.includes(id)) {
+                            studentIds.push(new mongoose.Types.ObjectId(id));
+                        }
+                    });
+                }
+            });
+
+            // Si no tiene estudiantes asignados, retornar array vacío
+            if (studentIds.length === 0) {
+                return res.status(200).json({
+                    message: 'Documentos Canva obtenidos exitosamente',
+                    count: 0,
+                    canvaDocs: []
+                });
+            }
+
+            query.studentId = { $in: studentIds };
+        }
+        // Si el rol es admin, puede ver todos los documentos (sin restricción)
+        // Si se proporciona studentId en query, lo respetamos
+        if (userRole === 'admin' && studentId) {
             if (!mongoose.Types.ObjectId.isValid(studentId)) {
                 return res.status(400).json({
                     message: 'ID de estudiante inválido'
                 });
             }
-            query.studentId = studentId;
+            query.studentId = new mongoose.Types.ObjectId(studentId);
         }
 
         // Filtro por isActive
@@ -136,11 +209,13 @@ canvaDocCtrl.list = async (req, res) => {
 /**
  * @route GET /api/canva-docs/:id
  * @description Obtiene un documento Canva por su ID
- * @access Private (Requiere JWT - Solo admin)
+ * @access Private (Requiere JWT - Admin, profesor y estudiante)
  */
 canvaDocCtrl.getById = async (req, res) => {
     try {
         const { id } = req.params;
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
@@ -157,6 +232,28 @@ canvaDocCtrl.getById = async (req, res) => {
                 message: 'Documento Canva no encontrado'
             });
         }
+
+        // Validar permisos según el rol
+        const studentIdStr = canvaDoc.studentId?._id?.toString() || canvaDoc.studentId?.toString();
+
+        // Si el rol es estudiante, solo puede ver sus propios documentos
+        if (userRole === 'student' && userId) {
+            if (userId.toString() !== studentIdStr) {
+                return res.status(403).json({
+                    message: 'No tienes permisos para ver este documento'
+                });
+            }
+        }
+        // Si el rol es profesor, verificar que tenga un enrollment activo con el estudiante
+        else if (userRole === 'professor' && userId) {
+            const hasAccess = await hasActiveEnrollmentWithStudent(userId, studentIdStr);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'No tienes permisos para ver este documento. Debes tener un enrollment activo con el estudiante.'
+                });
+            }
+        }
+        // Si el rol es admin, no necesita validación adicional (acceso completo)
 
         res.status(200).json({
             message: 'Documento Canva obtenido exitosamente',
@@ -181,12 +278,14 @@ canvaDocCtrl.getById = async (req, res) => {
 /**
  * @route PUT /api/canva-docs/:id
  * @description Actualiza un documento Canva por su ID
- * @access Private (Requiere JWT - Solo admin)
+ * @access Private (Requiere JWT - Admin y profesor)
  */
 canvaDocCtrl.update = async (req, res) => {
     try {
         const { id } = req.params;
         const { description, studentId, isActive } = req.body;
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
@@ -200,6 +299,19 @@ canvaDocCtrl.update = async (req, res) => {
             return res.status(404).json({
                 message: 'Documento Canva no encontrado'
             });
+        }
+
+        // Validar permisos según el rol
+        const currentStudentIdStr = existingCanvaDoc.studentId?.toString();
+
+        // Si el rol es profesor, verificar que tenga un enrollment activo con el estudiante actual
+        if (userRole === 'professor' && userId) {
+            const hasAccess = await hasActiveEnrollmentWithStudent(userId, currentStudentIdStr);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'No tienes permisos para actualizar este documento. Debes tener un enrollment activo con el estudiante.'
+                });
+            }
         }
 
         // Construir objeto de actualización
@@ -227,6 +339,16 @@ canvaDocCtrl.update = async (req, res) => {
                 return res.status(404).json({
                     message: 'Estudiante no encontrado'
                 });
+            }
+
+            // Si el rol es profesor, verificar que tenga un enrollment activo con el nuevo estudiante
+            if (userRole === 'professor' && userId) {
+                const hasAccess = await hasActiveEnrollmentWithStudent(userId, studentId);
+                if (!hasAccess) {
+                    return res.status(403).json({
+                        message: 'No tienes permisos para asignar este documento a este estudiante. Debes tener un enrollment activo con el estudiante.'
+                    });
+                }
             }
 
             updateFields.studentId = studentId;
@@ -286,11 +408,13 @@ canvaDocCtrl.update = async (req, res) => {
 /**
  * @route PATCH /api/canva-docs/:id/anular
  * @description Anula un documento Canva (establece isActive a false)
- * @access Private (Requiere JWT - Solo admin)
+ * @access Private (Requiere JWT - Admin y profesor)
  */
 canvaDocCtrl.anular = async (req, res) => {
     try {
         const { id } = req.params;
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
@@ -304,6 +428,19 @@ canvaDocCtrl.anular = async (req, res) => {
             return res.status(404).json({
                 message: 'Documento Canva no encontrado'
             });
+        }
+
+        // Validar permisos según el rol
+        const studentIdStr = canvaDoc.studentId?.toString();
+
+        // Si el rol es profesor, verificar que tenga un enrollment activo con el estudiante
+        if (userRole === 'professor' && userId) {
+            const hasAccess = await hasActiveEnrollmentWithStudent(userId, studentIdStr);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'No tienes permisos para anular este documento. Debes tener un enrollment activo con el estudiante.'
+                });
+            }
         }
 
         // Verificar si ya está anulado
@@ -350,11 +487,13 @@ canvaDocCtrl.anular = async (req, res) => {
 /**
  * @route PATCH /api/canva-docs/:id/activate
  * @description Activa un documento Canva (establece isActive a true)
- * @access Private (Requiere JWT - Solo admin)
+ * @access Private (Requiere JWT - Admin y profesor)
  */
 canvaDocCtrl.activate = async (req, res) => {
     try {
         const { id } = req.params;
+        const userRole = req.user?.role || null;
+        const userId = req.user?.id || null;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
@@ -368,6 +507,19 @@ canvaDocCtrl.activate = async (req, res) => {
             return res.status(404).json({
                 message: 'Documento Canva no encontrado'
             });
+        }
+
+        // Validar permisos según el rol
+        const studentIdStr = canvaDoc.studentId?.toString();
+
+        // Si el rol es profesor, verificar que tenga un enrollment activo con el estudiante
+        if (userRole === 'professor' && userId) {
+            const hasAccess = await hasActiveEnrollmentWithStudent(userId, studentIdStr);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'No tienes permisos para activar este documento. Debes tener un enrollment activo con el estudiante.'
+                });
+            }
         }
 
         // Verificar si ya está activado
