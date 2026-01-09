@@ -9,23 +9,23 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // POST /api/bonuses - Crea un nuevo abono
 // Acceso: admin
-router.post('/', verifyToken, verifyRole('admin'), bonusCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), bonusCtrl.create);
 
 // GET /api/bonuses - Lista todos los abonos
 // Acceso: admin
-router.get('/', verifyToken, verifyRole('admin'), bonusCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), bonusCtrl.list);
 
 // GET /api/bonuses/professor/:idProfessor - Obtiene todos los abonos de un profesor específico
 // Acceso: admin
-router.get('/professor/:idProfessor', verifyToken, verifyRole('admin'), bonusCtrl.getBonusesByProfessorId);
+router.get('/professor/:idProfessor', verifyToken, verifyRole('admin', 'admin-jr'), bonusCtrl.getBonusesByProfessorId);
 
 // GET /api/bonuses/:id - Obtiene un abono por su ID
 // Esta ruta debe ir DESPUÉS de rutas específicas como /professor/:idProfessor para evitar conflictos
 // Acceso: admin
-router.get('/:id', verifyToken, verifyRole('admin'), bonusCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), bonusCtrl.getById);
 
 // DELETE /api/bonuses/:id - Elimina un abono por su ID
 // Acceso: admin
-router.delete('/:id', verifyToken, verifyRole('admin'), bonusCtrl.remove);
+router.delete('/:id', verifyToken, verifyRole('admin', 'admin-jr'), bonusCtrl.remove);
 
 module.exports = router;

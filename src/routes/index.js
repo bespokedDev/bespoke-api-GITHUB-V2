@@ -8,6 +8,6 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // POST / - Login (si esta ruta se usa)
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), userCtrl.login);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), userCtrl.login);
 
 module.exports = router;

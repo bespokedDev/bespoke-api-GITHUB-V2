@@ -79,7 +79,8 @@ const headers = {
       "roleGroup": "Líder",
       "willingHomework": 1,
       "availabityToPractice": "2hr",
-      "learningDifficulty": 0
+      "learningDifficulty": 0,
+      "dislikes": "No le gustan las clases muy largas"
     }
   ],
   "professorId": {
@@ -113,6 +114,7 @@ const headers = {
   "lateFee": 2,
   "penalizationMoney": 0,
   "penalizationId": null,
+  "penalizationCount": 0,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -144,6 +146,7 @@ const headers = {
   - `willingHomework` (number): Si quieren hacer tareas o no (status): `1` si quiere tareas, `0` si no (por defecto: null)
   - `availabityToPractice` (string): Disponibilidad para practicar en horas (1hr, 2hr, 3hr) (por defecto: null)
   - `learningDifficulty` (number): Si o no: `1` para si, `0` para no (por defecto: null)
+  - `dislikes` (string): Preferencias o cosas que no le gustan al estudiante (por defecto: null)
 - `professorId` (ObjectId): Referencia al profesor asignado
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
 - `alias` (string): Alias opcional para la matrícula
@@ -188,6 +191,10 @@ const headers = {
 - `penalizationMoney` (number): Monto de dinero de la penalización aplicada por retraso en el pago (por defecto: 0)
 - `penalizationId` (ObjectId): Referencia al tipo de penalización aplicada (referencia a la colección `Penalizacion`, por defecto: null)
   - Si se proporciona, debe ser un ObjectId válido de un registro existente en la colección `penalizaciones`
+- `penalizationCount` (number): Número total de penalizaciones que tiene el enrollment (por defecto: 0)
+  - Este contador se incrementa cada vez que se crea una penalización asociada al enrollment
+  - Permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
+  - Valor mínimo: 0 (no puede ser negativo)
 - `status` (number): Estado de la matrícula
   - `1` = Activo
   - `2` = Inactivo
@@ -323,7 +330,8 @@ El sistema determina automáticamente el tipo de cálculo de clases según el `p
       "roleGroup": "Líder",
       "willingHomework": 1,
       "availabityToPractice": "2hr",
-      "learningDifficulty": 0
+      "learningDifficulty": 0,
+      "dislikes": "No le gustan las clases muy largas"
     }
   ],
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
@@ -363,7 +371,8 @@ El sistema determina automáticamente el tipo de cálculo de clases según el `p
       "roleGroup": "Líder",
       "willingHomework": 1,
       "availabityToPractice": "2hr",
-      "learningDifficulty": 0
+      "learningDifficulty": 0,
+      "dislikes": "No le gustan las clases muy largas"
     }
   ],
   "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
@@ -411,6 +420,7 @@ El sistema determina automáticamente el tipo de cálculo de clases según el `p
   - `willingHomework` (number): **OPCIONAL** - Si quieren hacer tareas o no: `1` si quiere tareas, `0` si no
   - `availabityToPractice` (string): **OPCIONAL** - Disponibilidad para practicar en horas (1hr, 2hr, 3hr)
   - `learningDifficulty` (number): **OPCIONAL** - Si o no: `1` para si, `0` para no
+  - `dislikes` (string): **OPCIONAL** - Preferencias o cosas que no le gustan al estudiante
 - `professorId` (ObjectId): ID del profesor
 - `enrollmentType` (string): Tipo de matrícula (`single`, `couple`, `group`)
 - `language` (string): Idioma (`English`, `French`)
@@ -447,6 +457,10 @@ El sistema determina automáticamente el tipo de cálculo de clases según el `p
 - `penalizationMoney` (number): Monto de dinero de la penalización aplicada por retraso en el pago (por defecto: 0)
 - `penalizationId` (ObjectId): Referencia al tipo de penalización aplicada (referencia a la colección `Penalizacion`, por defecto: null)
   - Si se proporciona, debe ser un ObjectId válido de un registro existente en la colección `penalizaciones`
+- `penalizationCount` (number): Número total de penalizaciones que tiene el enrollment (por defecto: 0)
+  - Este contador se incrementa cada vez que se crea una penalización asociada al enrollment
+  - Permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
+  - Valor mínimo: 0 (no puede ser negativo)
 - `studentIds` (Array[Object]): Array de objetos con información detallada de cada estudiante
   - `studentId` (ObjectId): ID del estudiante
   - `amount` (number): **Calculado automáticamente** - Monto disponible por estudiante (precio del plan según `enrollmentType` dividido entre el número de estudiantes)
@@ -465,6 +479,7 @@ El sistema determina automáticamente el tipo de cálculo de clases según el `p
   - `willingHomework` (number): Si quieren hacer tareas o no: `1` si quiere tareas, `0` si no
   - `availabityToPractice` (string): Disponibilidad para practicar en horas (1hr, 2hr, 3hr)
   - `learningDifficulty` (number): Si o no: `1` para si, `0` para no
+  - `dislikes` (string): Preferencias o cosas que no le gustan al estudiante
 
 #### **Cálculos Automáticos de Precios y Montos**
 
@@ -753,6 +768,7 @@ El cálculo depende del `planType` del plan:
     "lateFee": 2,
     "penalizationMoney": 0,
     "penalizationId": null,
+    "penalizationCount": 0,
     "status": 1,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -837,11 +853,60 @@ GET /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
   ],
   "startDate": "2024-01-22T00:00:00.000Z",
   "endDate": "2024-02-21T23:59:59.999Z",
+  "penalizationCount": 2,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
-  "updatedAt": "2024-01-15T10:30:00.000Z"
+  "updatedAt": "2024-01-15T10:30:00.000Z",
+  "penalizationInfo": {
+    "penalizationCount": 2,
+    "totalPenalizations": 2,
+    "monetaryPenalizations": {
+      "count": 1,
+      "totalAmount": 50.00
+    },
+    "admonitionPenalizations": {
+      "count": 1
+    },
+    "totalPenalizationMoney": 50.00
+  }
 }
 ```
+
+#### **Información de Penalizaciones (`penalizationInfo`)**
+
+El endpoint incluye información detallada sobre las penalizaciones del enrollment en el objeto `penalizationInfo`:
+
+**Estructura de `penalizationInfo`:**
+```json
+{
+  "penalizationCount": 2,
+  "totalPenalizations": 2,
+  "monetaryPenalizations": {
+    "count": 1,
+    "totalAmount": 50.00
+  },
+  "admonitionPenalizations": {
+    "count": 1
+  },
+  "totalPenalizationMoney": 50.00
+}
+```
+
+**Campos de `penalizationInfo`:**
+- **`penalizationCount`** (number): Número total de penalizaciones que tiene el enrollment (campo del modelo Enrollment)
+- **`totalPenalizations`** (number): Número total de penalizaciones activas (`status: 1`) asociadas al enrollment
+- **`monetaryPenalizations`** (object): Información sobre penalizaciones monetarias
+  - **`count`** (number): Cantidad de penalizaciones monetarias (donde `penalizationMoney > 0` y `status: 1`)
+  - **`totalAmount`** (number): Suma total del dinero de todas las penalizaciones monetarias
+- **`admonitionPenalizations`** (object): Información sobre penalizaciones de tipo amonestación
+  - **`count`** (number): Cantidad de penalizaciones de tipo amonestación (donde `penalizationMoney = 0` o `null` y `status: 1`)
+- **`totalPenalizationMoney`** (number): Suma total de dinero de todas las penalizaciones activas (incluye todas las penalizaciones con `status: 1`, incluso si `penalizationMoney` es 0)
+
+**Categorización de Penalizaciones:**
+- **Penalización Monetaria**: Penalizaciones con `status: 1` y `penalizationMoney > 0`
+- **Penalización de Tipo Amonestación**: Penalizaciones con `status: 1` y `penalizationMoney = 0` o `null`
+
+**Nota**: Solo se consideran penalizaciones activas (`status: 1`) para todos los cálculos y categorizaciones.
 
 #### **Errores Posibles**
 - `404`: Matrícula no encontrada

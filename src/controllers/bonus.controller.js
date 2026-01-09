@@ -2,6 +2,8 @@
 const Bonus = require('../models/Bonus');
 const Professor = require('../models/Professor'); // Necesitamos este modelo para validar idProfessor
 const Payout = require('../models/Payout');     // Necesitamos este modelo para validar idPayout (si existe)
+const Notification = require('../models/Notification');
+const CategoryNotification = require('../models/CategoryNotification');
 
 const utilsFunctions = require('../utils/utilsFunctions'); // Asumo que tienes esta utilidad
 const mongoose = require('mongoose');
@@ -47,7 +49,51 @@ bonusCtrl.create = async (req, res) => {
 
         const savedBonus = await newBonus.save();
 
-        // 4. Popular los datos referenciados para la respuesta
+        // 4. Crear notificación para el profesor
+        try {
+            // Obtener o crear categoría de notificación "Administrativa"
+            const categoryNotificationId = '6941c9b30646c9359c7f9f68';
+            if (!mongoose.Types.ObjectId.isValid(categoryNotificationId)) {
+                throw new Error('ID de categoría de notificación inválido');
+            }
+
+            let categoryNotification = await CategoryNotification.findById(categoryNotificationId);
+            if (!categoryNotification) {
+                categoryNotification = new CategoryNotification({
+                    _id: new mongoose.Types.ObjectId(categoryNotificationId),
+                    category_notification_description: 'Administrativa',
+                    isActive: true
+                });
+                await categoryNotification.save();
+            }
+
+            // Construir descripción de la notificación
+            let notificationDescription = `Se ha generado un bono de $${parseFloat(amount).toFixed(2)} para el profesor.`;
+            if (reason && reason.trim() !== '') {
+                notificationDescription += ` Razón: ${reason.trim()}.`;
+            }
+
+            // Crear notificación
+            const newNotification = new Notification({
+                idCategoryNotification: categoryNotification._id,
+                notification_description: notificationDescription,
+                idPenalization: null,
+                idEnrollment: null,
+                idProfessor: new mongoose.Types.ObjectId(idProfessor),
+                idStudent: [],
+                userId: null,
+                isActive: true
+            });
+
+            await newNotification.save();
+            console.log(`[BONUS] Notificación creada para profesor ${idProfessor} por bono de $${parseFloat(amount).toFixed(2)}`);
+        } catch (notificationError) {
+            // No fallar la creación del bonus si falla la notificación
+            console.error(`[BONUS] Error creando notificación para profesor ${idProfessor}:`, notificationError.message);
+            // Continuar con el proceso, el bonus ya se guardó
+        }
+
+        // 5. Popular los datos referenciados para la respuesta
         const populatedBonus = await Bonus.findById(savedBonus._id)
                                           .populate('idProfessor', 'name ciNumber email') // Popula campos relevantes del profesor
                                           .populate('idPayout', 'month total')       // Popula campos relevantes del pago (si aplica)

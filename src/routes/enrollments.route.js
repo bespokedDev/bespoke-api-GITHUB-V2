@@ -9,11 +9,11 @@ const verifyRole = require('../middlewares/verifyRole'); // Importa el middlewar
 
 // POST /api/enrollments - Crea una nueva matrícula
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), enrollmentCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.create);
 
 // GET /api/enrollments - Lista todas las matrículas
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), enrollmentCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.list);
 
 // GET /api/enrollments/professor/:professorId - Obtiene matrículas por ID de profesor
 // Acceso: Admin y profesor
@@ -34,26 +34,26 @@ router.get('/:id', verifyToken, verifyRole('admin', 'professor', 'student'), enr
 
 // PUT /api/enrollments/:id - Actualiza una matrícula por su ID
 // Acceso: Admin y profesor
-router.put('/:id', verifyToken, verifyRole('admin', 'professor'), enrollmentCtrl.update);
+router.put('/:id', verifyToken, verifyRole('admin', 'professor', 'admin-jr'), enrollmentCtrl.update);
 
 // PATCH /api/enrollments/:id/deactivate - Desactiva una matrícula
 // Acceso: Solo admin
-router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), enrollmentCtrl.deactivate);
+router.patch('/:id/deactivate', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.deactivate);
 
 // PATCH /api/enrollments/:id/activate - Activa una matrícula
 // Acceso: Solo admin
-router.patch('/:id/activate', verifyToken, verifyRole('admin'), enrollmentCtrl.activate);
+router.patch('/:id/activate', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.activate);
 
 // PATCH /api/enrollments/:id/disolve - Disuelve una matrícula
 // Acceso: Solo admin
-router.patch('/:id/disolve', verifyToken, verifyRole('admin'), enrollmentCtrl.disolve);
+router.patch('/:id/disolve', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.disolve);
 
 // PATCH /api/enrollments/:id/pause - Pausa una matrícula
 // Acceso: Solo admin
-router.patch('/:id/pause', verifyToken, verifyRole('admin'), enrollmentCtrl.pause);
+router.patch('/:id/pause', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.pause);
 
 // PATCH /api/enrollments/:id/resume - Reactiva una matrícula pausada
 // Acceso: Solo admin
-router.patch('/:id/resume', verifyToken, verifyRole('admin'), enrollmentCtrl.resume);
+router.patch('/:id/resume', verifyToken, verifyRole('admin', 'admin-jr'), enrollmentCtrl.resume);
 
 module.exports = router;

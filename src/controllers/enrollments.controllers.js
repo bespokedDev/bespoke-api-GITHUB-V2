@@ -5,6 +5,7 @@ const Student = require('../models/Student'); // Necesario para popular
 const Professor = require('../models/Professor'); // Necesario para popular
 const ClassRegistry = require('../models/ClassRegistry'); // Modelo para registros de clase
 const Penalizacion = require('../models/Penalizacion'); // Necesario para validar penalizationId
+const PenalizationRegistry = require('../models/PenalizationRegistry'); // Necesario para obtener información de penalizaciones
 const User = require('../models/User'); // Necesario para obtener información del usuario que disuelve
 const Notification = require('../models/Notification'); // Necesario para crear notificaciones
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
@@ -322,10 +323,23 @@ enrollmentCtrl.create = async (req, res) => {
         
         // Asignar amount a cada estudiante: el precio del plan según enrollmentType
         // NO se divide entre el número de estudiantes, cada estudiante tiene el mismo amount
-        req.body.studentIds = studentIds.map(studentInfo => ({
-            ...studentInfo,
-            amount: planPrice
-        }));
+        req.body.studentIds = studentIds.map(studentInfo => {
+            const processedInfo = {
+                ...studentInfo,
+                amount: planPrice
+            };
+            
+            // Procesar dislikes: aplicar trim si es string, establecer null si está vacío
+            if (processedInfo.dislikes !== undefined && processedInfo.dislikes !== null) {
+                if (typeof processedInfo.dislikes === 'string') {
+                    processedInfo.dislikes = processedInfo.dislikes.trim() || null;
+                }
+            } else {
+                processedInfo.dislikes = null;
+            }
+            
+            return processedInfo;
+        });
 
         // Validar lateFee (OBLIGATORIO y debe ser diferente de 0)
         if (req.body.lateFee === undefined || req.body.lateFee === null) {
@@ -559,7 +573,43 @@ enrollmentCtrl.getById = async (req, res) => {
         if (!enrollment) {
             return res.status(404).json({ message: 'Matrícula no encontrada' });
         }
-        res.status(200).json(enrollment);
+
+        // Obtener información de penalizaciones del enrollment
+        const penalizations = await PenalizationRegistry.find({
+            enrollmentId: enrollment._id,
+            status: 1 // Solo penalizaciones activas
+        }).lean();
+
+        // Contar total de penalizaciones
+        const totalPenalizations = penalizations.length;
+
+        // Categorizar penalizaciones
+        const monetaryPenalizations = penalizations.filter(p => p.penalizationMoney && p.penalizationMoney > 0);
+        const admonitionPenalizations = penalizations.filter(p => !p.penalizationMoney || p.penalizationMoney === 0);
+
+        // Calcular total de dinero de penalizaciones
+        const totalPenalizationMoney = penalizations.reduce((sum, p) => {
+            return sum + (p.penalizationMoney || 0);
+        }, 0);
+
+        // Agregar información de penalizaciones al enrollment
+        const enrollmentWithPenalizations = {
+            ...enrollment,
+            penalizationInfo: {
+                penalizationCount: enrollment.penalizationCount || 0,
+                totalPenalizations: totalPenalizations,
+                monetaryPenalizations: {
+                    count: monetaryPenalizations.length,
+                    totalAmount: monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0)
+                },
+                admonitionPenalizations: {
+                    count: admonitionPenalizations.length
+                },
+                totalPenalizationMoney: parseFloat(totalPenalizationMoney.toFixed(2))
+            }
+        };
+
+        res.status(200).json(enrollmentWithPenalizations);
     } catch (error) {
         console.error('Error al obtener matrícula por ID:', error);
         if (error.name === 'CastError') {
@@ -611,6 +661,24 @@ enrollmentCtrl.update = async (req, res) => {
         }
         if (req.body.professorId && (!mongoose.Types.ObjectId.isValid(req.body.professorId) || !(await Professor.findById(req.body.professorId)))) {
             return res.status(400).json({ message: 'ID de Profesor inválido o no existente para actualizar.' });
+        }
+
+        // Procesar dislikes en studentIds si se están actualizando
+        if (req.body.studentIds && Array.isArray(req.body.studentIds)) {
+            req.body.studentIds = req.body.studentIds.map(studentInfo => {
+                const processedInfo = { ...studentInfo };
+                
+                // Procesar dislikes: aplicar trim si es string, establecer null si está vacío
+                if (processedInfo.dislikes !== undefined && processedInfo.dislikes !== null) {
+                    if (typeof processedInfo.dislikes === 'string') {
+                        processedInfo.dislikes = processedInfo.dislikes.trim() || null;
+                    }
+                } else {
+                    processedInfo.dislikes = null;
+                }
+                
+                return processedInfo;
+            });
         }
 
         const updatedEnrollment = await Enrollment.findByIdAndUpdate(req.params.id, req.body, { new: true });

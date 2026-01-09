@@ -4,7 +4,115 @@ const Enrollment = require('../models/Enrollment');
 const ClassRegistry = require('../models/ClassRegistry');
 const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
+const PenalizationRegistry = require('../models/PenalizationRegistry');
 const mongoose = require('mongoose');
+
+/**
+ * Función helper para crear penalización y notificación por clases perdidas
+ */
+const createClassLostPenalization = async (enrollment, monthYear, numberOfClasses) => {
+    try {
+        // Validar que el enrollment tenga professorId
+        if (!enrollment.professorId) {
+            console.log(`[CRONJOB] Enrollment ${enrollment._id} no tiene professorId asignado. Omitiendo creación de penalización.`);
+            return false;
+        }
+
+        const professorObjectId = new mongoose.Types.ObjectId(enrollment.professorId);
+        
+        // Obtener o crear categoría de notificación "Administrativa"
+        const categoryNotificationId = '6941c9b30646c9359c7f9f68';
+        if (!mongoose.Types.ObjectId.isValid(categoryNotificationId)) {
+            throw new Error('ID de categoría de notificación inválido');
+        }
+        
+        let categoryNotification = await CategoryNotification.findById(categoryNotificationId);
+        if (!categoryNotification) {
+            categoryNotification = new CategoryNotification({
+                _id: new mongoose.Types.ObjectId(categoryNotificationId),
+                category_notification_description: 'Administrativa',
+                isActive: true
+            });
+            await categoryNotification.save();
+        }
+
+        // Construir descripción profesional
+        const monthNames = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                           'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const [year, month] = monthYear.split('-');
+        const monthName = monthNames[parseInt(month) - 1];
+        
+        const penalizationDescription = `Las clases que no se gestionaron en el mes de ${monthName} ${year} pasarán a clases perdidas y el dinero de las mismas no se pagará. Para cualquier reclamo comunicarse con el admin de Bespoke.`;
+
+        // Verificar si ya existe una penalización para este profesor y enrollment en este mes
+        const existingPenalization = await PenalizationRegistry.findOne({
+            professorId: professorObjectId,
+            enrollmentId: enrollment._id,
+            penalization_description: { $regex: monthName, $options: 'i' },
+            status: 1
+        });
+
+        if (existingPenalization) {
+            console.log(`[CRONJOB] Penalización ya existe para profesor ${enrollment.professorId} y enrollment ${enrollment._id} en el mes ${monthYear}. Omitiendo creación.`);
+            return false;
+        }
+
+        // Crear penalización
+        const newPenalization = new PenalizationRegistry({
+            idPenalizacion: null,
+            idpenalizationLevel: null,
+            enrollmentId: enrollment._id,
+            professorId: professorObjectId,
+            studentId: null,
+            penalization_description: penalizationDescription,
+            penalizationMoney: null, // Amonestación, no monetaria
+            lateFee: null,
+            endDate: null,
+            support_file: null,
+            userId: null,
+            payOutId: null,
+            status: 1 // Activa
+        });
+
+        const savedPenalization = await newPenalization.save();
+        console.log(`[CRONJOB] Penalización creada para profesor ${enrollment.professorId} por ${numberOfClasses} clase(s) perdida(s) en el mes ${monthYear}`);
+
+        // Verificar si ya existe una notificación para este profesor, enrollment y penalización
+        const existingNotification = await Notification.findOne({
+            idProfessor: professorObjectId,
+            idEnrollment: enrollment._id,
+            idPenalization: savedPenalization._id,
+            isActive: true
+        });
+
+        if (existingNotification) {
+            console.log(`[CRONJOB] Notificación ya existe para profesor ${enrollment.professorId}, enrollment ${enrollment._id} y penalización ${savedPenalization._id}. Omitiendo creación.`);
+            return true; // La penalización se creó, aunque la notificación ya exista
+        }
+
+        // Crear notificación
+        const notificationDescription = `Las clases que no se gestionaron en el mes de ${monthName} ${year} del enrollment ${enrollment._id} pasarán a clases perdidas y el dinero de las mismas no se pagará. Para cualquier reclamo comunicarse con el admin de Bespoke.`;
+        
+        const newNotification = new Notification({
+            idCategoryNotification: categoryNotification._id,
+            notification_description: notificationDescription,
+            idPenalization: savedPenalization._id,
+            idEnrollment: enrollment._id,
+            idProfessor: professorObjectId,
+            idStudent: [],
+            userId: null,
+            isActive: true
+        });
+
+        await newNotification.save();
+        console.log(`[CRONJOB] Notificación creada para profesor ${enrollment.professorId} y enrollment ${enrollment._id}`);
+        return true;
+
+    } catch (error) {
+        console.error(`[CRONJOB] Error creando penalización y notificación por clases perdidas para enrollment ${enrollment._id}:`, error.message);
+        return false;
+    }
+};
 
 /**
  * Función helper para crear notificación de finalización de clases
@@ -66,13 +174,14 @@ const createClassFinalizationNotification = async (enrollment, stats) => {
 
 /**
  * Cronjob para finalizar clases de enrollments vencidos
- * Se ejecuta diariamente a las 00:00 (medianoche)
+ * Se ejecuta el último día de cada mes a las 00:00 (medianoche)
  * 
  * Reglas de negocio:
  * 1. Buscar enrollments cuyo endDate < fecha actual
  * 2. Para cada enrollment:
  *    - Revisar todas sus ClassRegistry
  *    - Si classViewed = 0 y reschedule = 0 → cambiar a classViewed = 4 (Class Lost - clase perdida)
+ *    - Si se actualizaron clases a Class Lost, crear penalización y notificación para el profesor
  *    - Generar notificación con estadísticas:
  *      - Clases tipo 4 (Class Lost - clase perdida)
  *      - Clases tipo 1 (vistas)
@@ -85,6 +194,11 @@ const processClassFinalization = async () => {
         const now = new Date();
         now.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparaciones
 
+        // Obtener mes y año actual (el mes que está terminando)
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1; // getMonth() devuelve 0-11, necesitamos 1-12
+        const monthYear = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
         // Buscar enrollments cuyo endDate < fecha actual
         // Buscar todos los enrollments (activos e inactivos) que hayan vencido
         const expiredEnrollments = await Enrollment.find({
@@ -92,10 +206,12 @@ const processClassFinalization = async () => {
         }).lean();
 
         console.log(`[CRONJOB] Encontrados ${expiredEnrollments.length} enrollments vencidos para procesar`);
+        console.log(`[CRONJOB] Procesando clases del mes: ${monthYear}`);
 
         let processedCount = 0;
         let updatedClassesCount = 0;
         let notificationsCreated = 0;
+        let penalizationsCreated = 0;
 
         for (const enrollment of expiredEnrollments) {
             try {
@@ -128,6 +244,16 @@ const processClassFinalization = async () => {
                     );
                     updatedClassesCount += updateResult.modifiedCount;
                     console.log(`[CRONJOB] Actualizadas ${updateResult.modifiedCount} clases a Class Lost (4) para enrollment ${enrollment._id}`);
+
+                    // Crear penalización y notificación para el profesor cuando se actualizan clases a Class Lost
+                    const penalizationCreated = await createClassLostPenalization(
+                        enrollment, 
+                        monthYear, 
+                        updateResult.modifiedCount
+                    );
+                    if (penalizationCreated) {
+                        penalizationsCreated++;
+                    }
                 }
 
                 // Obtener todas las clases actualizadas (incluyendo las que acabamos de actualizar)
@@ -181,8 +307,10 @@ const processClassFinalization = async () => {
         }
 
         console.log(`[CRONJOB] Procesamiento de finalización de clases completado:`);
+        console.log(`  - Mes procesado: ${monthYear}`);
         console.log(`  - Enrollments procesados: ${processedCount}`);
         console.log(`  - Clases actualizadas a Class Lost (4): ${updatedClassesCount}`);
+        console.log(`  - Penalizaciones creadas: ${penalizationsCreated}`);
         console.log(`  - Notificaciones creadas: ${notificationsCreated}`);
         console.log('[CRONJOB] Finalizando procesamiento de finalización de clases');
 
@@ -192,12 +320,28 @@ const processClassFinalization = async () => {
 };
 
 /**
+ * Verifica si hoy es el último día del mes
+ * @returns {boolean} true si hoy es el último día del mes
+ */
+const isLastDayOfMonthForFinalization = () => {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Si mañana es día 1, entonces hoy es el último día del mes
+    return tomorrow.getDate() === 1;
+};
+
+/**
  * Inicializa el cronjob para procesar finalización de clases
- * Se ejecuta diariamente a las 00:00 (medianoche)
+ * Se ejecuta el último día de cada mes a las 00:00 (medianoche)
  */
 const initClassFinalizationCronjob = () => {
-    // Cron expression para producción: '0 0 * * *' = todos los días a las 00:00
-    cron.schedule('0 0 * * *', async () => {
+    // Cron expression para producción: '0 0 28-31 * *' = días 28-31 a las 00:00, luego verifica si es último día
+    cron.schedule('0 0 28-31 * *', async () => {
+        // Verificar si es el último día del mes
+        if (!isLastDayOfMonthForFinalization()) return;
+        
         console.log(`[CRONJOB] Ejecutando cronjob de finalización de clases - ${new Date().toISOString()}`);
         await processClassFinalization();
     }, {
@@ -205,7 +349,7 @@ const initClassFinalizationCronjob = () => {
         timezone: "America/Caracas" // Ajustar según tu zona horaria
     });
 
-    console.log('[CRONJOB] Cronjob de finalización de clases configurado (diario a medianoche - PRODUCCIÓN)');
+    console.log('[CRONJOB] Cronjob de finalización de clases configurado (último día del mes a medianoche - PRODUCCIÓN)');
 };
 
 /**
@@ -481,10 +625,244 @@ const initMonthlyClassClosureCronjob = () => {
     console.log('[CRONJOB MENSUAL] Cronjob de cierre mensual de clases configurado (último día del mes a medianoche - PRODUCCIÓN)');
 };
 
+/**
+ * Función helper para calcular el rango de la semana (lunes a domingo)
+ * @param {Date} sundayDate - Fecha del domingo (día de ejecución del cronjob)
+ * @returns {Object} Objeto con startDate (lunes) y endDate (domingo) en formato YYYY-MM-DD
+ */
+const calculateWeekRange = (sundayDate) => {
+    const date = new Date(sundayDate);
+    date.setHours(0, 0, 0, 0);
+    
+    // Verificar que sea domingo (0 = domingo)
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek !== 0) {
+        console.warn(`[CRONJOB SEMANAL] Advertencia: El cronjob se ejecutó en un día que no es domingo (día ${dayOfWeek}). Ajustando al domingo anterior.`);
+    }
+    
+    // Calcular el lunes de la semana (retroceder 6 días desde el domingo)
+    const mondayDate = new Date(date);
+    mondayDate.setDate(date.getDate() - 6); // Retroceder 6 días desde el domingo para llegar al lunes
+    
+    // Formatear fechas como YYYY-MM-DD
+    const formatDate = (dateObj) => {
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    return {
+        startDate: formatDate(mondayDate), // Lunes
+        endDate: formatDate(date) // Domingo (día de ejecución)
+    };
+};
+
+/**
+ * Cronjob para revisar clases no gestionadas semanalmente
+ * Se ejecuta los domingos a las 00:00 (medianoche)
+ * 
+ * Reglas de negocio:
+ * 1. Calcular el rango de la semana (lunes a domingo del domingo de ejecución)
+ * 2. Buscar ClassRegistry con classViewed = 0, reschedule = 0 y classDate dentro del rango
+ * 3. Agrupar por professorId (obtenido del enrollment)
+ * 4. Para cada profesor único:
+ *    - Crear una penalización administrativa con advertencia
+ *    - Crear una notificación vinculada a la penalización
+ */
+const processWeeklyUnguidedClasses = async () => {
+    try {
+        console.log('[CRONJOB SEMANAL] Iniciando procesamiento de clases no gestionadas semanalmente...');
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        // Calcular el rango de la semana (lunes a domingo)
+        const weekRange = calculateWeekRange(now);
+        console.log(`[CRONJOB SEMANAL] Rango de semana: ${weekRange.startDate} (lunes) a ${weekRange.endDate} (domingo)`);
+        
+        // Buscar ClassRegistry con classViewed = 0, reschedule = 0 y classDate dentro del rango
+        const unguidedClasses = await ClassRegistry.find({
+            classViewed: 0,
+            reschedule: 0,
+            classDate: { $gte: weekRange.startDate, $lte: weekRange.endDate }
+        }).select('enrollmentId classDate').lean();
+        
+        console.log(`[CRONJOB SEMANAL] Encontradas ${unguidedClasses.length} clases no gestionadas en la semana`);
+        
+        if (unguidedClasses.length === 0) {
+            console.log('[CRONJOB SEMANAL] No hay clases no gestionadas para procesar');
+            return;
+        }
+        
+        // Obtener IDs únicos de enrollments
+        const enrollmentIds = [...new Set(unguidedClasses.map(c => c.enrollmentId.toString()))];
+        
+        // Buscar enrollments con sus professorId
+        const enrollments = await Enrollment.find({
+            _id: { $in: enrollmentIds }
+        }).select('_id professorId').lean();
+        
+        // Crear un mapa de enrollmentId -> professorId
+        const enrollmentToProfessorMap = new Map();
+        enrollments.forEach(enrollment => {
+            if (enrollment.professorId) {
+                enrollmentToProfessorMap.set(enrollment._id.toString(), enrollment.professorId.toString());
+            }
+        });
+        
+        // Agrupar clases por professorId
+        const classesByProfessor = new Map();
+        unguidedClasses.forEach(classRecord => {
+            const enrollmentId = classRecord.enrollmentId.toString();
+            const professorId = enrollmentToProfessorMap.get(enrollmentId);
+            
+            if (professorId) {
+                if (!classesByProfessor.has(professorId)) {
+                    classesByProfessor.set(professorId, []);
+                }
+                classesByProfessor.get(professorId).push(classRecord);
+            } else {
+                console.log(`[CRONJOB SEMANAL] Advertencia: Enrollment ${enrollmentId} no tiene professorId asignado`);
+            }
+        });
+        
+        console.log(`[CRONJOB SEMANAL] Profesores con clases no gestionadas: ${classesByProfessor.size}`);
+        
+        // Obtener o crear categoría de notificación "Administrativa"
+        const categoryNotificationId = '6941c9b30646c9359c7f9f68';
+        if (!mongoose.Types.ObjectId.isValid(categoryNotificationId)) {
+            throw new Error('ID de categoría de notificación inválido');
+        }
+        
+        let categoryNotification = await CategoryNotification.findById(categoryNotificationId);
+        if (!categoryNotification) {
+            categoryNotification = new CategoryNotification({
+                _id: new mongoose.Types.ObjectId(categoryNotificationId),
+                category_notification_description: 'Administrativa',
+                isActive: true
+            });
+            await categoryNotification.save();
+            console.log('[CRONJOB SEMANAL] Categoría de notificación "Administrativa" creada');
+        }
+        
+        let penalizationsCreated = 0;
+        let notificationsCreated = 0;
+        
+        // Procesar cada profesor
+        for (const [professorId, classes] of classesByProfessor) {
+            try {
+                const professorObjectId = new mongoose.Types.ObjectId(professorId);
+                const numberOfClasses = classes.length;
+                
+                // Construir descripción de la penalización
+                const weekRangeText = `del ${weekRange.startDate} al ${weekRange.endDate}`;
+                const penalizationDescription = `Aviso: El profesor no ha gestionado ${numberOfClasses} clase(s) ${numberOfClasses > 1 ? 'semanales' : 'semanal'} ${weekRangeText}. ` +
+                    `Este es un aviso administrativo. Si al final del mes estas clases no han sido gestionadas, ` +
+                    `se tomarán como "lost class" (clase perdida) y el dinero correspondiente no se pagará al profesor.`;
+                
+                // Verificar si ya existe una penalización para este profesor en esta semana
+                const existingPenalization = await PenalizationRegistry.findOne({
+                    professorId: professorObjectId,
+                    penalization_description: { $regex: weekRangeText, $options: 'i' },
+                    status: 1
+                });
+                
+                if (existingPenalization) {
+                    console.log(`[CRONJOB SEMANAL] Penalización ya existe para profesor ${professorId} en la semana ${weekRangeText}. Omitiendo creación.`);
+                    continue;
+                }
+                
+                // Crear penalización
+                const newPenalization = new PenalizationRegistry({
+                    idPenalizacion: null,
+                    idpenalizationLevel: null,
+                    enrollmentId: null,
+                    professorId: professorObjectId,
+                    studentId: null,
+                    penalization_description: penalizationDescription,
+                    penalizationMoney: null, // Amonestación, no monetaria
+                    lateFee: null,
+                    endDate: null,
+                    support_file: null,
+                    userId: null,
+                    payOutId: null,
+                    status: 1 // Activa
+                });
+                
+                const savedPenalization = await newPenalization.save();
+                penalizationsCreated++;
+                console.log(`[CRONJOB SEMANAL] Penalización creada para profesor ${professorId} (${numberOfClasses} clase(s) no gestionada(s))`);
+                
+                // Verificar si ya existe una notificación para este profesor y penalización
+                const existingNotification = await Notification.findOne({
+                    idProfessor: professorObjectId,
+                    idPenalization: savedPenalization._id,
+                    isActive: true
+                });
+                
+                if (existingNotification) {
+                    console.log(`[CRONJOB SEMANAL] Notificación ya existe para profesor ${professorId} y penalización ${savedPenalization._id}. Omitiendo creación.`);
+                    continue;
+                }
+                
+                // Crear notificación
+                const newNotification = new Notification({
+                    idCategoryNotification: categoryNotification._id,
+                    notification_description: 'Amonestación laboral por incumplimiento de gestion de las clases semanales',
+                    idPenalization: savedPenalization._id,
+                    idEnrollment: null,
+                    idProfessor: professorObjectId,
+                    idStudent: [],
+                    userId: null,
+                    isActive: true
+                });
+                
+                await newNotification.save();
+                notificationsCreated++;
+                console.log(`[CRONJOB SEMANAL] Notificación creada para profesor ${professorId}`);
+                
+            } catch (error) {
+                console.error(`[CRONJOB SEMANAL] Error procesando profesor ${professorId}:`, error.message);
+                // Continuar con el siguiente profesor
+            }
+        }
+        
+        console.log(`[CRONJOB SEMANAL] Procesamiento de clases no gestionadas completado:`);
+        console.log(`  - Semana procesada: ${weekRange.startDate} a ${weekRange.endDate}`);
+        console.log(`  - Clases no gestionadas encontradas: ${unguidedClasses.length}`);
+        console.log(`  - Profesores afectados: ${classesByProfessor.size}`);
+        console.log(`  - Penalizaciones creadas: ${penalizationsCreated}`);
+        console.log(`  - Notificaciones creadas: ${notificationsCreated}`);
+        console.log('[CRONJOB SEMANAL] Finalizando procesamiento de clases no gestionadas semanalmente');
+        
+    } catch (error) {
+        console.error('[CRONJOB SEMANAL] Error en procesamiento de clases no gestionadas semanalmente:', error);
+    }
+};
+
+/**
+ * Inicializa el cronjob para procesar clases no gestionadas semanalmente
+ * Se ejecuta los domingos a las 00:00 (medianoche)
+ */
+const initWeeklyUnguidedClassesCronjob = () => {
+    // Cron expression para producción: '0 0 * * 0' = todos los domingos a las 00:00
+    cron.schedule('0 0 * * 0', async () => {
+        console.log(`[CRONJOB SEMANAL] Ejecutando cronjob de clases no gestionadas semanalmente - ${new Date().toISOString()}`);
+        await processWeeklyUnguidedClasses();
+    }, {
+        scheduled: true,
+        timezone: "America/Caracas" // Ajustar según tu zona horaria
+    });
+    
+    console.log('[CRONJOB SEMANAL] Cronjob de clases no gestionadas semanalmente configurado (domingos a medianoche - PRODUCCIÓN)');
+};
+
 module.exports = {
     processClassFinalization,
     initClassFinalizationCronjob,
     processMonthlyClassClosure,
-    initMonthlyClassClosureCronjob
+    initMonthlyClassClosureCronjob,
+    processWeeklyUnguidedClasses,
+    initWeeklyUnguidedClassesCronjob
 };
 

@@ -256,9 +256,40 @@ penalizationRegistryCtrl.create = async (req, res) => {
             registryData.support_file = typeof support_file === 'string' ? support_file.trim() : support_file;
         }
 
+        // Establecer status en 1 (activa) por defecto al crear
+        // Si se proporciona status en el request body, se respeta; si no, se establece en 1
+        if (req.body.status !== undefined && req.body.status !== null) {
+            const statusValue = Number(req.body.status);
+            if (statusValue === 0 || statusValue === 1) {
+                registryData.status = statusValue;
+            } else {
+                return res.status(400).json({
+                    message: 'El campo status debe ser 0 (inactiva) o 1 (activa).'
+                });
+            }
+        } else {
+            registryData.status = 1; // Activa por defecto
+        }
+
         // Crear el registro de penalización
         const newPenalizationRegistry = new PenalizationRegistry(registryData);
         const savedPenalizationRegistry = await newPenalizationRegistry.save();
+
+        // Incrementar penalizationCount del enrollment si tiene enrollmentId
+        if (savedPenalizationRegistry.enrollmentId) {
+            try {
+                await Enrollment.findByIdAndUpdate(
+                    savedPenalizationRegistry.enrollmentId,
+                    { $inc: { penalizationCount: 1 } },
+                    { new: true, runValidators: true }
+                );
+                console.log(`[PENALIZATION REGISTRY] penalizationCount incrementado para enrollment ${savedPenalizationRegistry.enrollmentId}`);
+            } catch (enrollmentUpdateError) {
+                console.error(`[PENALIZATION REGISTRY] Error al incrementar penalizationCount para enrollment ${savedPenalizationRegistry.enrollmentId}:`, enrollmentUpdateError.message);
+                // No fallar la creación del registro si falla la actualización del enrollment
+                // El registro ya se guardó, solo logueamos el error
+            }
+        }
 
         let createdNotification = null;
 
@@ -278,10 +309,18 @@ penalizationRegistryCtrl.create = async (req, res) => {
                     await categoryNotification.save();
                 }
 
+                // Construir descripción de la notificación (mejorada con información del monto si es monetaria)
+                let finalNotificationDescription = notification_description.trim();
+                
+                // Si es una penalización monetaria, agregar el monto a la descripción
+                if (savedPenalizationRegistry.penalizationMoney && savedPenalizationRegistry.penalizationMoney > 0) {
+                    finalNotificationDescription += ` Monto: $${parseFloat(savedPenalizationRegistry.penalizationMoney).toFixed(2)}.`;
+                }
+
                 // Preparar datos de la notificación
                 const notificationData = {
                     idCategoryNotification: categoryNotification._id,
-                    notification_description: notification_description.trim(),
+                    notification_description: finalNotificationDescription,
                     idPenalization: savedPenalizationRegistry.idPenalizacion || null,
                     isActive: true
                 };
@@ -429,6 +468,9 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
             });
         }
 
+        // Filtrar solo penalizaciones activas (status = 1)
+        query.status = 1;
+
         // Buscar registros de penalización con populate de todas las referencias
         const penalizations = await PenalizationRegistry.find(query)
             .populate('idPenalizacion', 'name penalizationLevels status')
@@ -450,6 +492,100 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
         console.error('Error al obtener registros de penalización del usuario:', error);
         res.status(500).json({
             message: 'Error interno al obtener registros de penalización',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @route PATCH /api/penalization-registry/:id/status
+ * @description Actualiza el status de un registro de penalización
+ * @access Private (Requiere JWT - Solo admin)
+ * 
+ * Parámetros:
+ * - id (URL): ID del registro de penalización a actualizar
+ * 
+ * Body:
+ * - status (number): Nuevo status del registro (0 = Inactiva, 1 = Activa)
+ */
+penalizationRegistryCtrl.updateStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        // Validar que el ID sea válido
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                message: 'ID de registro de penalización inválido.'
+            });
+        }
+
+        // Validar que status esté presente
+        if (status === undefined || status === null) {
+            return res.status(400).json({
+                message: 'El campo status es requerido.'
+            });
+        }
+
+        // Validar que status sea 0 o 1
+        const statusValue = Number(status);
+        if (statusValue !== 0 && statusValue !== 1) {
+            return res.status(400).json({
+                message: 'El campo status debe ser 0 (inactiva) o 1 (activa).'
+            });
+        }
+
+        // Buscar el registro de penalización
+        const penalizationRegistry = await PenalizationRegistry.findById(id);
+
+        if (!penalizationRegistry) {
+            return res.status(404).json({
+                message: 'Registro de penalización no encontrado.'
+            });
+        }
+
+        // Guardar el status anterior para comparar
+        const oldStatus = penalizationRegistry.status;
+
+        // Actualizar el status
+        penalizationRegistry.status = statusValue;
+        const updatedPenalizationRegistry = await penalizationRegistry.save();
+
+        // Si el status cambió a 0 (inactiva) y tiene enrollmentId, restar 1 de penalizationCount
+        if (statusValue === 0 && oldStatus !== 0 && updatedPenalizationRegistry.enrollmentId) {
+            try {
+                await Enrollment.findByIdAndUpdate(
+                    updatedPenalizationRegistry.enrollmentId,
+                    { $inc: { penalizationCount: -1 } },
+                    { new: true, runValidators: true }
+                );
+                console.log(`[PENALIZATION REGISTRY] penalizationCount decrementado para enrollment ${updatedPenalizationRegistry.enrollmentId} (status cambiado a 0)`);
+            } catch (enrollmentUpdateError) {
+                console.error(`[PENALIZATION REGISTRY] Error al decrementar penalizationCount para enrollment ${updatedPenalizationRegistry.enrollmentId}:`, enrollmentUpdateError.message);
+                // No fallar la actualización del status si falla la actualización del enrollment
+                // El status ya se actualizó, solo logueamos el error
+            }
+        }
+
+        res.status(200).json({
+            message: 'Status del registro de penalización actualizado exitosamente',
+            penalizationRegistry: updatedPenalizationRegistry.toObject()
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar status del registro de penalización:', error);
+
+        // Manejo de errores de validación de Mongoose
+        if (error.name === 'ValidationError') {
+            const validationErrors = Object.values(error.errors).map(err => err.message);
+            return res.status(400).json({
+                message: 'Error de validación',
+                errors: validationErrors
+            });
+        }
+
+        res.status(500).json({
+            message: 'Error interno al actualizar status del registro de penalización',
             error: error.message
         });
     }

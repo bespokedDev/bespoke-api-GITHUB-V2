@@ -52,9 +52,16 @@ Este cronjob gestiona automáticamente el estado de los enrollments que han venc
 2. **Aplicación de Reglas**
    - Para cada enrollment que cumpla las condiciones, aplica las reglas correspondientes
    - Crea registros de penalización cuando corresponde
+   - **Incrementa automáticamente `penalizationCount` del enrollment en +1** cuando se crea una penalización
    - Actualiza el `status` del enrollment a `2` (inactivo) cuando corresponde
 
-3. **Creación de Notificaciones**
+3. **Actualización de `penalizationCount`**
+   - Cuando se crea un registro de penalización con `enrollmentId`, se incrementa automáticamente el campo `penalizationCount` del enrollment referenciado en +1
+   - La actualización se realiza de forma atómica usando `$inc` de MongoDB
+   - Si falla la actualización, se registra un error en los logs pero **no se interrumpe la creación del registro de penalización**
+   - El contador `penalizationCount` permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
+
+4. **Creación de Notificaciones**
    - Crea notificaciones de tipo "Penalización" cuando se genera una penalización
    - Crea notificaciones de tipo "Administrativa" cuando se anula un enrollment
    - Las notificaciones incluyen los IDs de los estudiantes asociados al enrollment
@@ -84,11 +91,20 @@ Este cronjob gestiona automáticamente el estado de los enrollments que han venc
 }
 ```
 
+#### **Campos Actualizados**
+
+Cuando se crea una penalización, se actualizan los siguientes campos:
+
+- **`penalizationCount`** (en el enrollment): Se incrementa en +1 automáticamente cuando se crea una penalización asociada al enrollment
+  - La actualización es atómica y no afecta la creación del registro si falla
+  - Permite llevar un registro del historial de penalizaciones sin consultar la colección de penalizaciones
+
 #### **Logs del Cronjob**
 El cronjob registra en consola:
 - Número de enrollments encontrados para procesar
 - Número de penalizaciones creadas
 - Número de enrollments anulados
+- Confirmación de incremento de `penalizationCount` para cada enrollment procesado
 - Errores específicos por enrollment (si los hay)
 
 ---
@@ -371,52 +387,135 @@ El cronjob registra en consola:
 **Inicialización**: `initClassFinalizationCronjob`
 
 #### **Descripción**
-Este cronjob finaliza automáticamente las clases de enrollments que han vencido su `endDate`, marcando las clases no vistas como "Class Lost" (clase perdida) y generando notificaciones con estadísticas detalladas.
+Este cronjob finaliza automáticamente las clases de enrollments que han vencido su `endDate`, marcando las clases no vistas como "Class Lost" (clase perdida), creando penalizaciones para los profesores afectados y generando notificaciones con estadísticas detalladas.
 
 #### **Reglas de Negocio**
 
-1. **Búsqueda de Enrollments Vencidos**
+1. **Frecuencia de Ejecución**
+   - Se ejecuta el **último día de cada mes** a las 00:00 (medianoche)
+   - Usa la expresión cron `'0 0 28-31 * *'` con verificación del último día del mes
+   - Procesa el mes que está terminando (mes actual)
+
+2. **Búsqueda de Enrollments Vencidos**
    - Busca todos los enrollments cuyo `endDate` < fecha actual
    - No importa el `status` del enrollment (procesa activos e inactivos)
 
-2. **Actualización de Clases No Vistas**
+3. **Actualización de Clases No Vistas**
    - Para cada enrollment vencido, busca todas sus ClassRegistry
    - Si una clase tiene `classViewed: 0` y `reschedule: 0`:
      - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
 
-3. **Generación de Estadísticas**
+4. **Creación de Penalización para Profesor**
+   - **Cuando se actualizan clases a Class Lost** (`classViewed: 4`):
+     - Crea una penalización administrativa para el profesor del enrollment
+     - `professorId`: Profesor del enrollment
+     - `enrollmentId`: Enrollment procesado
+     - `penalization_description`: Mensaje profesional indicando que las clases no gestionadas en el mes actual pasarán a clases perdidas y el dinero no se pagará
+     - `penalizationMoney: null` (amonestación, no monetaria)
+     - `status: 1` (activa)
+     - Usa el **mes actual** (el mes que está terminando) en la descripción, no el `endDate` del enrollment
+
+5. **Creación de Notificación para Profesor**
+   - Crea una notificación vinculada a la penalización creada
+   - `idProfessor`: Profesor del enrollment
+   - `idEnrollment`: Enrollment procesado
+   - `idPenalization`: ID de la penalización creada
+   - `idCategoryNotification`: "Administrativa" (`6941c9b30646c9359c7f9f68`)
+   - `notification_description`: Mensaje similar sobre clases perdidas y no pago
+
+6. **Generación de Estadísticas**
    - Cuenta las clases por tipo:
      - **Tipo 4 (Class Lost - Clase Perdida)**: Clases con `classViewed: 4`
      - **Tipo 1 (Vistas)**: Clases con `classViewed: 1`
      - **Tipo 2 (Parcialmente Vista)**: Clases con `classViewed: 2`
      - **Tipo 2 con Reschedule**: Clases con `classViewed: 2` cuyo `originalClassId` apunta a una clase con `reschedule: 1`
 
-4. **Creación de Notificaciones**
+7. **Creación de Notificación de Estadísticas**
    - Crea una notificación por enrollment con las estadísticas calculadas
    - La notificación es de tipo "Administrativa" (`idCategoryNotification: "6941c9b30646c9359c7f9f68"`)
 
 #### **Proceso de Ejecución**
 
-1. **Búsqueda de Enrollments Vencidos**
+1. **Cálculo del Mes Actual**
+   - Obtiene el mes y año actual (el mes que está terminando)
+   - Formato: `YYYY-MM` (ej: "2025-01")
+
+2. **Búsqueda de Enrollments Vencidos**
    ```javascript
    const expiredEnrollments = await Enrollment.find({
        endDate: { $lt: now }
    }).lean();
    ```
 
-2. **Actualización de Clases**
+3. **Actualización de Clases**
    - Para cada enrollment, busca todas sus ClassRegistry
    - Actualiza las clases con `classViewed: 0` y `reschedule: 0` a `classViewed: 4` (Class Lost)
 
-3. **Cálculo de Estadísticas**
+4. **Creación de Penalización y Notificación para Profesor**
+   - **Solo si se actualizaron clases a Class Lost** (`classesToUpdate.length > 0`):
+     - Obtiene el `professorId` del enrollment
+     - Verifica si ya existe una penalización para ese profesor y enrollment en ese mes (previene duplicados)
+     - Crea penalización con descripción profesional usando el mes actual
+     - Crea notificación vinculada a la penalización con `idProfessor` e `idEnrollment`
+
+5. **Cálculo de Estadísticas**
    - Recorre todas las clases del enrollment
    - Cuenta por tipo de `classViewed`
    - Identifica clases tipo 2 con reschedule verificando si su `originalClassId` apunta a una clase con `reschedule: 1`
 
-4. **Generación de Notificación**
+6. **Generación de Notificación de Estadísticas**
    - Crea una notificación con descripción dinámica que incluye todas las estadísticas
 
-#### **Notificación Generada**
+#### **Penalización Generada para Profesor**
+
+**Estructura de la Penalización:**
+```json
+{
+  "idPenalizacion": null,
+  "idpenalizationLevel": null,
+  "enrollmentId": "[ID del enrollment]",
+  "professorId": "[ID del profesor]",
+  "studentId": null,
+  "penalization_description": "Las clases que no se gestionaron en el mes de [mes] [año] pasarán a clases perdidas y el dinero de las mismas no se pagará. Para cualquier reclamo comunicarse con el admin de Bespoke.",
+  "penalizationMoney": null,
+  "lateFee": null,
+  "endDate": null,
+  "support_file": null,
+  "userId": null,
+  "payOutId": null,
+  "status": 1
+}
+```
+
+**Ejemplo de Descripción:**
+```
+Las clases que no se gestionaron en el mes de enero 2025 pasarán a clases perdidas y el dinero de las mismas no se pagará. Para cualquier reclamo comunicarse con el admin de Bespoke.
+```
+
+**Nota**: El mes usado en la descripción es el **mes actual** (el mes que está terminando cuando se ejecuta el cronjob), no el `endDate` del enrollment.
+
+#### **Notificación Generada para Profesor**
+
+**Estructura de la Notificación:**
+```json
+{
+  "idCategoryNotification": "6941c9b30646c9359c7f9f68",
+  "notification_description": "Las clases que no se gestionaron en el mes de [mes] [año] del enrollment [ID] pasarán a clases perdidas y el dinero de las mismas no se pagará. Para cualquier reclamo comunicarse con el admin de Bespoke.",
+  "idPenalization": "[ID de la penalización creada]",
+  "idEnrollment": "[ID del enrollment]",
+  "idProfessor": "[ID del profesor]",
+  "idStudent": [],
+  "userId": null,
+  "isActive": true
+}
+```
+
+**Ejemplo de Descripción:**
+```
+Las clases que no se gestionaron en el mes de enero 2025 del enrollment 64f8a1b2c3d4e5f6a7b8c9d0 pasarán a clases perdidas y el dinero de las mismas no se pagará. Para cualquier reclamo comunicarse con el admin de Bespoke.
+```
+
+#### **Notificación de Estadísticas Generada**
 
 **Estructura de la Notificación:**
 ```json
@@ -424,6 +523,8 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
   "idCategoryNotification": "6941c9b30646c9359c7f9f68",
   "notification_description": "Finalización de clases del enrollment [ID]. Total: [X] clase(s) de tipo 4 (Class Lost - clase perdida), [Y] clase(s) de tipo 1 (vistas), [Z] clase(s) de tipo 2 (parcialmente vista), [W] clase(s) de tipo 2 con reschedule.",
   "idEnrollment": "[ID del enrollment]",
+  "idPenalization": null,
+  "idProfessor": null,
   "idStudent": [],
   "isActive": true
 }
@@ -449,13 +550,261 @@ Finalización de clases del enrollment 64f8a1b2c3d4e5f6a7b8c9d0. Total: 3 clase(
 - **1**: La clase está en modo reschedule
 - **2**: La clase en reschedule ya se vio
 
+#### **Prevención de Duplicados**
+
+El cronjob incluye verificaciones para evitar crear penalizaciones y notificaciones duplicadas:
+
+1. **Verificación de Penalización Existente**
+   - Busca si ya existe una penalización para el profesor y enrollment en el mismo mes
+   - Usa el nombre del mes en la descripción para identificar duplicados
+   - Si existe, omite la creación
+
+2. **Verificación de Notificación Existente**
+   - Busca si ya existe una notificación para el profesor, enrollment y penalización específica
+   - Si existe, omite la creación
+
 #### **Logs del Cronjob**
 El cronjob registra en consola:
+- Mes procesado (el mes que está terminando)
 - Número de enrollments vencidos encontrados
 - Número de clases actualizadas a Class Lost (4)
-- Número de notificaciones creadas
+- Número de penalizaciones creadas para profesores
+- Número de notificaciones creadas (tanto para profesores como de estadísticas)
 - Estadísticas detalladas por enrollment procesado
 - Errores específicos por enrollment (si los hay)
+
+**Ejemplo de Logs:**
+```
+[CRONJOB] Ejecutando cronjob de finalización de clases - 2025-01-31T00:00:00.000Z
+[CRONJOB] Iniciando procesamiento de finalización de clases...
+[CRONJOB] Encontrados 5 enrollments vencidos para procesar
+[CRONJOB] Procesando clases del mes: 2025-01
+[CRONJOB] Actualizadas 3 clases a Class Lost (4) para enrollment 64f8a1b2c3d4e5f6a7b8c9d0
+[CRONJOB] Penalización creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1 por 3 clase(s) perdida(s) en el mes 2025-01
+[CRONJOB] Notificación creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1 y enrollment 64f8a1b2c3d4e5f6a7b8c9d0
+[CRONJOB] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 procesado: 3 Class Lost, 5 vistas, 2 parcialmente vistas, 1 parcialmente vistas con reschedule
+[CRONJOB] Procesamiento de finalización de clases completado:
+  - Mes procesado: 2025-01
+  - Enrollments procesados: 5
+  - Clases actualizadas a Class Lost (4): 8
+  - Penalizaciones creadas: 3
+  - Notificaciones creadas: 6
+[CRONJOB] Finalizando procesamiento de finalización de clases
+```
+
+#### **Notas Importantes sobre Penalizaciones**
+
+1. **Solo se crean cuando hay clases actualizadas**: Las penalizaciones y notificaciones para profesores solo se crean cuando se actualizan clases a `classViewed: 4` (Class Lost). Si no hay clases para actualizar, no se crean penalizaciones.
+
+2. **Mes usado en descripción**: El mes mencionado en la descripción de la penalización es el **mes actual** (el mes que está terminando cuando se ejecuta el cronjob), no el `endDate` del enrollment.
+
+3. **Tipo de penalización**: Las penalizaciones creadas son de tipo **amonestación** (no monetaria), con `penalizationMoney: null`.
+
+4. **Asociación con enrollment**: Las penalizaciones incluyen tanto `professorId` como `enrollmentId`, permitiendo identificar tanto al profesor afectado como al enrollment específico.
+
+5. **Sin actualización de `penalizationCount`**: Este cronjob **NO incrementa** el campo `penalizationCount` del enrollment porque las penalizaciones son administrativas y no están directamente relacionadas con el contador de penalizaciones del enrollment.
+
+---
+
+### **5. Cronjob de Clases No Gestionadas Semanalmente**
+
+**Archivo**: `src/jobs/classRegistry.jobs.js`  
+**Función**: `processWeeklyUnguidedClasses`  
+**Inicialización**: `initWeeklyUnguidedClassesCronjob`
+
+#### **Descripción**
+Este cronjob revisa semanalmente las clases que no han sido gestionadas por los profesores durante la semana anterior (lunes a domingo), creando penalizaciones administrativas y notificaciones para advertir a los profesores sobre el incumplimiento en la gestión de clases.
+
+#### **Reglas de Negocio**
+
+1. **Cálculo del Rango Semanal**
+   - Se ejecuta los domingos a las 00:00 (medianoche)
+   - Calcula el rango de la semana: del lunes al domingo del domingo de ejecución
+   - Ejemplo: Si se ejecuta el domingo 11 de enero de 2025, revisa del lunes 5 al domingo 11
+
+2. **Búsqueda de Clases No Gestionadas**
+   - Busca `ClassRegistry` con:
+     - `classViewed: 0` (clase no vista)
+     - `reschedule: 0` (solo clases normales, no reschedules)
+     - `classDate` dentro del rango lunes-domingo de la semana
+
+3. **Agrupación por Profesor**
+   - Agrupa todas las clases no gestionadas por `professorId` (obtenido del enrollment)
+   - Crea una sola penalización y notificación por profesor, incluso si tiene múltiples clases sin gestionar en la semana
+
+4. **Creación de Penalización Administrativa**
+   - Para cada profesor con clases no gestionadas:
+     - Crea un registro de penalización de tipo administrativa
+     - Incluye advertencia sobre las consecuencias si no se gestionan las clases al final del mes
+     - `penalizationMoney: null` (amonestación, no monetaria)
+     - `status: 1` (activa)
+
+5. **Creación de Notificación**
+   - Crea una notificación vinculada a la penalización creada
+   - Dirigida al profesor afectado
+   - Categoría: "Administrativa" (`idCategoryNotification: "6941c9b30646c9359c7f9f68"`)
+
+#### **Proceso de Ejecución**
+
+1. **Cálculo del Rango Semanal**
+   ```javascript
+   const weekRange = calculateWeekRange(now);
+   // Retorna: { startDate: "2025-01-05", endDate: "2025-01-11" }
+   ```
+
+2. **Búsqueda de Clases No Gestionadas**
+   ```javascript
+   const unguidedClasses = await ClassRegistry.find({
+       classViewed: 0,
+       reschedule: 0,
+       classDate: { $gte: weekRange.startDate, $lte: weekRange.endDate }
+   }).select('enrollmentId classDate').lean();
+   ```
+
+3. **Obtención de Profesores**
+   - Obtiene los enrollments asociados a las clases encontradas
+   - Crea un mapa de `enrollmentId` → `professorId`
+
+4. **Agrupación por Profesor**
+   - Agrupa las clases por `professorId`
+   - Cada profesor tiene un array de clases no gestionadas
+
+5. **Creación de Penalización y Notificación**
+   - Para cada profesor único:
+     - Verifica si ya existe una penalización para esa semana (previene duplicados)
+     - Crea penalización con descripción detallada
+     - Crea notificación vinculada a la penalización
+
+#### **Penalización Generada**
+
+**Estructura de la Penalización:**
+```json
+{
+  "idPenalizacion": null,
+  "idpenalizationLevel": null,
+  "enrollmentId": null,
+  "professorId": "[ID del profesor]",
+  "studentId": null,
+  "penalization_description": "Aviso: El profesor no ha gestionado [X] clase(s) semanal(es) del [fecha_inicio] al [fecha_fin]. Este es un aviso administrativo. Si al final del mes estas clases no han sido gestionadas, se tomarán como \"lost class\" (clase perdida) y el dinero correspondiente no se pagará al profesor.",
+  "penalizationMoney": null,
+  "lateFee": null,
+  "endDate": null,
+  "support_file": null,
+  "userId": null,
+  "payOutId": null,
+  "status": 1
+}
+```
+
+**Ejemplo de Descripción:**
+```
+Aviso: El profesor no ha gestionado 3 clase(s) semanales del 2025-01-05 al 2025-01-11. Este es un aviso administrativo. Si al final del mes estas clases no han sido gestionadas, se tomarán como "lost class" (clase perdida) y el dinero correspondiente no se pagará al profesor.
+```
+
+#### **Notificación Generada**
+
+**Estructura de la Notificación:**
+```json
+{
+  "idCategoryNotification": "6941c9b30646c9359c7f9f68",
+  "notification_description": "Amonestación laboral por incumplimiento de gestion de las clases semanales",
+  "idPenalization": "[ID de la penalización creada]",
+  "idEnrollment": null,
+  "idProfessor": "[ID del profesor]",
+  "idStudent": [],
+  "userId": null,
+  "isActive": true
+}
+```
+
+#### **Prevención de Duplicados**
+
+El cronjob incluye verificaciones para evitar crear penalizaciones y notificaciones duplicadas:
+
+1. **Verificación de Penalización Existente**
+   - Busca si ya existe una penalización para el profesor en la misma semana
+   - Usa el rango de fechas en la descripción para identificar duplicados
+   - Si existe, omite la creación
+
+2. **Verificación de Notificación Existente**
+   - Busca si ya existe una notificación para el profesor y la penalización específica
+   - Si existe, omite la creación
+
+#### **Ejemplo de Procesamiento**
+
+**Escenario:**
+- Fecha de ejecución: Domingo 11 de enero de 2025
+- Rango de semana: Lunes 5 a domingo 11 de enero
+- Clases encontradas:
+  - Enrollment A (Profesor 1): 2 clases no gestionadas
+  - Enrollment B (Profesor 1): 1 clase no gestionada
+  - Enrollment C (Profesor 2): 3 clases no gestionadas
+
+**Proceso:**
+1. Calcula rango: `2025-01-05` a `2025-01-11`
+2. Encuentra 6 clases no gestionadas
+3. Agrupa por profesor:
+   - Profesor 1: 3 clases (2 + 1)
+   - Profesor 2: 3 clases
+4. Crea penalización para Profesor 1:
+   - Descripción: "Aviso: El profesor no ha gestionado 3 clase(s) semanales del 2025-01-05 al 2025-01-11..."
+5. Crea notificación para Profesor 1 vinculada a la penalización
+6. Crea penalización para Profesor 2:
+   - Descripción: "Aviso: El profesor no ha gestionado 3 clase(s) semanales del 2025-01-05 al 2025-01-11..."
+7. Crea notificación para Profesor 2 vinculada a la penalización
+
+**Resultado:**
+- 2 penalizaciones creadas (una por profesor)
+- 2 notificaciones creadas (una por profesor)
+- Total de clases no gestionadas: 6
+
+#### **Logs del Cronjob**
+El cronjob registra en consola:
+- Rango de semana procesado (lunes a domingo)
+- Número de clases no gestionadas encontradas
+- Número de profesores afectados
+- Número de penalizaciones creadas
+- Número de notificaciones creadas
+- Detalles de cada profesor procesado
+- Errores específicos por profesor (si los hay)
+
+**Ejemplo de Logs:**
+```
+[CRONJOB SEMANAL] Ejecutando cronjob de clases no gestionadas semanalmente - 2025-01-11T00:00:00.000Z
+[CRONJOB SEMANAL] Iniciando procesamiento de clases no gestionadas semanalmente...
+[CRONJOB SEMANAL] Rango de semana: 2025-01-05 (lunes) a 2025-01-11 (domingo)
+[CRONJOB SEMANAL] Encontradas 6 clases no gestionadas en la semana
+[CRONJOB SEMANAL] Profesores con clases no gestionadas: 2
+[CRONJOB SEMANAL] Penalización creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1 (3 clase(s) no gestionada(s))
+[CRONJOB SEMANAL] Notificación creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1
+[CRONJOB SEMANAL] Penalización creada para profesor 64f8a1b2c3d4e5f6a7b8c9d2 (3 clase(s) no gestionada(s))
+[CRONJOB SEMANAL] Notificación creada para profesor 64f8a1b2c3d4e5f6a7b8c9d2
+[CRONJOB SEMANAL] Procesamiento de clases no gestionadas completado:
+  - Semana procesada: 2025-01-05 a 2025-01-11
+  - Clases no gestionadas encontradas: 6
+  - Profesores afectados: 2
+  - Penalizaciones creadas: 2
+  - Notificaciones creadas: 2
+[CRONJOB SEMANAL] Finalizando procesamiento de clases no gestionadas semanalmente
+```
+
+#### **Notas Importantes**
+
+1. **Frecuencia de Ejecución**: El cronjob se ejecuta **semanalmente los domingos** a las 00:00 (medianoche), no diariamente.
+
+2. **Solo Clases Normales**: Solo procesa clases con `reschedule: 0` (clases normales). Los reschedules no se consideran.
+
+3. **Agrupación por Profesor**: Si un profesor tiene múltiples clases no gestionadas en la semana, se crea una sola penalización y notificación que incluye el total de clases.
+
+4. **Prevención de Duplicados**: El cronjob verifica si ya existe una penalización para el profesor en la misma semana antes de crear una nueva.
+
+5. **Tipo de Penalización**: Las penalizaciones creadas son de tipo **amonestación** (no monetaria), con `penalizationMoney: null`.
+
+6. **Advertencia en Descripción**: La descripción de la penalización incluye una advertencia clara sobre las consecuencias si las clases no se gestionan al final del mes (se tomarán como "lost class" y no se pagará el dinero correspondiente).
+
+7. **Categoría de Notificación**: Todas las notificaciones usan la categoría "Administrativa" (`idCategoryNotification: "6941c9b30646c9359c7f9f68"`).
+
+8. **Sin Actualización de `penalizationCount`**: Este cronjob **NO incrementa** el campo `penalizationCount` del enrollment porque las penalizaciones no están asociadas a un enrollment específico (solo al profesor).
 
 ---
 
@@ -494,7 +843,7 @@ src/
   jobs/
     index.js                    # Inicialización centralizada
     enrollments.jobs.js         # Cronjob de enrollments por impago, pagos automáticos y profesores suplentes expirados
-    classRegistry.jobs.js       # Cronjob de finalización de clases
+    classRegistry.jobs.js       # Cronjob de finalización de clases, cierre mensual y clases no gestionadas semanalmente
 ```
 
 ### **Dependencias**
@@ -521,7 +870,8 @@ if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
 
 1. ✅ Cambiar expresión cron de `'*/10 * * * * *'` a `'0 0 * * *'` en los cronjobs diarios
 2. ✅ Cambiar expresión cron del cierre mensual a `'0 0 28-31 * *'` (se ejecuta en días 28-31 y verifica si es el último día del mes)
-2. ✅ Verificar que la zona horaria sea correcta (`America/Caracas` o la zona horaria del proyecto)
+3. ✅ Verificar que el cronjob semanal esté configurado como `'0 0 * * 0'` (domingos a medianoche)
+4. ✅ Verificar que la zona horaria sea correcta (`America/Caracas` o la zona horaria del proyecto)
 3. ✅ Verificar que los logs estén configurados correctamente
 4. ✅ Probar los cronjobs en un entorno de staging antes de producción
 5. ✅ Configurar monitoreo de logs para detectar errores
@@ -536,12 +886,26 @@ cron.schedule('*/10 * * * * *', async () => {
 cron.schedule('0 0 * * *', async () => {
 ```
 
-**`src/jobs/classRegistry.jobs.js`** (línea ~180):
+**`src/jobs/classRegistry.jobs.js`** (línea ~250):
 ```javascript
-// Cambiar de:
-cron.schedule('*/10 * * * * *', async () => {
-// A:
-cron.schedule('0 0 * * *', async () => {
+// Cronjob de finalización de clases - Ya configurado para producción:
+cron.schedule('0 0 28-31 * *', async () => {
+    // Verifica si es el último día del mes
+    if (!isLastDayOfMonthForFinalization()) return;
+    // Se ejecuta el último día de cada mes a las 00:00
+```
+
+**`src/jobs/classRegistry.jobs.js`** (línea ~470):
+```javascript
+// Cronjob de cierre mensual - Ya configurado para producción:
+cron.schedule('0 0 28-31 * *', async () => {
+```
+
+**`src/jobs/classRegistry.jobs.js`** (línea ~700):
+```javascript
+// Cronjob de clases no gestionadas semanalmente - Ya configurado para producción:
+cron.schedule('0 0 * * 0', async () => {
+// Se ejecuta los domingos a las 00:00
 ```
 
 ---
@@ -555,6 +919,7 @@ cron.schedule('0 0 * * *', async () => {
    - El cronjob de pagos automáticos procesa enrollments con `cancellationPaymentsEnabled: true`, independientemente del `status`
    - El cronjob de profesores suplentes expirados procesa todos los enrollments con `substituteProfessor` no null, independientemente del `status`
    - El cronjob de finalización de clases procesa todos los enrollments vencidos, independientemente de su status
+   - El cronjob de clases no gestionadas semanalmente procesa todas las clases con `classViewed: 0` dentro del rango semanal, independientemente del status del enrollment
 
 3. **Notificaciones**: 
    - Las notificaciones se crean automáticamente y están disponibles para los usuarios del sistema

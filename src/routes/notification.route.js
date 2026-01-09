@@ -9,11 +9,11 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // POST /api/notifications - Crea una nueva notificación
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), notificationCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.create);
 
 // GET /api/notifications - Lista todas las notificaciones
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), notificationCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.list);
 
 // GET /api/notifications/user/my-notifications - Lista notificaciones del usuario autenticado
 // Acceso: Cualquier usuario autenticado (student, professor, admin)
@@ -21,19 +21,19 @@ router.get('/user/my-notifications', verifyToken, notificationCtrl.getMyNotifica
 
 // GET /api/notifications/:id - Obtiene una notificación por su ID
 // Acceso: Solo admin
-router.get('/:id', verifyToken, verifyRole('admin'), notificationCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.getById);
 
 // PUT /api/notifications/:id - Actualiza una notificación por su ID
 // Acceso: Solo admin
-router.put('/:id', verifyToken, verifyRole('admin'), notificationCtrl.update);
+router.put('/:id', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.update);
 
 // PATCH /api/notifications/:id/anular - Anula una notificación
 // Acceso: Solo admin
-router.patch('/:id/anular', verifyToken, verifyRole('admin'), notificationCtrl.anular);
+router.patch('/:id/anular', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.anular);
 
 // PATCH /api/notifications/:id/activate - Activa una notificación
 // Acceso: Solo admin
-router.patch('/:id/activate', verifyToken, verifyRole('admin'), notificationCtrl.activate);
+router.patch('/:id/activate', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.activate);
 
 module.exports = router;
 

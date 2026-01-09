@@ -9,22 +9,22 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // POST /api/divisas - Crea una nueva divisa
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), divisaCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), divisaCtrl.create);
 
 // GET /api/divisas - Lista todas las divisas
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), divisaCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), divisaCtrl.list);
 
 // GET /api/divisas/:id - Obtiene una divisa por su ID
 // Acceso: Solo admin
-router.get('/:id', verifyToken, verifyRole('admin'), divisaCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), divisaCtrl.getById);
 
 // PUT /api/divisas/:id - Actualiza una divisa por su ID
 // Acceso: Solo admin
-router.put('/:id', verifyToken, verifyRole('admin'), divisaCtrl.update);
+router.put('/:id', verifyToken, verifyRole('admin', 'admin-jr'), divisaCtrl.update);
 
 // DELETE /api/divisas/:id - Elimina una divisa por su ID
 // Acceso: Solo admin
-router.delete('/:id', verifyToken, verifyRole('admin'), divisaCtrl.remove);
+router.delete('/:id', verifyToken, verifyRole('admin', 'admin-jr'), divisaCtrl.remove);
 
 module.exports = router;

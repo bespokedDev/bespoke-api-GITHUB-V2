@@ -149,11 +149,25 @@ const processEnrollmentsPaymentStatus = async () => {
                                     penalization_description: `Penalización por vencimiento de días de pago. Enrollment vencido el ${endDate.toISOString().split('T')[0]}`,
                                     penalizationMoney: enrollment.penalizationMoney,
                                     lateFee: enrollment.lateFee,
-                                    endDate: enrollment.endDate
+                                    endDate: enrollment.endDate,
+                                    status: 1 // Activa por defecto
                                 });
 
                                 const savedPenalizationRegistry = await newPenalizationRegistry.save();
                                 penalizedCount++;
+
+                                // Incrementar penalizationCount del enrollment
+                                try {
+                                    await Enrollment.findByIdAndUpdate(
+                                        enrollment._id,
+                                        { $inc: { penalizationCount: 1 } },
+                                        { new: true, runValidators: true }
+                                    );
+                                    console.log(`[CRONJOB] penalizationCount incrementado para enrollment ${enrollment._id}`);
+                                } catch (enrollmentUpdateError) {
+                                    console.error(`[CRONJOB] Error al incrementar penalizationCount para enrollment ${enrollment._id}:`, enrollmentUpdateError.message);
+                                    // No fallar el proceso si falla la actualización del enrollment
+                                }
 
                                 // Obtener categoría de notificación "Penalización" o crearla si no existe
                                 let categoryNotification = await CategoryNotification.findOne({

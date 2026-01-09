@@ -12,12 +12,12 @@ const verifyRole = require('../middlewares/verifyRole'); // Importa el middlewar
 // POST /api/students - Crea un nuevo estudiante
 // Acceso: Solo admin
 // Si creas una validación específica, úsala aquí:
-// router.post('/', verifyToken, verifyRole('admin'), createStudentValidation, studentCtrl.create);
-router.post('/', verifyToken, verifyRole('admin'), studentCtrl.create);
+// router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), createStudentValidation, studentCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), studentCtrl.create);
 
 // GET /api/students - Lista todos los estudiantes
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), studentCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), studentCtrl.list);
 
 // GET /api/students/info/:id - Obtiene información del saldo del estudiante
 // Acceso: Admin, estudiante y profesor
@@ -31,18 +31,18 @@ router.get('/:studentId/enrollment/:enrollmentId', verifyToken, verifyRole('admi
 
 // GET /api/students/:id - Obtiene un estudiante por su ID
 // Acceso: Admin, estudiante y profesor
-router.get('/:id', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'student', 'professor', 'admin-jr'), studentCtrl.getById);
 
 // PUT /api/students/:id - Actualiza un estudiante por su ID
 // Acceso: Solo admin
-router.put('/:id', verifyToken, verifyRole('admin'), studentCtrl.update);
+router.put('/:id', verifyToken, verifyRole('admin', 'admin-jr'), studentCtrl.update);
 
 // PATCH /api/students/:id/deactivate - Desactiva un estudiante
 // Acceso: Solo admin
-router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), studentCtrl.deactivate);
+router.patch('/:id/deactivate', verifyToken, verifyRole('admin', 'admin-jr'), studentCtrl.deactivate);
 
 // PATCH /api/students/:id/activate - Activa un estudiante
 // Acceso: Solo admin
-router.patch('/:id/activate', verifyToken, verifyRole('admin'), studentCtrl.activate);
+router.patch('/:id/activate', verifyToken, verifyRole('admin', 'admin-jr'), studentCtrl.activate);
 
 module.exports = router;

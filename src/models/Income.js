@@ -46,6 +46,14 @@ const IncomeSchema = new mongoose.Schema({
         ref: 'Enrollment',
         required: false, // <--- ¡Asegúrate de que sea `false`!
         default: null    // Opcional: para que se guarde explícitamente como null si no se envía
+    },
+    idPenalization: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Penalizacion',
+        required: false,
+        default: null
+        // Referencia a la penalización que se está pagando con este income
+        // Se usa cuando un income se crea específicamente para pagar una penalización de un enrollment
     }
 }, {
     timestamps: true // Esto ya te da createdAt y updatedAt, pero income_date es específico del ingreso

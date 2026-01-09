@@ -12,6 +12,7 @@ const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
 const ClassRegistry = require('../models/ClassRegistry');
 const ProfessorBonus = require('../models/ProfessorBonus');
+const PenalizationRegistry = require('../models/PenalizationRegistry');
 
 const incomesCtrl = {};
 const mongoose = require('mongoose');
@@ -701,6 +702,17 @@ const generateGeneralProfessorsReportLogic = async (month) => {
         const totalBespoke = professorDetails.reduce((sum, detail) => sum + (detail.totalBespoke || 0), 0);
         const totalBalanceRemaining = professorDetails.reduce((sum, detail) => sum + (detail.balanceRemaining || 0), 0);
 
+        // Contar y sumar penalizaciones monetarias del profesor (status: 1 y penalizationMoney > 0)
+        const professorObjectId = new mongoose.Types.ObjectId(professorId);
+        const monetaryPenalizations = await PenalizationRegistry.find({
+            professorId: professorObjectId,
+            status: 1,
+            penalizationMoney: { $gt: 0 }
+        }).select('penalizationMoney').lean();
+
+        const monetaryPenalizationsCount = monetaryPenalizations.length;
+        const totalPenalizationMoney = monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
+
         professorsReportMap.set(professorId, {
             professorId: professorId,
             professorName: currentProfessorName,
@@ -713,6 +725,10 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             abonos: { // PARTE 11: Sección de abonos (bonos)
                 total: parseFloat(totalBonuses.toFixed(2)),
                 details: abonosDetails
+            },
+            penalizations: { // Información de penalizaciones monetarias
+                count: monetaryPenalizationsCount,
+                totalMoney: parseFloat(totalPenalizationMoney.toFixed(2))
             }
         });
     }
@@ -1018,6 +1034,17 @@ const generateSpecificProfessorReportLogic = async (month) => {
         }
     }
 
+    // Contar y sumar penalizaciones monetarias del profesor especial (status: 1 y penalizationMoney > 0)
+    const professorObjectId = new mongoose.Types.ObjectId(professorId);
+    const monetaryPenalizations = await PenalizationRegistry.find({
+        professorId: professorObjectId,
+        status: 1,
+        penalizationMoney: { $gt: 0 }
+    }).select('penalizationMoney').lean();
+
+    const monetaryPenalizationsCount = monetaryPenalizations.length;
+    const totalPenalizationMoney = monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
+
     const finalReport = {
         professorId: professorId,
         professorName: professorName,
@@ -1027,6 +1054,10 @@ const generateSpecificProfessorReportLogic = async (month) => {
         subtotal: {
             total: parseFloat(subtotalPayment.toFixed(2)),
             balanceRemaining: parseFloat(subtotalBalanceRemaining.toFixed(2))
+        },
+        penalizations: { // Información de penalizaciones monetarias
+            count: monetaryPenalizationsCount,
+            totalMoney: parseFloat(totalPenalizationMoney.toFixed(2))
         }
     };
 
