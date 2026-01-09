@@ -195,6 +195,46 @@ enrollment.studentIds = [
   - **`group`**: `totalAmount = plan.pricing.group × número_de_estudiantes`
 - Si el precio no cambió, se mantiene el `totalAmount` actual.
 
+**4. Actualización de `balance_per_class`:**
+- El sistema calcula automáticamente el nuevo `balance_per_class` basándose en el `newAvailableBalance` y `newTotalAmount`.
+- **Lógica de cálculo**:
+  - Si `newAvailableBalance >= newTotalAmount` → `balance_per_class = newTotalAmount`
+  - Si `newAvailableBalance < newTotalAmount` → `balance_per_class = newAvailableBalance`
+- **Restricción importante**: El valor de `balance_per_class` nunca puede ser mayor que `totalAmount`.
+- Este campo representa el valor del dinero que le queda por cada clase que han visto los estudiantes.
+
+**Ejemplo:**
+```javascript
+// Antes del income
+enrollment.available_balance = 50.00
+enrollment.totalAmount = 100.00
+enrollment.balance_per_class = 50.00
+
+// Income creado
+income.amountInDollars = 60.00
+
+// Después del income
+enrollment.available_balance = 110.00  // 50 + 60
+enrollment.totalAmount = 100.00
+enrollment.balance_per_class = 100.00  // Como 110 >= 100, se establece en totalAmount
+```
+
+**Ejemplo 2:**
+```javascript
+// Antes del income
+enrollment.available_balance = 30.00
+enrollment.totalAmount = 100.00
+enrollment.balance_per_class = 30.00
+
+// Income creado
+income.amountInDollars = 40.00
+
+// Después del income
+enrollment.available_balance = 70.00  // 30 + 40
+enrollment.totalAmount = 100.00
+enrollment.balance_per_class = 70.00  // Como 70 < 100, se establece en available_balance
+```
+
 **Ejemplo:**
 ```javascript
 // Plan con pricing actualizado
@@ -209,7 +249,7 @@ plan.pricing = {
 // totalAmount nuevo: 80.00 × 1 = 80.00
 ```
 
-**4. Activación de `cancellationPaymentsEnabled`:**
+**5. Activación de `cancellationPaymentsEnabled`:**
 - Si el `available_balance` es mayor que el `totalAmount`, se activa automáticamente `cancellationPaymentsEnabled = true`.
 - Esto permite que un cronjob existente procese renovaciones automáticas del plan hasta que el saldo sea insuficiente.
 
@@ -225,7 +265,7 @@ enrollment.cancellationPaymentsEnabled = true
 // available_balance final = 200 - (80 × 2) = 40.00
 ```
 
-**5. Desactivación y Notificación de Saldo Insuficiente:**
+**6. Desactivación y Notificación de Saldo Insuficiente:**
 - Si después de las renovaciones automáticas (o si el saldo ya era insuficiente) el `available_balance` es menor que el `totalAmount` y `cancellationPaymentsEnabled` estaba en `true`, se desactiva automáticamente a `false`.
 - Se crean automáticamente dos notificaciones:
   - **Notificación para Estudiantes**: Incluye todos los `studentIds` del enrollment.
@@ -243,6 +283,7 @@ El enrollment corre el riesgo de ser anulado si no se realiza un pago a tiempo."
 // Estado inicial
 enrollment.totalAmount = 80.00
 enrollment.available_balance = 200.00
+enrollment.balance_per_class = 80.00  // Como 200 >= 80, se establece en totalAmount
 enrollment.cancellationPaymentsEnabled = true
 
 // El cronjob procesa 2 renovaciones automáticas
@@ -254,11 +295,22 @@ income.amountInDollars = 30.00
 
 // Resultado
 enrollment.available_balance = 70.00  // < 80.00 (totalAmount)
+enrollment.balance_per_class = 70.00  // Como 70 < 80, se establece en available_balance
 enrollment.cancellationPaymentsEnabled = false  // Desactivado
 // Se crean notificaciones para estudiantes y admin
 ```
 
-##### **CASO 2: Income sin `idEnrollment` ni `idProfessor` (Excedente)**
+##### **CASO 2: Income con `idEnrollment` pero sin `idProfessor`**
+
+Cuando un ingreso tiene `idEnrollment` e `amountInDollars` pero **NO** tiene `idProfessor`, se aplican reglas de negocio limitadas:
+- Se actualiza `available_balance` del enrollment (sumando `amountInDollars`).
+- Se actualiza `totalAmount` si el precio del plan cambió.
+- Se actualiza `balance_per_class` con la misma lógica del CASO 1:
+  - Si `newAvailableBalance >= newTotalAmount` → `balance_per_class = newTotalAmount`
+  - Si `newAvailableBalance < newTotalAmount` → `balance_per_class = newAvailableBalance`
+- **NO** se actualizan otros campos como `studentIds`, `cancellationPaymentsEnabled`, ni se crean notificaciones.
+
+##### **CASO 3: Income sin `idEnrollment` ni `idProfessor` (Excedente)**
 
 Cuando un ingreso **NO** tiene `idEnrollment` ni `idProfessor`, se trata como un **excedente**:
 - No se aplican reglas de negocio de enrollments.
@@ -292,15 +344,16 @@ graph TD
     F --> G{¿Precio del plan<br/>cambió?}
     G -->|Sí| H[Actualizar totalAmount<br/>según enrollmentType]
     G -->|No| I[Mantener totalAmount actual]
-    H --> J{available_balance<br/>> totalAmount?}
+    H --> J[Calcular balance_per_class<br/>según available_balance y totalAmount]
     I --> J
-    J -->|Sí| K[Activar<br/>cancellationPaymentsEnabled = true]
-    J -->|No| L{available_balance < totalAmount<br/>Y cancellationPaymentsEnabled<br/>era true?}
-    L -->|Sí| M[Desactivar<br/>cancellationPaymentsEnabled = false]
-    M --> N[Crear notificaciones<br/>para estudiantes y admin]
-    L -->|No| O[Finalizar]
-    K --> O
-    D --> O
+    J --> K{available_balance<br/>> totalAmount?}
+    K -->|Sí| L[Activar<br/>cancellationPaymentsEnabled = true]
+    K -->|No| M{available_balance < totalAmount<br/>Y cancellationPaymentsEnabled<br/>era true?}
+    M -->|Sí| N[Desactivar<br/>cancellationPaymentsEnabled = false]
+    N --> O[Crear notificaciones<br/>para estudiantes y admin]
+    M -->|No| P[Finalizar]
+    L --> P
+    D --> P
 ```
 
 ##### **Consideraciones Importantes**
@@ -318,6 +371,7 @@ graph TD
 6. **Logs de Procesamiento**: El sistema registra en los logs del servidor todos los cambios realizados:
    - Cambios en `available_balance`
    - Cambios en `totalAmount`
+   - Cambios en `balance_per_class`
    - Cambios en `cancellationPaymentsEnabled`
    - Creación de notificaciones
 
@@ -355,7 +409,39 @@ const createIncomeWithEnrollment = async () => {
 };
 ```
 
-**Ejemplo 2: Crear Income Excedente (CASO 2)**
+**Ejemplo 2: Crear Income con Enrollment pero sin Profesor (CASO 2)**
+```javascript
+const createIncomeWithEnrollmentOnly = async () => {
+  const incomeData = {
+    income_date: new Date().toISOString(),
+    deposit_name: "Pago adicional sin profesor",
+    amount: 50.00,
+    amountInDollars: 50.00,
+    idDivisa: "64f8a1b2c3d4e5f6a7b8c9d0",
+    idPaymentMethod: "64f8a1b2c3d4e5f6a7b8c9d2",
+    idEnrollment: "64f8a1b2c3d4e5f6a7b8c9d3",  // ← Tiene enrollment
+    // Sin idProfessor → CASO 2
+    note: "Pago adicional al enrollment"
+  };
+
+  try {
+    const response = await incomesService.createIncome(incomeData);
+    console.log('Income creado:', response.income);
+    
+    // El enrollment se actualiza automáticamente:
+    // - available_balance aumenta en $50
+    // - balance_per_class se actualiza según la lógica
+    // - totalAmount se verifica/actualiza si el plan cambió
+    // - NO se actualizan studentIds ni cancellationPaymentsEnabled
+    // - NO se crean notificaciones
+    
+  } catch (error) {
+    console.error('Error:', error);
+  }
+};
+```
+
+**Ejemplo 3: Crear Income Excedente (CASO 3)**
 ```javascript
 const createExcedenteIncome = async () => {
   const incomeData = {
@@ -365,7 +451,7 @@ const createExcedenteIncome = async () => {
     amountInDollars: 500.00,
     idDivisa: "64f8a1b2c3d4e5f6a7b8c9d0",
     idPaymentMethod: "64f8a1b2c3d4e5f6a7b8c9d2",
-    // Sin idEnrollment ni idProfessor → CASO 2 (Excedente)
+    // Sin idEnrollment ni idProfessor → CASO 3 (Excedente)
     note: "Donación para compra de equipos nuevos"
   };
 
@@ -396,6 +482,7 @@ const createIncomeAndCheckEnrollment = async (incomeData) => {
       console.log('Enrollment actualizado:', {
         available_balance: enrollment.available_balance,
         totalAmount: enrollment.totalAmount,
+        balance_per_class: enrollment.balance_per_class,
         cancellationPaymentsEnabled: enrollment.cancellationPaymentsEnabled,
         studentAmounts: enrollment.studentIds.map(s => ({
           studentId: s.studentId,
@@ -2029,7 +2116,10 @@ export default ProfessorsReport;
 
 2. **Actualización de Saldos**:
    - `available_balance` se actualiza automáticamente sumando `amountInDollars`.
-   - Los montos por estudiante (`amount` en `studentIds`) se recalculan automáticamente.
+   - `balance_per_class` se actualiza automáticamente según la lógica:
+     - Si `newAvailableBalance >= newTotalAmount` → `balance_per_class = newTotalAmount`
+     - Si `newAvailableBalance < newTotalAmount` → `balance_per_class = newAvailableBalance`
+   - Los montos por estudiante (`amount` en `studentIds`) se recalculan automáticamente (solo en CASO 1).
 
 3. **Gestión de Renovaciones Automáticas**:
    - `cancellationPaymentsEnabled` se activa/desactiva automáticamente según el saldo disponible.
@@ -2043,6 +2133,11 @@ export default ProfessorsReport;
 5. **Verificación de Precios**:
    - El sistema verifica si el precio del plan cambió en cada income.
    - Solo actualiza `totalAmount` si el precio realmente cambió.
+
+6. **Actualización de `balance_per_class`**:
+   - Se actualiza automáticamente en todos los casos donde hay `idEnrollment` (CASO 1 y CASO 2).
+   - El valor nunca puede exceder `totalAmount`.
+   - Representa el dinero disponible por cada clase que han visto los estudiantes.
 
 ### **🆕 Nueva Funcionalidad - Excedentes**
 - **Identificación**: Los ingresos excedentes son aquellos que NO tienen `idEnrollment` ni `idProfessor`

@@ -314,8 +314,11 @@ enrollmentCtrl.create = async (req, res) => {
         // Calcular totalAmount: precio del plan × número de estudiantes
         req.body.totalAmount = planPrice * numberOfStudents;
         
-        // Calcular available_balance: igual a totalAmount
+        // Calcular available_balance: igual a 0 por defecto.
         req.body.available_balance = 0;
+        
+        // Inicializar balance_per_class a 0 por defecto.
+        req.body.balance_per_class = 0;
         
         // Asignar amount a cada estudiante: el precio del plan según enrollmentType
         // NO se divide entre el número de estudiantes, cada estudiante tiene el mismo amount

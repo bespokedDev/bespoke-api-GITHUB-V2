@@ -234,7 +234,137 @@ El cronjob registra en consola:
 
 ---
 
-### **3. Cronjob de Finalización de Clases**
+### **3. Cronjob de Profesores Suplentes Expirados**
+
+**Archivo**: `src/jobs/enrollments.jobs.js`  
+**Función**: `processExpiredSubstituteProfessors`  
+**Inicialización**: `initSubstituteProfessorExpiryCronjob`
+
+#### **Descripción**
+Este cronjob procesa automáticamente los enrollments que tienen profesores suplentes asignados y remueve la relación cuando la fecha de expiración (`expiryDate`) del profesor suplente coincide con el día actual o ya ha pasado.
+
+#### **Reglas de Negocio**
+
+1. **Búsqueda de Enrollments con Profesores Suplentes**
+   - Busca todos los enrollments que tienen `substituteProfessor` no null
+   - Filtra enrollments que tienen `substituteProfessor.expiryDate` definido
+
+2. **Verificación de Fecha de Expiración**
+   - Compara `substituteProfessor.expiryDate` con la fecha actual (solo fecha, sin hora)
+   - Si `expiryDate <= fecha actual`: el profesor suplente ha expirado
+
+3. **Remoción del Profesor Suplente**
+   - Si el profesor suplente ha expirado, establece `substituteProfessor` en `null`
+   - Esto elimina la relación entre el enrollment y el profesor suplente
+
+#### **Proceso de Ejecución**
+
+1. **Búsqueda de Enrollments**
+   ```javascript
+   const enrollmentsWithSubstitute = await Enrollment.find({
+       substituteProfessor: { $ne: null },
+       'substituteProfessor.expiryDate': { $exists: true }
+   }).lean();
+   ```
+
+2. **Comparación de Fechas**
+   - Normaliza la fecha actual a medianoche (00:00:00)
+   - Normaliza `expiryDate` a medianoche (00:00:00)
+   - Compara solo las fechas (ignorando la hora)
+
+3. **Actualización del Enrollment**
+   - Si `expiryDate <= fecha actual`:
+     - Actualiza el enrollment estableciendo `substituteProfessor: null`
+     - Registra logs con información del enrollment y profesor suplente removido
+
+#### **Estructura de `substituteProfessor`**
+
+**Antes de la expiración:**
+```json
+{
+  "substituteProfessor": {
+    "professorId": "685a14c96c566777c1b5dc3a",
+    "assignedDate": "2026-01-08T00:00:00.000Z",
+    "expiryDate": "2026-01-11T00:00:00.000Z",
+    "status": 1
+  }
+}
+```
+
+**Después de la expiración (cuando `expiryDate` coincide o pasa):**
+```json
+{
+  "substituteProfessor": null
+}
+```
+
+#### **Campos del `substituteProfessor`**
+
+- **`professorId`** (ObjectId): Referencia al profesor suplente asignado
+- **`assignedDate`** (Date): Fecha en que se asignó la suplencia
+- **`expiryDate`** (Date): Fecha en que debe vencer la suplencia (usada para comparación)
+- **`status`** (Number): Estado de la suplencia
+  - `1` = Activo en suplencia
+  - `0` = Inactivo en suplencia
+
+#### **Ejemplo de Procesamiento**
+
+**Escenario:**
+- Fecha actual: `2026-01-11`
+- Enrollment con `substituteProfessor.expiryDate: 2026-01-11`
+
+**Proceso:**
+1. El cronjob encuentra el enrollment con profesor suplente
+2. Compara `expiryDate (2026-01-11) <= fecha actual (2026-01-11)` → ✅ Verdadero
+3. Actualiza el enrollment: `substituteProfessor: null`
+4. Registra en logs: Profesor suplente removido
+
+**Escenario 2:**
+- Fecha actual: `2026-01-12`
+- Enrollment con `substituteProfessor.expiryDate: 2026-01-11`
+
+**Proceso:**
+1. El cronjob encuentra el enrollment con profesor suplente
+2. Compara `expiryDate (2026-01-11) <= fecha actual (2026-01-12)` → ✅ Verdadero (ya pasó)
+3. Actualiza el enrollment: `substituteProfessor: null`
+4. Registra en logs: Profesor suplente removido
+
+#### **Logs del Cronjob**
+El cronjob registra en consola:
+- Número de enrollments con profesores suplentes encontrados
+- Número de enrollments procesados
+- Número de profesores suplentes expirados y removidos
+- Detalles de cada enrollment procesado (ID, fecha de expiración, fecha actual, ID del profesor suplente)
+- Errores específicos por enrollment (si los hay)
+
+**Ejemplo de Logs:**
+```
+[CRONJOB PROFESORES SUPLENTES] Ejecutando cronjob de profesores suplentes expirados - 2026-01-11T00:00:00.000Z
+[CRONJOB PROFESORES SUPLENTES] Iniciando procesamiento de profesores suplentes expirados...
+[CRONJOB PROFESORES SUPLENTES] Enrollments con profesor suplente encontrados: 3
+[CRONJOB PROFESORES SUPLENTES] Profesor suplente removido del enrollment 64f8a1b2c3d4e5f6a7b8c9d0
+  - Fecha de expiración: 2026-01-11
+  - Fecha actual: 2026-01-11
+  - Profesor suplente ID: 685a14c96c566777c1b5dc3a
+[CRONJOB PROFESORES SUPLENTES] Procesamiento completado:
+  - Enrollments procesados: 3
+  - Profesores suplentes expirados y removidos: 1
+[CRONJOB PROFESORES SUPLENTES] Finalizando procesamiento de profesores suplentes expirados
+```
+
+#### **Notas Importantes**
+
+1. **Comparación de Fechas**: El cronjob compara solo las fechas (sin hora), por lo que si `expiryDate` es `2026-01-11T23:59:59.999Z` y la fecha actual es `2026-01-11T00:00:00.000Z`, se considera que el profesor suplente ha expirado.
+
+2. **Idempotencia**: El cronjob es idempotente. Si un enrollment ya tiene `substituteProfessor: null`, no se procesa nuevamente.
+
+3. **Sin Notificaciones**: Este cronjob **NO crea notificaciones**. Solo actualiza el campo `substituteProfessor` del enrollment.
+
+4. **Procesamiento Diario**: Se ejecuta todos los días a medianoche, por lo que los profesores suplentes se remueven el mismo día que expiran o el día siguiente si ya pasó la fecha.
+
+---
+
+### **4. Cronjob de Finalización de Clases**
 
 **Archivo**: `src/jobs/classRegistry.jobs.js`  
 **Función**: `processClassFinalization`  
@@ -363,7 +493,7 @@ Todos los cronjobs generan logs detallados en la consola con el prefijo `[CRONJO
 src/
   jobs/
     index.js                    # Inicialización centralizada
-    enrollments.jobs.js         # Cronjob de enrollments por impago y pagos automáticos
+    enrollments.jobs.js         # Cronjob de enrollments por impago, pagos automáticos y profesores suplentes expirados
     classRegistry.jobs.js       # Cronjob de finalización de clases
 ```
 
@@ -423,6 +553,7 @@ cron.schedule('0 0 * * *', async () => {
 2. **Procesamiento de Enrollments**: 
    - El cronjob de enrollments por impago solo procesa enrollments con `status: 1` (activos)
    - El cronjob de pagos automáticos procesa enrollments con `cancellationPaymentsEnabled: true`, independientemente del `status`
+   - El cronjob de profesores suplentes expirados procesa todos los enrollments con `substituteProfessor` no null, independientemente del `status`
    - El cronjob de finalización de clases procesa todos los enrollments vencidos, independientemente de su status
 
 3. **Notificaciones**: 
@@ -437,6 +568,7 @@ cron.schedule('0 0 * * *', async () => {
    - Los cronjobs están diseñados para ser idempotentes (pueden ejecutarse múltiples veces sin efectos secundarios)
    - Las penalizaciones solo se crean si no existen previamente
    - Las clases solo se actualizan si cumplen las condiciones
+   - Los profesores suplentes solo se remueven si `expiryDate` coincide o ya pasó
 
 ---
 

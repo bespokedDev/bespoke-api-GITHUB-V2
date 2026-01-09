@@ -1,7 +1,7 @@
 // jobs/index.js
 // Archivo principal para inicializar todos los cronjobs
 
-const { initEnrollmentsPaymentCronjob, initAutomaticPaymentsCronjob } = require('./enrollments.jobs');
+const { initEnrollmentsPaymentCronjob, initAutomaticPaymentsCronjob, initSubstituteProfessorExpiryCronjob } = require('./enrollments.jobs');
 const { initClassFinalizationCronjob, initMonthlyClassClosureCronjob } = require('./classRegistry.jobs');
 
 /**
@@ -16,6 +16,9 @@ const initAllJobs = () => {
 
     // Inicializar cronjob de pagos automáticos
     initAutomaticPaymentsCronjob();
+
+    // Inicializar cronjob de profesores suplentes expirados
+    initSubstituteProfessorExpiryCronjob();
 
     // Inicializar cronjob de finalización de clases
     initClassFinalizationCronjob();

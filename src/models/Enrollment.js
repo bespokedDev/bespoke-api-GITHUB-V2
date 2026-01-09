@@ -200,6 +200,11 @@ const EnrollmentSchema = new mongoose.Schema({
         min: 0
         // balance disponible
     },
+    balance_per_class: {
+        type: Number,
+        min: 0
+        // valor del dinero que le queda por cada clase que han visto los estudiantes.
+    },
     disolve_reason: {
         type: String,
         trim: true,
