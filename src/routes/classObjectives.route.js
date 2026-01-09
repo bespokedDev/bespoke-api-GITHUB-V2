@@ -13,7 +13,7 @@ router.post('/', verifyToken, verifyRole('admin', 'professor'), classObjectiveCt
 
 // GET /api/class-objectives - Lista todos los objetivos de clase (con información básica)
 // Acceso: admin, professor
-router.get('/', verifyToken, verifyRole('admin', 'professor'), classObjectiveCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'professor', 'student'), classObjectiveCtrl.list);
 
 // GET /api/class-objectives/:id - Obtiene un objetivo de clase por su ID (con detalle completo)
 // Acceso: admin, professor

@@ -965,7 +965,11 @@ No requiere body.
             "_id": "6858c84b1b114315ccdf65d0",
             "studentCode": "BES-0084",
             "name": "Jose Orlando Contreras",
-            "email": "contrerasnorlando@gmail.com"
+            "email": "contrerasnorlando@gmail.com",
+            "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+            "avatarPermission": 1,
+            "dob": "1990-05-15",
+            "createdAt": "2024-01-10T10:30:00.000Z"
           },
           "preferences": "Prefiere clases prácticas y conversacionales",
           "firstTimeLearningLanguage": "Sí, es la primera vez",
@@ -1010,6 +1014,17 @@ No requiere body.
 }
 ```
 
+#### **Campos Incluidos en studentId**
+Cada objeto `studentId` dentro de `studentIds` incluye la siguiente información del estudiante:
+- `_id` (ObjectId): ID único del estudiante
+- `studentCode` (String): Código único del estudiante (ej: "BES-0084")
+- `name` (String): Nombre completo del estudiante
+- `email` (String): Correo electrónico del estudiante
+- `avatar` (String): Avatar del estudiante en formato base64 (puede ser `null` si no tiene avatar asignado)
+- `avatarPermission` (Number): Permiso para compartir el avatar. Valores: `0` = no, `1` = sí, `null` = no definido
+- `dob` (String): Fecha de nacimiento del estudiante (Date of Birth)
+- `createdAt` (Date): Fecha de creación del registro del estudiante
+
 #### **Campos Excluidos (No se incluyen en la respuesta)**
 Los siguientes campos sensibles **NO** se incluyen en la respuesta:
 - `pricing` del `planId`
@@ -1027,6 +1042,14 @@ Los siguientes campos sensibles **NO** se incluyen en la respuesta:
 - `400`: ID de enrollment inválido
 - `404`: Enrollment no encontrado
 - `500`: Error interno del servidor
+
+#### **Notas Importantes**
+- Los campos `avatar`, `avatarPermission`, `dob` y `createdAt` del estudiante están incluidos en cada objeto `studentId` dentro de `studentIds`
+- El `avatar` se devuelve como string en formato base64 (puede ser `null` si el estudiante no tiene avatar asignado)
+- El `avatarPermission` indica si el estudiante ha dado permiso para compartir su avatar (0 = no, 1 = sí, null = no definido)
+- El `dob` contiene la fecha de nacimiento del estudiante en formato string
+- El `createdAt` indica cuándo se creó el registro del estudiante en el sistema
+- Este endpoint excluye campos sensibles como precios y balances para proteger información financiera
 
 #### **Ejemplo con cURL**
 ```bash

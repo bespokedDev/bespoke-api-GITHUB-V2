@@ -40,7 +40,7 @@ const cors = require('cors');
 require('./models/ProfessorType');
 
 // Middlewares
-app.use(express.json());
+app.use(express.json({ limit: '500kb' }));
 app.use(cors());
 
 // Iniciar conexión a MongoDB de forma asíncrona sin bloquear la inicialización

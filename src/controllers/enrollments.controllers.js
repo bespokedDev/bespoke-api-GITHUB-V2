@@ -1072,7 +1072,7 @@ enrollmentCtrl.getDetail = async (req, res) => {
         // Buscar el enrollment con todos los datos populados
         const enrollment = await Enrollment.findById(enrollmentId)
             .populate('planId', 'name weeklyClasses pricing planType weeks')
-            .populate('studentIds.studentId', 'name email studentCode')
+            .populate('studentIds.studentId', 'name email studentCode avatar avatarPermission dob createdAt')
             .populate('professorId', 'name email')
             .lean();
 
