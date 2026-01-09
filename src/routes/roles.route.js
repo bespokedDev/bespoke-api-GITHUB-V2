@@ -8,13 +8,13 @@ const verifyRole = require('../middlewares/verifyRole');
 // Rutas protegidas con JWT y validación de roles
 
 // POST /api/roles - Crea un nuevo rol (solo admin)
-router.post('/', verifyToken, verifyRole('admin'), roleCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), roleCtrl.create);
 
 // GET /api/roles - Lista todos los roles (solo admin)
-router.get('/', verifyToken, verifyRole('admin'), roleCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), roleCtrl.list);
 
 // GET /api/roles/:id - Obtiene un rol por su ID (solo admin)
-router.get('/:id', verifyToken, verifyRole('admin'), roleCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), roleCtrl.getById);
 
 module.exports = router;
 

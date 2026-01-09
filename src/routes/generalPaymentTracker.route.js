@@ -9,18 +9,18 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // POST /api/general-payment-tracker - Guarda un reporte modificado
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.saveModifiedReport);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), generalPaymentTrackerCtrl.saveModifiedReport);
 
 // GET /api/general-payment-tracker - Lista todos los reportes guardados
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.listAllSavedReports);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), generalPaymentTrackerCtrl.listAllSavedReports);
 
 // GET /api/general-payment-tracker/special-reports - Lista reportes especiales guardados
 // Acceso: Solo admin
-router.get('/special-reports', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.listSpecialSavedReports);
+router.get('/special-reports', verifyToken, verifyRole('admin', 'admin-jr'), generalPaymentTrackerCtrl.listSpecialSavedReports);
 
 // GET /api/general-payment-tracker/:id - Obtiene un reporte por su ID
 // Acceso: Solo admin
-router.get('/:id', verifyToken, verifyRole('admin'), generalPaymentTrackerCtrl.getReportById);
+router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), generalPaymentTrackerCtrl.getReportById);
 
 module.exports = router;

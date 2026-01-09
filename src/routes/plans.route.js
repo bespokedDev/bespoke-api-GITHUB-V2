@@ -9,26 +9,26 @@ const verifyRole = require('../middlewares/verifyRole'); // Importa el middlewar
 
 // POST /api/plans - Crea un nuevo plan
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), planCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), planCtrl.create);
 
 // GET /api/plans - Lista todos los planes
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), planCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), planCtrl.list);
 
 // GET /api/plans/:id - Obtiene un plan por su ID
 // Acceso: Solo admin
-router.get('/:id', verifyToken, verifyRole('admin'), planCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), planCtrl.getById);
 
 // PUT /api/plans/:id - Actualiza un plan por su ID
 // Acceso: Solo admin
-router.put('/:id', verifyToken, verifyRole('admin'), planCtrl.update);
+router.put('/:id', verifyToken, verifyRole('admin', 'admin-jr'), planCtrl.update);
 
 // PATCH /api/plans/:id/deactivate - Desactiva un plan
 // Acceso: Solo admin
-router.patch('/:id/deactivate', verifyToken, verifyRole('admin'), planCtrl.deactivate);
+router.patch('/:id/deactivate', verifyToken, verifyRole('admin', 'admin-jr'), planCtrl.deactivate);
 
 // PATCH /api/plans/:id/activate - Activa un plan
 // Acceso: Solo admin
-router.patch('/:id/activate', verifyToken, verifyRole('admin'), planCtrl.activate);
+router.patch('/:id/activate', verifyToken, verifyRole('admin', 'admin-jr'), planCtrl.activate);
 
 module.exports = router;

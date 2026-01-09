@@ -25,6 +25,7 @@ const headers = {
 |--------|------|-------------|--------|
 | `POST` | `/api/penalization-registry` | Crear nuevo registro de penalización | Solo admin |
 | `GET` | `/api/penalization-registry/user/my-penalizations` | Listar registros de penalización del usuario autenticado | Cualquier usuario autenticado |
+| `PATCH` | `/api/penalization-registry/:id/status` | Actualizar status de un registro de penalización | Solo admin |
 
 ---
 
@@ -49,6 +50,7 @@ const headers = {
   "support_file": "https://storage.example.com/files/evidence-123.pdf",
   "userId": null,
   "payOutId": null,
+  "status": 1,
   "createdAt": "2025-01-16T10:30:00.000Z",
   "updatedAt": "2025-01-16T10:30:00.000Z"
 }
@@ -70,6 +72,7 @@ const headers = {
 | `support_file` | String | No | Archivo de soporte o evidencia |
 | `userId` | ObjectId | No | Referencia al usuario administrador (modelo `User`) |
 | `payOutId` | ObjectId | No | Referencia al payout (modelo `Payout`) - Enlace administrativo cuando se debe hacer el pago |
+| `status` | Number | No | Estado del registro de penalización (0 = Inactiva, 1 = Activa). Por defecto: 1 |
 | `createdAt` | Date | Auto | Fecha de creación (generado automáticamente) |
 | `updatedAt` | Date | Auto | Fecha de última actualización (generado automáticamente) |
 
@@ -164,6 +167,12 @@ POST /api/penalization-registry
   - Opcional, para enlace administrativo cuando se debe hacer el pago
   - Permite vincular una penalización con un payout específico
 
+- **`status`** (number): Estado del registro de penalización
+  - **Valores permitidos**: `0` o `1`
+  - `0` = Inactiva
+  - `1` = Activa (por defecto)
+  - Si no se proporciona, se establece automáticamente en `1` (activa)
+
 ##### **Campos Opcionales - Detalles**
 - **`penalizationMoney`** (number): Monto de dinero de la penalización
   - Debe ser un número ≥ 0
@@ -205,10 +214,22 @@ Cuando `notification = 1`:
    - `idStudent`: Se copia del registro si existe (se convierte a array)
 3. La categoría de notificación se establece automáticamente como "Penalización" (se crea si no existe)
 4. El campo `notification_description` es **obligatorio** cuando `notification = 1`
+5. **Mejora automática de la descripción**: Si la penalización es monetaria (`penalizationMoney > 0`), se agrega automáticamente el monto a la descripción de la notificación en el formato: `[notification_description] Monto: $[amount].`
+   - **Ejemplo**: Si `notification_description = "Se ha aplicado una penalización"` y `penalizationMoney = 50.00`, la notificación final será: `"Se ha aplicado una penalización Monto: $50.00."`
 
 Cuando `notification = 0`:
 - No se crea ninguna notificación
 - El campo `notification_description` se ignora si se proporciona
+
+#### **Lógica de Actualización de `penalizationCount`**
+
+Cuando se crea un registro de penalización con `enrollmentId`:
+1. Se incrementa automáticamente el campo `penalizationCount` del enrollment referenciado en +1
+2. La actualización se realiza de forma atómica usando `$inc` de MongoDB
+3. Si el enrollment no existe o falla la actualización, se registra un error en los logs pero **no se interrumpe la creación del registro de penalización**
+4. El contador `penalizationCount` permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
+
+**Nota**: Esta actualización ocurre automáticamente tanto para penalizaciones creadas manualmente como para las creadas por cronjobs.
 
 #### **Response (201 - Created) - Con Notificación**
 ```json
@@ -231,13 +252,14 @@ Cuando `notification = 0`:
     "support_file": "https://storage.example.com/files/evidence-123.pdf",
     "userId": null,
     "payOutId": null,
+    "status": 1,
     "createdAt": "2025-01-16T10:30:00.000Z",
     "updatedAt": "2025-01-16T10:30:00.000Z"
   },
   "notification": {
     "_id": "694c52084dc7f703443ceef2",
     "idCategoryNotification": "694c52084dc7f703443ceef3",
-    "notification_description": "Se ha aplicado una penalización por vencimiento de pago",
+    "notification_description": "Se ha aplicado una penalización por vencimiento de pago Monto: $50.00.",
     "idPenalization": "694c52084dc7f703443ceeea",
     "idEnrollment": "694c52084dc7f703443ceef1",
     "idProfessor": null,
@@ -267,6 +289,7 @@ Cuando `notification = 0`:
     "support_file": null,
     "userId": null,
     "payOutId": null,
+    "status": 1,
     "createdAt": "2025-01-16T10:30:00.000Z",
     "updatedAt": "2025-01-16T10:30:00.000Z"
   }
@@ -543,7 +566,13 @@ const crearRegistroMinimo = async () => {
    - Solo acepta valores `0` o `1`
    - Si `notification = 1`, el campo `notification_description` es **obligatorio**
    - La notificación se crea automáticamente con la categoría "Penalización"
+   - **Mejora automática**: Si la penalización es monetaria (`penalizationMoney > 0`), se agrega automáticamente el monto a la descripción de la notificación en el formato: `[notification_description] Monto: $[amount].`
    - Si falla la creación de la notificación, el registro de penalización se guarda igual (solo se loguea el error)
+
+4. **Actualización de `penalizationCount`**: 
+   - Si el registro de penalización tiene `enrollmentId`, se incrementa automáticamente `penalizationCount` del enrollment en +1
+   - La actualización es atómica y no afecta la creación del registro si falla
+   - Permite llevar un registro del historial de penalizaciones sin consultar la colección de penalizaciones
 
 4. **idpenalizationLevel**: 
    - Si se proporciona, debe ser un objeto con `tipo` (string) y `nivel` (number ≥ 1)
@@ -685,6 +714,7 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
       "support_file": "https://storage.example.com/files/evidence-123.pdf",
       "userId": null,
       "payOutId": null,
+      "status": 1,
       "createdAt": "2025-01-16T10:30:00.000Z",
       "updatedAt": "2025-01-16T10:30:00.000Z"
     }
@@ -776,6 +806,201 @@ const getMyPenalizations = async () => {
 
 ---
 
+## 🔍 **3. Actualizar Status de un Registro de Penalización**
+
+### **PATCH** `/api/penalization-registry/:id/status`
+
+Actualiza el status de un registro de penalización existente. Solo permite cambiar entre `0` (inactiva) y `1` (activa).
+
+#### **URL Completa**
+```
+PATCH /api/penalization-registry/:id/status
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <tu-token-jwt>"
+}
+```
+
+#### **Parámetros de URL**
+- **`id`** (string, requerido): ID del registro de penalización a actualizar
+  - Debe ser un ObjectId válido de MongoDB
+
+#### **Request Body**
+```json
+{
+  "status": 1
+}
+```
+
+##### **Campos del Request Body**
+- **`status`** (number, requerido): Nuevo status del registro de penalización
+  - **Valores permitidos**: `0` o `1`
+  - `0` = Inactiva
+  - `1` = Activa
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Status del registro de penalización actualizado exitosamente",
+  "penalizationRegistry": {
+    "_id": "694c52084dc7f703443ceef0",
+    "idPenalizacion": "694c52084dc7f703443ceeea",
+    "idpenalizationLevel": {
+      "tipo": "Amonestación",
+      "nivel": 2
+    },
+    "enrollmentId": "694c52084dc7f703443ceef1",
+    "professorId": null,
+    "studentId": null,
+    "penalization_description": "Penalización por vencimiento de días de pago. Enrollment vencido el 2025-01-15",
+    "penalizationMoney": 50.00,
+    "lateFee": 7,
+    "endDate": "2025-01-15T00:00:00.000Z",
+    "support_file": "https://storage.example.com/files/evidence-123.pdf",
+    "userId": null,
+    "payOutId": null,
+    "status": 1,
+    "createdAt": "2025-01-16T10:30:00.000Z",
+    "updatedAt": "2025-01-16T11:45:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 - Bad Request**
+```json
+{
+  "message": "ID de registro de penalización inválido."
+}
+```
+- **Causa**: El ID proporcionado en la URL no es un ObjectId válido
+
+```json
+{
+  "message": "El campo status es requerido."
+}
+```
+- **Causa**: No se proporcionó el campo `status` en el body
+
+```json
+{
+  "message": "El campo status debe ser 0 (inactiva) o 1 (activa)."
+}
+```
+- **Causa**: El campo `status` tiene un valor diferente a 0 o 1
+
+**404 - Not Found**
+```json
+{
+  "message": "Registro de penalización no encontrado."
+}
+```
+- **Causa**: El ID proporcionado no existe en la base de datos
+
+**401 - Unauthorized**
+```json
+{
+  "message": "Token no proporcionado"
+}
+```
+- **Causa**: No se incluyó el header de autorización
+
+**403 - Forbidden**
+```json
+{
+  "message": "Token inválido o expirado"
+}
+```
+- **Causa**: El token JWT es inválido o el usuario no tiene rol de administrador
+
+**500 - Internal Server Error**
+```json
+{
+  "message": "Error interno al actualizar status del registro de penalización",
+  "error": "Mensaje de error detallado"
+}
+```
+- **Causa**: Error inesperado del servidor
+
+#### **Ejemplo de Uso (JavaScript/Fetch)**
+```javascript
+const updatePenalizationStatus = async (penalizationId, newStatus) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/penalization-registry/${penalizationId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        status: newStatus // 0 o 1
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log('Status actualizado:', data.penalizationRegistry);
+    return data;
+  } catch (error) {
+    console.error('Error al actualizar status:', error);
+    throw error;
+  }
+};
+
+// Ejemplo de uso: Activar una penalización
+await updatePenalizationStatus('694c52084dc7f703443ceef0', 1);
+
+// Ejemplo de uso: Desactivar una penalización
+await updatePenalizationStatus('694c52084dc7f703443ceef0', 0);
+```
+
+#### **Ejemplo con cURL**
+```bash
+# Activar una penalización (status = 1)
+curl -X PATCH http://localhost:3000/api/penalization-registry/694c52084dc7f703443ceef0/status \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <tu-token>" \
+  -d '{
+    "status": 1
+  }'
+
+# Desactivar una penalización (status = 0)
+curl -X PATCH http://localhost:3000/api/penalization-registry/694c52084dc7f703443ceef0/status \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <tu-token>" \
+  -d '{
+    "status": 0
+  }'
+```
+
+#### **Lógica de Actualización de `penalizationCount`**
+
+Cuando se actualiza el status de un registro de penalización a `0` (inactiva):
+1. Si el registro tiene `enrollmentId`, se decrementa automáticamente el campo `penalizationCount` del enrollment referenciado en -1
+2. La actualización se realiza de forma atómica usando `$inc` de MongoDB
+3. Si el enrollment no existe o falla la actualización, se registra un error en los logs pero **no se interrumpe la actualización del status del registro de penalización**
+4. El contador `penalizationCount` permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
+
+**Nota**: Esta actualización solo ocurre cuando el status cambia a `0` (inactiva). Si el registro ya estaba en `0`, no se realiza ninguna actualización del contador.
+
+#### **Notas Importantes**
+- Solo los administradores pueden actualizar el status de un registro de penalización
+- El campo `status` solo acepta valores `0` (inactiva) o `1` (activa)
+- El campo `updatedAt` se actualiza automáticamente cuando se modifica el status
+- Este endpoint solo actualiza el campo `status`, no modifica otros campos del registro
+- Si el status cambia a `0` y el registro tiene `enrollmentId`, se decrementa automáticamente `penalizationCount` del enrollment
+
+---
+
 **Última actualización**: 2025-01-XX
-**Versión**: 1.1
+**Versión**: 1.2
 

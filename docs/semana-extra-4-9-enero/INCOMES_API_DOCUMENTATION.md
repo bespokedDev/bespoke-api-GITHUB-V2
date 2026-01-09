@@ -37,6 +37,7 @@ a
   "idProfessor": "64f8a1b2c3d4e5f6a7b8c9d1",
   "idPaymentMethod": "64f8a1b2c3d4e5f6a7b8c9d2",
   "idEnrollment": "64f8a1b2c3d4e5f6a7b8c9d3",
+  "idPenalization": null,
   "note": "Pago por clase individual de piano"
 }
 ```
@@ -51,6 +52,10 @@ a
 - **`idProfessor`** (ObjectId, opcional): Referencia al profesor
 - **`idPaymentMethod`** (ObjectId, opcional): Referencia al método de pago
 - **`idEnrollment`** (ObjectId, opcional): Referencia a la matrícula
+- **`idPenalization`** (ObjectId, opcional): Referencia a la penalización que se está pagando con este income
+  - Se usa cuando un income se crea específicamente para pagar una penalización de un enrollment
+  - Si se proporciona, debe ser un ObjectId válido de un registro existente en la colección `penalizaciones`
+  - Por defecto: `null`
 - **`note`** (string, opcional): Nota adicional
 
 #### **Notas Importantes**
@@ -873,6 +878,10 @@ GET /api/incomes/professors-payout-report?month=2025-01
             "createdAt": "2025-01-15T10:30:00.000Z"
           }
         ]
+      },
+      "penalizations": {
+        "count": 3,
+        "totalMoney": 150.00
       }
     }
   ],
@@ -919,6 +928,10 @@ GET /api/incomes/professors-payout-report?month=2025-01
           "createdAt": "2025-01-20T10:30:00.000Z"
         }
       ]
+    },
+    "penalizations": {
+      "count": 2,
+      "totalMoney": 75.00
     }
   },
   "excedente": {
@@ -1118,6 +1131,10 @@ El reporte de excedentes ahora incluye tres componentes:
         "createdAt": "2025-01-15T10:30:00.000Z"
       }
     ]
+  },
+  "penalizations": {
+    "count": 3,
+    "totalMoney": 150.00
   }
 }
 ```
@@ -1179,6 +1196,10 @@ El reporte de excedentes ahora incluye tres componentes:
         "createdAt": "2025-01-20T10:30:00.000Z"
       }
     ]
+  },
+  "penalizations": {
+    "count": 2,
+    "totalMoney": 75.00
   }
 }
 ```
@@ -1283,6 +1304,55 @@ Cada objeto en el array `report` ahora incluye tres campos de sumatorias que agr
 }
 ```
 
+#### **🆕 Información de Penalizaciones por Profesor**
+Cada profesor en el reporte incluye información sobre sus penalizaciones monetarias activas en el campo `penalizations`:
+
+**Estructura:**
+```json
+{
+  "penalizations": {
+    "count": 3,
+    "totalMoney": 150.00
+  }
+}
+```
+
+**Campos de `penalizations`:**
+- **`count`** (number): Número total de penalizaciones monetarias activas del profesor
+  - Solo cuenta penalizaciones con `status: 1` (activas) y `penalizationMoney > 0` (monetarias)
+  - Representa el número de penalizaciones que tienen un monto de dinero asociado
+- **`totalMoney`** (number): Suma total del dinero de todas las penalizaciones monetarias activas del profesor
+  - Se calcula sumando todos los valores de `penalizationMoney` de las penalizaciones que cumplen:
+    - `status: 1` (activas)
+    - `penalizationMoney > 0` (monetarias)
+  - Representa el total de dinero que el profesor debe por penalizaciones
+
+**Criterios de Filtrado:**
+- Solo se consideran penalizaciones con `status: 1` (activas)
+- Solo se consideran penalizaciones con `penalizationMoney > 0` (monetarias)
+- Las penalizaciones de tipo amonestación (`penalizationMoney = 0` o `null`) no se incluyen en este conteo
+
+**Aplicado en:**
+- Reporte general de profesores (cada profesor en el array `report`)
+- Reporte especial del profesor (Andrea Wias) en `specialProfessorReport`
+
+**Ejemplo de Uso:**
+```json
+{
+  "professorId": "64f8a1b2c3d4e5f6a7b8c9d1",
+  "professorName": "Juan Pérez",
+  "details": [...],
+  "totalTeacher": 200.50,
+  "totalBespoke": 55.01,
+  "totalBalanceRemaining": 94.49,
+  "abonos": {...},
+  "penalizations": {
+    "count": 3,        // Tiene 3 penalizaciones monetarias activas
+    "totalMoney": 150.00  // Total de dinero de penalizaciones: $150.00
+  }
+}
+```
+
 #### **🆕 Estructura de Subtotales y Total General**
 El campo `totals` ahora incluye una estructura completa con subtotales por sección y un total general:
 
@@ -1347,6 +1417,9 @@ grandTotal.balanceRemaining =
 - Los ingresos excedentes se identifican por no tener `idEnrollment` ni `idProfessor`
 - **🆕 Ordenamiento**: Los datos ahora vienen pre-ordenados desde el backend
 - **🆕 Sumatorias**: Cada profesor incluye sumatorias de `totalTeacher`, `totalBespoke` y `totalBalanceRemaining`
+- **🆕 Penalizaciones**: Cada profesor incluye información de penalizaciones monetarias activas (`penalizations.count` y `penalizations.totalMoney`)
+  - Solo se consideran penalizaciones con `status: 1` (activas) y `penalizationMoney > 0` (monetarias)
+  - Las penalizaciones de tipo amonestación no se incluyen en el conteo
 
 #### **Errores Posibles**
 - **400**: Parámetro `month` faltante o formato inválido
@@ -2082,6 +2155,7 @@ export default ProfessorsReport;
   idProfessor: ObjectId,       // Referencia a Professor
   idPaymentMethod: ObjectId,   // Referencia a PaymentMethod
   idEnrollment: ObjectId,      // Referencia a Enrollment
+  idPenalization: ObjectId,    // Referencia a Penalizacion (cuando el income se usa para pagar una penalización)
   note: String,                // Opcional
   createdAt: Date,             // Automático
   updatedAt: Date              // Automático
@@ -2093,6 +2167,7 @@ export default ProfessorsReport;
 - **`idProfessor`**: `{ _id, name, ciNumber }`
 - **`idPaymentMethod`**: `{ _id, name, type }`
 - **`idEnrollment`**: Objeto completo con `planId`, `studentIds`, `professorId` populados
+- **`idPenalization`**: `{ _id, ... }` (referencia a la colección `Penalizacion`)
 
 ---
 
@@ -2102,6 +2177,7 @@ export default ProfessorsReport;
 - **`income_date`**: **SÍ debe ser enviado** por el frontend en formato ISO string (YYYY-MM-DDTHH:mm:ss.sssZ)
 - **`idEnrollment`**: Campo opcional que puede ser `null`. Si se proporciona junto con `idProfessor`, activa las reglas de negocio automáticas.
 - **`idProfessor`**: Campo opcional que puede ser `null`. Si se proporciona junto con `idEnrollment`, activa las reglas de negocio automáticas.
+- **`idPenalization`**: Campo opcional que puede ser `null`. Se usa cuando un income se crea específicamente para pagar una penalización de un enrollment. Si se proporciona, debe ser un ObjectId válido de un registro existente en la colección `penalizaciones`.
 - **`amountInDollars`**: Campo crítico para el procesamiento automático de enrollments. Debe ser proporcionado cuando se crea un income con `idEnrollment`.
 - **`idStudent`**: Comentado en el modelo, no se usa actualmente
 

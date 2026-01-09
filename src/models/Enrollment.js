@@ -129,6 +129,12 @@ const StudentEnrollmentInfoSchema = new mongoose.Schema({
         default: null
         // si o no: 1 para si, 0 para no
     },
+    dislikes: {
+        type: String,
+        trim: true,
+        default: null
+        // en horas, 1hr, 2hr, 3hr
+    },
     amount: {
         type: Number,
         min: 0
@@ -257,6 +263,14 @@ const EnrollmentSchema = new mongoose.Schema({
         ref: 'Penalizacion',
         default: null
         // ID del tipo de penalización aplicada (referencia a la colección Penalizacion)
+    },
+    penalizationCount: {
+        type: Number,
+        default: 0,
+        min: 0
+        // número total de penalizaciones que tiene el enrollment
+        // Este contador se incrementa cada vez que se crea una penalización asociada al enrollment
+        // Permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
     },
     status: {
         type: Number,

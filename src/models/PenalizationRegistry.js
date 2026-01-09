@@ -100,6 +100,14 @@ const PenalizationRegistrySchema = new mongoose.Schema({
         ref: 'Payout',
         default: null
         // ID del payout (referencia a la colección Payout) - opcional, para enlace administrativo cuando se debe hacer el pago
+    },
+    status: {
+        type: Number,
+        enum: [0, 1],
+        default: 1
+        // Estado del registro de penalización
+        // 0 = Inactiva
+        // 1 = Activa (por defecto)
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

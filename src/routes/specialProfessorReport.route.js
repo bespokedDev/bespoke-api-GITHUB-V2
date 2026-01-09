@@ -9,6 +9,6 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // GET /api/special-professor-report - Genera el reporte para el profesor excluido
 // Acceso: Solo admin
-router.get('/', verifyToken, verifyRole('admin'), specialProfessorReportCtrl.generateReport);
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), specialProfessorReportCtrl.generateReport);
 
 module.exports = router;

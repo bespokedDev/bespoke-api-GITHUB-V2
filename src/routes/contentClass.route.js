@@ -9,27 +9,27 @@ const verifyRole = require('../middlewares/verifyRole');
 
 // POST /api/content-class - Crea un nuevo contenido de clase
 // Acceso: Solo admin
-router.post('/', verifyToken, verifyRole('admin'), contentClassCtrl.create);
+router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), contentClassCtrl.create);
 
 // GET /api/content-class - Lista todos los contenidos de clase
 // Acceso: Admin y profesor
-router.get('/', verifyToken, verifyRole('admin', 'professor'), contentClassCtrl.list);
+router.get('/', verifyToken, verifyRole('admin', 'professor', 'admin-jr'), contentClassCtrl.list);
 
 // GET /api/content-class/:id - Obtiene un contenido de clase por su ID
 // Acceso: Admin y profesor
-router.get('/:id', verifyToken, verifyRole('admin', 'professor'), contentClassCtrl.getById);
+router.get('/:id', verifyToken, verifyRole('admin', 'professor', 'admin-jr'), contentClassCtrl.getById);
 
 // PUT /api/content-class/:id - Actualiza los datos de un contenido de clase por su ID
 // Acceso: Solo admin
-router.put('/:id', verifyToken, verifyRole('admin'), contentClassCtrl.update);
+router.put('/:id', verifyToken, verifyRole('admin', 'admin-jr', 'admin-jr'), contentClassCtrl.update);
 
 // PATCH /api/content-class/:id/activate - Activa un contenido de clase
 // Acceso: Solo admin
-router.patch('/:id/activate', verifyToken, verifyRole('admin'), contentClassCtrl.activate);
+router.patch('/:id/activate', verifyToken, verifyRole('admin', 'admin-jr', 'admin-jr'), contentClassCtrl.activate);
 
 // PATCH /api/content-class/:id/anular - Anula un contenido de clase
 // Acceso: Solo admin
-router.patch('/:id/anular', verifyToken, verifyRole('admin'), contentClassCtrl.anular);
+router.patch('/:id/anular', verifyToken, verifyRole('admin', 'admin-jr'), contentClassCtrl.anular);
 
 module.exports = router;
 
