@@ -36,10 +36,7 @@ const headers = {
 {
   "_id": "694c52084dc7f703443ceef0",
   "idPenalizacion": "694c52084dc7f703443ceeea",
-  "idpenalizationLevel": {
-    "tipo": "Amonestación",
-    "nivel": 2
-  },
+  "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
   "enrollmentId": "694c52084dc7f703443ceef1",
   "professorId": null,
   "studentId": null,
@@ -56,12 +53,18 @@ const headers = {
 }
 ```
 
+**Nota sobre `idpenalizationLevel`:**
+- `idpenalizationLevel` es un **ObjectId** que referencia al `_id` de un elemento específico dentro del array `penalizationLevels` del documento `Penalizacion` referenciado por `idPenalizacion`
+- Este campo es **opcional** y solo tiene sentido si también se proporciona `idPenalizacion`
+- Cuando se popula el campo `idPenalizacion`, el `idpenalizationLevel` puede ser interpretado como referencia al subdocumento correspondiente dentro del array `penalizationLevels`
+- **Ejemplo**: Si `idPenalizacion` referencia a "Contacto privado no autorizado con estudiantes" y ese documento tiene un array `penalizationLevels` con elementos que tienen `_id`, el `idpenalizationLevel` puede referenciar al `_id` del elemento "Llamado de Atención - nivel 1"
+
 ### **Campos del Modelo**
 | Campo | Tipo | Requerido | Descripción |
 |-------|------|-----------|-------------|
 | `_id` | ObjectId | Auto | ID único del registro (generado automáticamente) |
 | `idPenalizacion` | ObjectId | No | Referencia al tipo de penalización (modelo `Penalizacion`) |
-| `idpenalizationLevel` | Object | No | Objeto con `tipo` (string) y `nivel` (number) |
+| `idpenalizationLevel` | ObjectId | No | ID del elemento específico dentro del array `penalizationLevels` del documento `Penalizacion` referenciado por `idPenalizacion`. Este ObjectId corresponde al `_id` de un elemento dentro del array `penalizationLevels` del modelo `Penalizacion`. Solo tiene sentido si también se proporciona `idPenalizacion` |
 | `enrollmentId` | ObjectId | No | Referencia al enrollment |
 | `professorId` | ObjectId | No | Referencia al profesor |
 | `studentId` | ObjectId | No | Referencia al estudiante |
@@ -102,10 +105,7 @@ POST /api/penalization-registry
 ```json
 {
   "idPenalizacion": "694c52084dc7f703443ceeea",
-  "idpenalizationLevel": {
-    "tipo": "Amonestación",
-    "nivel": 2
-  },
+  "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
   "enrollmentId": "694c52084dc7f703443ceef1",
   "professorId": null,
   "studentId": null,
@@ -114,10 +114,17 @@ POST /api/penalization-registry
   "lateFee": 7,
   "endDate": "2025-01-15T00:00:00.000Z",
   "support_file": "https://storage.example.com/files/evidence-123.pdf",
+  "status": 1,
   "notification": 1,
   "notification_description": "Se ha aplicado una penalización por vencimiento de pago"
 }
 ```
+
+**Nota sobre `idpenalizationLevel`:**
+- Debe ser un **ObjectId válido** (string con formato de ObjectId de MongoDB)
+- Debe existir dentro del array `penalizationLevels` del documento `Penalizacion` referenciado por `idPenalizacion`
+- Si se proporciona `idpenalizationLevel`, **debe** proporcionarse también `idPenalizacion`
+- Si el documento `Penalizacion` no tiene el array `penalizationLevels` o el `_id` especificado no existe en ese array, se devolverá un error 404
 
 #### **Request Body - Ejemplo Mínimo**
 ```json
@@ -138,16 +145,17 @@ POST /api/penalization-registry
 ##### **Campos Opcionales - Referencias**
 - **`idPenalizacion`** (ObjectId): ID del tipo de penalización
   - Si se proporciona, debe ser un ObjectId válido y existir en la colección `penalizaciones`
+  - **Requerido** si se proporciona `idpenalizationLevel`
   
-- **`idpenalizationLevel`** (object): Objeto que identifica el nivel y tipo específico
-  - **Estructura**:
-    ```json
-    {
-      "tipo": "Llamado de Atención",  // String requerido (si se proporciona el objeto)
-      "nivel": 1                       // Number requerido (si se proporciona el objeto, ≥ 1, entero)
-    }
-    ```
-  - Si se proporciona, ambos campos (`tipo` y `nivel`) son requeridos dentro del objeto
+- **`idpenalizationLevel`** (ObjectId): ID del elemento específico dentro del array `penalizationLevels` del documento `Penalizacion` referenciado por `idPenalizacion`
+  - Debe ser un ObjectId válido (string con formato de ObjectId de MongoDB)
+  - **Requerido** si se proporciona: `idPenalizacion` debe existir y el documento `Penalizacion` debe tener un array `penalizationLevels` con un elemento cuyo `_id` coincida con este valor
+  - **Validación**: El sistema valida que:
+    1. `idPenalizacion` esté presente y sea válido
+    2. El documento `Penalizacion` exista
+    3. El documento `Penalizacion` tenga un array `penalizationLevels`
+    4. Exista un elemento en `penalizationLevels` cuyo `_id` coincida con el `idpenalizationLevel` proporcionado
+  - **Ejemplo**: Si `idPenalizacion` referencia a un documento con `penalizationLevels` que contiene elementos con `_id`, el `idpenalizationLevel` debe ser uno de esos `_id`
 
 - **`enrollmentId`** (ObjectId): ID del enrollment
   - Si se proporciona, debe ser un ObjectId válido y existir en la colección `enrollments`
@@ -238,10 +246,7 @@ Cuando se crea un registro de penalización con `enrollmentId`:
   "penalizationRegistry": {
     "_id": "694c52084dc7f703443ceef0",
     "idPenalizacion": "694c52084dc7f703443ceeea",
-    "idpenalizationLevel": {
-      "tipo": "Amonestación",
-      "nivel": 2
-    },
+    "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
     "enrollmentId": "694c52084dc7f703443ceef1",
     "professorId": null,
     "studentId": null,
@@ -270,6 +275,10 @@ Cuando se crea un registro de penalización con `enrollmentId`:
   }
 }
 ```
+
+**Nota sobre `idpenalizationLevel` en la respuesta:**
+- En la respuesta, `idpenalizationLevel` aparece como un ObjectId simple (string)
+- Si necesitas obtener la información completa del nivel (tipo, nivel, description), debes hacer un populate del campo `idPenalizacion` y luego buscar el elemento correspondiente en el array `penalizationLevels` usando el `idpenalizationLevel` como referencia al `_id` del elemento
 
 #### **Response (201 - Created) - Sin Notificación**
 ```json
@@ -336,24 +345,24 @@ Cuando se crea un registro de penalización con `enrollmentId`:
 
 ```json
 {
-  "message": "El campo idpenalizationLevel debe ser un objeto con tipo y nivel."
+  "message": "ID de nivel de penalización inválido. Debe ser un ObjectId válido."
 }
 ```
-- **Causa**: `idpenalizationLevel` no es un objeto válido
+- **Causa**: `idpenalizationLevel` no es un ObjectId válido
 
 ```json
 {
-  "message": "El campo idpenalizationLevel.tipo es requerido y debe ser un string no vacío."
+  "message": "El campo idPenalizacion es requerido cuando se proporciona idpenalizationLevel."
 }
 ```
-- **Causa**: Falta el campo `tipo` en `idpenalizationLevel` o está vacío
+- **Causa**: Se proporcionó `idpenalizationLevel` sin proporcionar `idPenalizacion`
 
 ```json
 {
-  "message": "El campo idpenalizationLevel.nivel debe ser un número entero mayor o igual a 1."
+  "message": "El nivel de penalización especificado no existe en el tipo de penalización proporcionado."
 }
 ```
-- **Causa**: El campo `nivel` en `idpenalizationLevel` no es un número entero ≥ 1
+- **Causa**: El `idpenalizationLevel` proporcionado no existe dentro del array `penalizationLevels` del documento `Penalizacion` referenciado por `idPenalizacion`, o el documento `Penalizacion` no tiene el array `penalizationLevels`
 
 **404 - Not Found**
 ```json
@@ -416,15 +425,13 @@ const crearRegistroConNotificacion = async () => {
       },
       body: JSON.stringify({
         idPenalizacion: "694c52084dc7f703443ceeea",
-        idpenalizationLevel: {
-          tipo: "Amonestación",
-          nivel: 2
-        },
+        idpenalizationLevel: "694c5f57a6f775abd2c659c7", // ObjectId del elemento en penalizationLevels
         enrollmentId: "694c52084dc7f703443ceef1",
         penalization_description: "Penalización por vencimiento de días de pago",
         penalizationMoney: 50.00,
         lateFee: 7,
         support_file: "https://storage.example.com/files/evidence-123.pdf",
+        status: 1,
         notification: 1,
         notification_description: "Se ha aplicado una penalización por vencimiento de pago"
       })
@@ -445,6 +452,11 @@ const crearRegistroConNotificacion = async () => {
   }
 };
 ```
+
+**Nota sobre `idpenalizationLevel`:**
+- Debe ser un string con formato de ObjectId de MongoDB (ej: `"694c5f57a6f775abd2c659c7"`)
+- Este ObjectId debe corresponder al `_id` de un elemento dentro del array `penalizationLevels` del documento `Penalizacion` referenciado por `idPenalizacion`
+- Para obtener el `idpenalizationLevel` correcto, primero debes consultar el documento `Penalizacion` y encontrar el `_id` del elemento específico en su array `penalizationLevels`
 
 ##### **Ejemplo 2: Crear registro sin notificación**
 ```javascript
@@ -517,41 +529,55 @@ const crearRegistroMinimo = async () => {
 ```json
 {
   "idPenalizacion": "694c52084dc7f703443ceeea",
+  "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
   "enrollmentId": "694c52084dc7f703443ceef1",
   "penalization_description": "Penalización automática por vencimiento de pago",
   "penalizationMoney": 50.00,
   "lateFee": 7,
   "endDate": "2025-01-15T00:00:00.000Z",
+  "status": 1,
   "notification": 1,
   "notification_description": "Se ha aplicado una penalización por vencimiento de pago a su enrollment"
 }
 ```
 
+**Nota sobre `idpenalizationLevel`:**
+- El valor `"694c5f57a6f775abd2c659c7"` debe ser el `_id` de un elemento dentro del array `penalizationLevels` del documento `Penalizacion` con `_id` `"694c52084dc7f703443ceeea"`
+- Si no necesitas especificar un nivel específico, puedes omitir este campo
+
 ### **Caso 2: Penalización Manual a Profesor (con Notificación y Archivo)**
 ```json
 {
   "idPenalizacion": "694c52084dc7f703443ceeea",
-  "idpenalizationLevel": {
-    "tipo": "Llamado de Atención",
-    "nivel": 1
-  },
+  "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
   "professorId": "694c52084dc7f703443ceef4",
   "penalization_description": "Contacto privado no autorizado con estudiantes",
   "support_file": "https://storage.example.com/files/evidence-789.pdf",
+  "status": 1,
   "notification": 1,
   "notification_description": "Se le ha aplicado un llamado de atención por contacto no autorizado"
 }
 ```
 
+**Nota sobre `idpenalizationLevel`:**
+- El valor `"694c5f57a6f775abd2c659c7"` debe ser el `_id` de un elemento dentro del array `penalizationLevels` del documento `Penalizacion` con `_id` `"694c52084dc7f703443ceeea"`
+- Para encontrar el `idpenalizationLevel` correcto, consulta el documento `Penalizacion` y busca el `_id` del elemento específico en `penalizationLevels` que corresponda al nivel deseado
+
 ### **Caso 3: Penalización a Estudiante (sin Notificación)**
 ```json
 {
   "idPenalizacion": "694c52084dc7f703443ceeea",
+  "idpenalizationLevel": "694c5f57a6f775abd2c659c8",
   "studentId": "694c52084dc7f703443ceef5",
   "penalization_description": "Falta de asistencia repetida",
+  "status": 1,
   "notification": 0
 }
 ```
+
+**Nota sobre `idpenalizationLevel`:**
+- El valor `"694c5f57a6f775abd2c659c8"` debe ser el `_id` de un elemento dentro del array `penalizationLevels` del documento `Penalizacion` con `_id` `"694c52084dc7f703443ceeea"`
+- Si no necesitas especificar un nivel específico, puedes omitir este campo
 
 ---
 
@@ -574,9 +600,58 @@ const crearRegistroMinimo = async () => {
    - La actualización es atómica y no afecta la creación del registro si falla
    - Permite llevar un registro del historial de penalizaciones sin consultar la colección de penalizaciones
 
-4. **idpenalizationLevel**: 
-   - Si se proporciona, debe ser un objeto con `tipo` (string) y `nivel` (number ≥ 1)
-   - Ambos campos son requeridos dentro del objeto
+5. **`idpenalizationLevel` - Interpretación y Uso**:
+   - **Tipo**: `ObjectId` (string con formato de ObjectId de MongoDB)
+   - **Requerido**: No (opcional)
+   - **Dependencia**: Si se proporciona, **debe** existir también `idPenalizacion`
+   - **Validación**: El sistema valida que:
+     - `idpenalizationLevel` sea un ObjectId válido
+     - `idPenalizacion` esté presente y sea válido
+     - El documento `Penalizacion` referenciado por `idPenalizacion` exista
+     - El documento `Penalizacion` tenga un array `penalizationLevels`
+     - Exista un elemento en `penalizationLevels` cuyo `_id` coincida exactamente con `idpenalizationLevel`
+   - **Cómo obtener el `idpenalizationLevel` correcto**:
+     ```javascript
+     // 1. Consultar el documento Penalizacion
+     const penalizacion = await Penalizacion.findById(idPenalizacion);
+     
+     // 2. Verificar que tenga penalizationLevels
+     if (!penalizacion.penalizationLevels || penalizacion.penalizationLevels.length === 0) {
+       // Este tipo de penalización no tiene niveles definidos
+       // No se puede usar idpenalizationLevel
+       return;
+     }
+     
+     // 3. Buscar el elemento en penalizationLevels que corresponda
+     // Por ejemplo, buscar por tipo y nivel
+     const level = penalizacion.penalizationLevels.find(
+       l => l.tipo === "Llamado de Atención" && l.nivel === 1
+     );
+     
+     // 4. Usar el _id de ese elemento como idpenalizationLevel
+     const idpenalizationLevel = level._id.toString();
+     ```
+   - **Cómo interpretar `idpenalizationLevel` en respuestas**:
+     - En las respuestas del API, `idpenalizationLevel` aparece como un ObjectId simple (string)
+     - Para obtener la información completa del nivel (tipo, nivel, description):
+       ```javascript
+       // 1. Obtener el registro de penalización con idPenalizacion poblado
+       const penalization = await PenalizationRegistry.findById(id)
+         .populate('idPenalizacion');
+       
+       // 2. Buscar el elemento en penalizationLevels
+       const level = penalization.idPenalizacion.penalizationLevels.find(
+         l => l._id.toString() === penalization.idpenalizationLevel.toString()
+       );
+       
+       // 3. Ahora puedes acceder a level.tipo, level.nivel, level.description
+       console.log('Tipo:', level.tipo);
+       console.log('Nivel:', level.nivel);
+       console.log('Descripción:', level.description);
+       ```
+   - **Casos especiales**:
+     - Si un documento `Penalizacion` no tiene el array `penalizationLevels` o está vacío, no se puede usar `idpenalizationLevel`
+     - Algunos tipos de penalización pueden no tener niveles definidos, en cuyo caso `idpenalizationLevel` debe ser `null`
 
 5. **Conversión de Tipos**: 
    - `penalizationMoney` y `lateFee` se convierten automáticamente a números
@@ -614,9 +689,11 @@ curl -X POST http://localhost:3000/api/penalization-registry \
   -H "Authorization: Bearer <tu-token>" \
   -d '{
     "idPenalizacion": "694c52084dc7f703443ceeea",
+    "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
     "enrollmentId": "694c52084dc7f703443ceef1",
     "penalization_description": "Penalización por vencimiento",
     "penalizationMoney": 50.00,
+    "status": 1,
     "notification": 1,
     "notification_description": "Se ha aplicado una penalización"
   }'
@@ -674,6 +751,7 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
         "name": "Penalización por vencimiento de días de pago",
         "penalizationLevels": [
           {
+            "_id": "694c5f57a6f775abd2c659c7",
             "tipo": "Amonestación",
             "nivel": 1,
             "description": "Primera amonestación"
@@ -681,10 +759,7 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
         ],
         "status": 1
       },
-      "idpenalizationLevel": {
-        "tipo": "Amonestación",
-        "nivel": 1
-      },
+      "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
       "enrollmentId": {
         "_id": "694c52084dc7f703443ceef1",
         "alias": "Enrollment de Juan",
@@ -721,6 +796,39 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
   ]
 }
 ```
+
+**Nota sobre `idpenalizationLevel` en la respuesta:**
+- En la respuesta, `idpenalizationLevel` aparece como un ObjectId simple (string): `"694c5f57a6f775abd2c659c7"`
+- Para obtener la información completa del nivel (tipo, nivel, description), debes buscar en el array `penalizationLevels` del documento `idPenalizacion` poblado
+- **Ejemplo de cómo interpretar**:
+  ```javascript
+  // En la respuesta, tienes:
+  const penalization = {
+    idPenalizacion: {
+      _id: "694c52084dc7f703443ceeea",
+      name: "Penalización por vencimiento de días de pago",
+      penalizationLevels: [
+        {
+          _id: "694c5f57a6f775abd2c659c7",
+          tipo: "Amonestación",
+          nivel: 1,
+          description: "Primera amonestación"
+        }
+      ]
+    },
+    idpenalizationLevel: "694c5f57a6f775abd2c659c7"
+  };
+  
+  // Para obtener la información del nivel:
+  const level = penalization.idPenalizacion.penalizationLevels.find(
+    l => l._id.toString() === penalization.idpenalizationLevel.toString()
+  );
+  
+  // Ahora puedes acceder a:
+  console.log('Tipo:', level.tipo);        // "Amonestación"
+  console.log('Nivel:', level.nivel);      // 1
+  console.log('Descripción:', level.description); // "Primera amonestación"
+  ```
 
 #### **Errores Posibles**
 
@@ -849,10 +957,7 @@ PATCH /api/penalization-registry/:id/status
   "penalizationRegistry": {
     "_id": "694c52084dc7f703443ceef0",
     "idPenalizacion": "694c52084dc7f703443ceeea",
-    "idpenalizationLevel": {
-      "tipo": "Amonestación",
-      "nivel": 2
-    },
+    "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
     "enrollmentId": "694c52084dc7f703443ceef1",
     "professorId": null,
     "studentId": null,
@@ -869,6 +974,13 @@ PATCH /api/penalization-registry/:id/status
   }
 }
 ```
+
+**Nota sobre `idpenalizationLevel` en la respuesta:**
+- En la respuesta, `idpenalizationLevel` aparece como un ObjectId simple (string)
+- Para obtener la información completa del nivel (tipo, nivel, description), debes:
+  1. Hacer un populate del campo `idPenalizacion` para obtener el documento completo
+  2. Buscar en el array `penalizationLevels` el elemento cuyo `_id` coincida con `idpenalizationLevel`
+  3. Ese elemento contendrá los campos `tipo`, `nivel` y `description`
 
 #### **Errores Posibles**
 
