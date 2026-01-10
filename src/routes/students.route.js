@@ -29,6 +29,11 @@ router.get('/info/:id', verifyToken, verifyRole('admin', 'student', 'professor')
 // Esta ruta debe estar antes de /:id para evitar conflictos
 router.get('/:studentId/enrollment/:enrollmentId', verifyToken, verifyRole('admin', 'student', 'professor'), studentCtrl.getEnrollmentDetails);
 
+// PATCH /api/students/:id/change-password - Cambia la contraseña de un estudiante
+// Acceso: Admin y el mismo estudiante (se valida dentro del controlador)
+// Esta ruta debe estar antes de /:id para evitar conflictos
+router.patch('/:id/change-password', verifyToken, verifyRole('admin', 'student', 'admin-jr'), studentCtrl.changePassword);
+
 // GET /api/students/:id - Obtiene un estudiante por su ID
 // Acceso: Admin, estudiante y profesor
 router.get('/:id', verifyToken, verifyRole('admin', 'student', 'professor', 'admin-jr'), studentCtrl.getById);

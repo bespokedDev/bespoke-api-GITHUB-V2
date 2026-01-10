@@ -6,6 +6,7 @@ const Professor = require('../models/Professor'); // Necesario para popular
 const ClassRegistry = require('../models/ClassRegistry'); // Modelo para registros de clase
 const Penalizacion = require('../models/Penalizacion'); // Necesario para validar penalizationId
 const PenalizationRegistry = require('../models/PenalizationRegistry'); // Necesario para obtener información de penalizaciones
+const ConversationalAttendance = require('../models/ConversationalAttendance'); // Necesario para obtener registros de conversational attendance
 const User = require('../models/User'); // Necesario para obtener información del usuario que disuelve
 const Notification = require('../models/Notification'); // Necesario para crear notificaciones
 const utilsFunctions = require('../utils/utilsFunctions'); // Importa tus funciones de utilidad
@@ -592,7 +593,39 @@ enrollmentCtrl.getById = async (req, res) => {
             return sum + (p.penalizationMoney || 0);
         }, 0);
 
-        // Agregar información de penalizaciones al enrollment
+        // Obtener ConversationalAttendance relacionados con el enrollment
+        // Filtrar por idEnrollment y createdAt entre startDate y endDate
+        let conversationalAttendances = [];
+        if (enrollment.startDate && enrollment.endDate) {
+            const startDate = new Date(enrollment.startDate);
+            const endDate = new Date(enrollment.endDate);
+            
+            // Establecer la hora de inicio al inicio del día (00:00:00)
+            startDate.setHours(0, 0, 0, 0);
+            // Establecer la hora de fin al final del día (23:59:59.999)
+            endDate.setHours(23, 59, 59, 999);
+
+            conversationalAttendances = await ConversationalAttendance.find({
+                idEnrollment: enrollment._id,
+                status: 1, // Solo registros activos
+                createdAt: {
+                    $gte: startDate, // Mayor o igual a startDate
+                    $lte: endDate    // Menor o igual a endDate
+                }
+            })
+            .sort({ createdAt: -1 }) // Ordenar por fecha de creación descendente (más recientes primero)
+            .lean();
+        } else {
+            // Si no hay startDate o endDate, buscar todos los registros activos relacionados
+            conversationalAttendances = await ConversationalAttendance.find({
+                idEnrollment: enrollment._id,
+                status: 1 // Solo registros activos
+            })
+            .sort({ createdAt: -1 }) // Ordenar por fecha de creación descendente (más recientes primero)
+            .lean();
+        }
+
+        // Agregar información de penalizaciones y conversational attendance al enrollment
         const enrollmentWithPenalizations = {
             ...enrollment,
             penalizationInfo: {
@@ -606,7 +639,8 @@ enrollmentCtrl.getById = async (req, res) => {
                     count: admonitionPenalizations.length
                 },
                 totalPenalizationMoney: parseFloat(totalPenalizationMoney.toFixed(2))
-            }
+            },
+            conversationalAttendances: conversationalAttendances
         };
 
         res.status(200).json(enrollmentWithPenalizations);
@@ -1140,7 +1174,7 @@ enrollmentCtrl.getDetail = async (req, res) => {
         // Buscar el enrollment con todos los datos populados
         const enrollment = await Enrollment.findById(enrollmentId)
             .populate('planId', 'name weeklyClasses pricing planType weeks')
-            .populate('studentIds.studentId', 'name email studentCode avatar avatarPermission dob createdAt')
+            .populate('studentIds.studentId', 'name email studentCode')
             .populate('professorId', 'name email')
             .lean();
 

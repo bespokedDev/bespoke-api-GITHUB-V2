@@ -34,13 +34,14 @@ const canvaDocRoutes = require('./routes/canvaDoc.route');
 const categoryNotificationRoutes = require('./routes/categoryNotification.route');
 const notificationRoutes = require('./routes/notification.route');
 const professorTypeRoutes = require('./routes/professorType.route');
+const conversationalAttendanceRoutes = require('./routes/conversationalAttendance.route');
 const cors = require('cors');
 
 // ¡FORZAR CARGA DEL MODELO PROFESSORTYPE TEMPRANO! (Mantener si sigue siendo necesario para profesores)
 require('./models/ProfessorType');
 
 // Middlewares
-app.use(express.json({ limit: '500kb' }));
+app.use(express.json());
 app.use(cors());
 
 // Iniciar conexión a MongoDB de forma asíncrona sin bloquear la inicialización
@@ -85,6 +86,7 @@ app.use('/api/canva-docs', canvaDocRoutes);
 app.use('/api/category-notifications', categoryNotificationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/professor-types', professorTypeRoutes);
+app.use('/api/conversational-attendance', conversationalAttendanceRoutes);
 
 // Ruta de health check para Vercel
 app.get('/', (req, res) => {

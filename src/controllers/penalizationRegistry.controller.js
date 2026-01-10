@@ -22,7 +22,7 @@ const penalizationRegistryCtrl = {};
  * 
  * Campos opcionales:
  * - idPenalizacion (ObjectId): ID del tipo de penalización
- * - idpenalizationLevel (object): { tipo: string, nivel: number }
+ * - idpenalizationLevel (ObjectId): ID del elemento específico dentro del array penalizationLevels del documento Penalizacion referenciado por idPenalizacion
  * - enrollmentId (ObjectId): ID del enrollment
  * - professorId (ObjectId): ID del profesor
  * - studentId (ObjectId): ID del estudiante
@@ -76,14 +76,15 @@ penalizationRegistryCtrl.create = async (req, res) => {
         }
 
         // Validar idPenalizacion si se proporciona
+        let penalizacionDoc = null;
         if (idPenalizacion !== undefined && idPenalizacion !== null) {
             if (!mongoose.Types.ObjectId.isValid(idPenalizacion)) {
                 return res.status(400).json({
                     message: 'ID de penalización inválido.'
                 });
             }
-            const penalizacionExists = await Penalizacion.findById(idPenalizacion);
-            if (!penalizacionExists) {
+            penalizacionDoc = await Penalizacion.findById(idPenalizacion);
+            if (!penalizacionDoc) {
                 return res.status(404).json({
                     message: 'Tipo de penalización no encontrado.'
                 });
@@ -92,28 +93,28 @@ penalizationRegistryCtrl.create = async (req, res) => {
 
         // Validar idpenalizationLevel si se proporciona
         if (idpenalizationLevel !== undefined && idpenalizationLevel !== null) {
-            if (typeof idpenalizationLevel !== 'object' || Array.isArray(idpenalizationLevel)) {
+            // Validar que idpenalizationLevel sea un ObjectId válido
+            if (!mongoose.Types.ObjectId.isValid(idpenalizationLevel)) {
                 return res.status(400).json({
-                    message: 'El campo idpenalizationLevel debe ser un objeto con tipo y nivel.'
+                    message: 'ID de nivel de penalización inválido. Debe ser un ObjectId válido.'
                 });
             }
 
-            if (!idpenalizationLevel.tipo || typeof idpenalizationLevel.tipo !== 'string' || idpenalizationLevel.tipo.trim() === '') {
+            // Si se proporciona idpenalizationLevel, debe existir idPenalizacion
+            if (!idPenalizacion || !penalizacionDoc) {
                 return res.status(400).json({
-                    message: 'El campo idpenalizationLevel.tipo es requerido y debe ser un string no vacío.'
+                    message: 'El campo idPenalizacion es requerido cuando se proporciona idpenalizationLevel.'
                 });
             }
 
-            if (idpenalizationLevel.nivel === undefined || idpenalizationLevel.nivel === null) {
-                return res.status(400).json({
-                    message: 'El campo idpenalizationLevel.nivel es requerido.'
-                });
-            }
+            // Validar que el idpenalizationLevel exista dentro del array penalizationLevels del documento Penalizacion
+            const levelExists = penalizacionDoc.penalizationLevels && penalizacionDoc.penalizationLevels.some(
+                level => level._id && level._id.toString() === idpenalizationLevel.toString()
+            );
 
-            const nivelNumber = Number(idpenalizationLevel.nivel);
-            if (isNaN(nivelNumber) || nivelNumber < 1 || !Number.isInteger(nivelNumber)) {
-                return res.status(400).json({
-                    message: 'El campo idpenalizationLevel.nivel debe ser un número entero mayor o igual a 1.'
+            if (!levelExists) {
+                return res.status(404).json({
+                    message: 'El nivel de penalización especificado no existe en el tipo de penalización proporcionado.'
                 });
             }
         }
@@ -218,10 +219,7 @@ penalizationRegistryCtrl.create = async (req, res) => {
         }
 
         if (idpenalizationLevel !== undefined && idpenalizationLevel !== null) {
-            registryData.idpenalizationLevel = {
-                tipo: idpenalizationLevel.tipo.trim(),
-                nivel: Number(idpenalizationLevel.nivel)
-            };
+            registryData.idpenalizationLevel = idpenalizationLevel; // Ahora es un ObjectId directamente
         }
 
         if (enrollmentId !== undefined && enrollmentId !== null) {

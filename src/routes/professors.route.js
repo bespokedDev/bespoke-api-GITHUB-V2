@@ -19,6 +19,11 @@ router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), professorCtrl.list
 // Acceso: Admin y professor
 router.get('/:id/enrollments', verifyToken, verifyRole('admin', 'professor'), professorCtrl.getEnrollments);
 
+// PATCH /api/professors/:id/change-password - Cambia la contraseña de un profesor
+// Acceso: Admin y el mismo profesor (se valida dentro del controlador)
+// Esta ruta debe estar antes de /:id para evitar conflictos
+router.patch('/:id/change-password', verifyToken, verifyRole('admin', 'professor', 'admin-jr'), professorCtrl.changePassword);
+
 // GET /api/professors/:id - Obtener profesor por ID
 // Acceso: Admin y professor
 router.get('/:id', verifyToken, verifyRole('admin', 'professor', 'admin-jr'), professorCtrl.getById);

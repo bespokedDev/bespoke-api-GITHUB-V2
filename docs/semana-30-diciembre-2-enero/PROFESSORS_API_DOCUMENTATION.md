@@ -40,6 +40,7 @@ Para información completa sobre el sistema de autenticación, login y tokens JW
 | `PUT` | `/api/professors/:id` | Actualizar profesor por ID |
 | `PATCH` | `/api/professors/:id/activate` | Activar profesor |
 | `PATCH` | `/api/professors/:id/deactivate` | Desactivar profesor |
+| `PATCH` | `/api/professors/:id/change-password` | Cambiar contraseña del profesor |
 
 ---
 
@@ -807,7 +808,309 @@ deactivateProfessor('6832845ebb53229d9559459b');
 
 ---
 
-### **7. Obtener Lista de Enrollments del Profesor**
+### **7. Cambiar Contraseña del Profesor**
+
+#### **PATCH** `/api/professors/:id/change-password`
+
+Permite a un profesor cambiar su propia contraseña o a un administrador cambiar la contraseña de cualquier profesor. Requiere validar la contraseña actual y aplicar criterios de seguridad para la nueva contraseña.
+
+#### **Headers**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del profesor (ObjectId de MongoDB)
+
+#### **Request Body**
+```json
+{
+  "currentPassword": "password123",
+  "newPassword": "NewSecureP@ssw0rd2024"
+}
+```
+
+#### **Campos del Request Body**
+
+**Requeridos:**
+- `currentPassword` (string): Contraseña actual del profesor
+  - Debe ser un string no vacío
+  - Debe coincidir con la contraseña registrada en la base de datos
+  - Se aplica `trim()` automáticamente
+
+- `newPassword` (string): Nueva contraseña que reemplazará a la actual
+  - Debe ser un string no vacío
+  - Debe cumplir con todos los criterios de seguridad (ver sección "Criterios de Seguridad")
+  - Debe ser diferente a la contraseña actual
+  - Se aplica `trim()` automáticamente
+
+#### **Criterios de Seguridad para la Nueva Contraseña**
+
+La nueva contraseña debe cumplir con los siguientes requisitos:
+
+1. **Longitud mínima**: Al menos 8 caracteres
+2. **Letra mayúscula**: Debe contener al menos una letra mayúscula (A-Z)
+3. **Letra minúscula**: Debe contener al menos una letra minúscula (a-z)
+4. **Número**: Debe contener al menos un número (0-9)
+5. **Carácter especial**: Debe contener al menos un carácter especial: `!@#$%^&*()_+-=[]{}|;:,.<>?`
+
+**Ejemplos de contraseñas válidas:**
+- `MyP@ssw0rd`
+- `Secure2024!`
+- `NewP@ss123`
+
+**Ejemplos de contraseñas inválidas:**
+- `password` (falta mayúscula, número y carácter especial)
+- `PASSWORD123` (falta minúscula y carácter especial)
+- `Password` (falta número y carácter especial)
+- `Pass123` (muy corta, falta carácter especial)
+
+#### **Control de Acceso**
+
+- **Profesor**: Solo puede cambiar su propia contraseña (el ID en la URL debe coincidir con el ID del usuario autenticado en el token JWT)
+- **Admin**: Puede cambiar la contraseña de cualquier profesor
+
+**Validación de Permisos:**
+- El sistema valida automáticamente que el usuario autenticado sea el mismo profesor o tenga rol de administrador
+- Si un profesor intenta cambiar la contraseña de otro profesor, recibirá un error 403
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Contraseña cambiada exitosamente",
+  "professor": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "name": "Juan Pérez",
+    "email": "juan.perez@example.com",
+    "ciNumber": "12345678",
+    "typeId": {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+      "name": "Profesor Principal",
+      "description": "Profesor con experiencia completa"
+    },
+    "updatedAt": "2024-01-20T16:00:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+```json
+{
+  "message": "El campo currentPassword es requerido y debe ser un string no vacío."
+}
+```
+- **Causa**: No se proporcionó `currentPassword` o está vacío
+
+```json
+{
+  "message": "El campo newPassword es requerido y debe ser un string no vacío."
+}
+```
+- **Causa**: No se proporcionó `newPassword` o está vacío
+
+```json
+{
+  "message": "El profesor no tiene una contraseña registrada. Contacta a un administrador."
+}
+```
+- **Causa**: El profesor no tiene una contraseña en la base de datos (campo `password` es `null` o vacío)
+
+```json
+{
+  "message": "La nueva contraseña debe ser diferente a la contraseña actual."
+}
+```
+- **Causa**: La nueva contraseña es igual a la contraseña actual
+
+```json
+{
+  "message": "La contraseña no cumple con los criterios de seguridad requeridos.",
+  "requirements": {
+    "minLength": 8,
+    "hasUpperCase": false,
+    "hasLowerCase": true,
+    "hasNumber": true,
+    "hasSpecialChar": false,
+    "errors": [
+      "La contraseña debe contener al menos una letra mayúscula.",
+      "La contraseña debe contener al menos un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?)."
+    ]
+  }
+}
+```
+- **Causa**: La nueva contraseña no cumple con uno o más criterios de seguridad
+- **Información adicional**: El objeto `requirements` indica qué criterios se cumplen (`true`) y cuáles no (`false`), además de un array `errors` con los mensajes específicos de los criterios que faltan
+
+**401 Unauthorized**
+```json
+{
+  "message": "La contraseña actual es incorrecta."
+}
+```
+- **Causa**: La contraseña actual proporcionada no coincide con la registrada en la base de datos
+
+**403 Forbidden**
+```json
+{
+  "message": "No tienes permisos para cambiar la contraseña de este profesor."
+}
+```
+- **Causa**: Un profesor intentó cambiar la contraseña de otro profesor (solo puede cambiar la suya propia)
+
+**404 Not Found**
+```json
+{
+  "message": "Profesor no encontrado."
+}
+```
+- **Causa**: El ID del profesor no existe en la base de datos
+
+#### **Ejemplo con cURL**
+```bash
+curl -X PATCH http://localhost:3000/api/professors/64f8a1b2c3d4e5f6a7b8c9d0/change-password \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "currentPassword": "password123",
+    "newPassword": "NewSecureP@ssw0rd2024"
+  }'
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const changeProfessorPassword = async (professorId, currentPassword, newPassword) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/professors/${professorId}/change-password`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        currentPassword: currentPassword,
+        newPassword: newPassword
+      })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Contraseña cambiada exitosamente:', data.message);
+      console.log('Profesor actualizado:', data.professor);
+    } else {
+      console.error('Error:', data.message);
+      // Si hay información de requirements, mostrarla
+      if (data.requirements) {
+        console.error('Criterios de seguridad no cumplidos:', data.requirements.errors);
+      }
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso - Profesor cambiando su propia contraseña
+changeProfessorPassword(
+  '64f8a1b2c3d4e5f6a7b8c9d0',
+  'password123',
+  'NewSecureP@ssw0rd2024'
+);
+```
+
+#### **Notas Importantes**
+
+1. **Seguridad de Contraseñas**:
+   - Las contraseñas se almacenan en texto plano actualmente
+   - **⚠️ IMPORTANTE**: En producción, se recomienda implementar hash con bcrypt antes de guardar
+   - La comparación de la contraseña actual se hace directamente (texto plano)
+
+2. **Validación de Permisos**:
+   - El sistema valida automáticamente que solo el profesor propietario o un administrador pueda cambiar la contraseña
+   - La validación se realiza comparando el ID del token JWT con el ID en la URL
+
+3. **Criterios de Seguridad**:
+   - Todos los criterios son obligatorios (no hay criterios opcionales)
+   - Si la contraseña no cumple algún criterio, se devuelve un objeto detallado con los requisitos no cumplidos
+   - Los caracteres especiales permitidos son: `!@#$%^&*()_+-=[]{}|;:,.<>?`
+
+4. **Validación de Contraseña Actual**:
+   - Se valida que el profesor tenga una contraseña registrada
+   - Se valida que la contraseña actual sea correcta antes de permitir el cambio
+   - Se valida que la nueva contraseña sea diferente a la actual
+
+5. **Formato de Respuesta de Errores**:
+   - Cuando hay errores de validación de criterios de seguridad, la respuesta incluye un objeto `requirements` con información detallada sobre qué criterios se cumplen y cuáles no
+   - El array `errors` contiene mensajes específicos de los criterios que faltan
+
+#### **Guía para el Frontend - Criterios de Seguridad**
+
+Para implementar la validación en el frontend antes de enviar la petición, el frontend debe verificar:
+
+```javascript
+// Función helper para validar contraseña en el frontend
+const validatePassword = (password) => {
+  const requirements = {
+    minLength: password.length >= 8,
+    hasUpperCase: /[A-Z]/.test(password),
+    hasLowerCase: /[a-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecialChar: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+  };
+
+  const isValid = Object.values(requirements).every(req => req === true);
+  
+  return {
+    isValid,
+    requirements,
+    errors: [
+      !requirements.minLength && 'La contraseña debe tener al menos 8 caracteres',
+      !requirements.hasUpperCase && 'La contraseña debe contener al menos una letra mayúscula',
+      !requirements.hasLowerCase && 'La contraseña debe contener al menos una letra minúscula',
+      !requirements.hasNumber && 'La contraseña debe contener al menos un número',
+      !requirements.hasSpecialChar && 'La contraseña debe contener al menos un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?)'
+    ].filter(Boolean)
+  };
+};
+
+// Ejemplo de uso en formulario
+const handlePasswordChange = async (e) => {
+  e.preventDefault();
+  
+  const currentPassword = formData.currentPassword;
+  const newPassword = formData.newPassword;
+  
+  // Validar en frontend antes de enviar
+  const validation = validatePassword(newPassword);
+  if (!validation.isValid) {
+    setErrors(validation.errors);
+    return;
+  }
+  
+  // Validar que no sean iguales
+  if (currentPassword === newPassword) {
+    setErrors(['La nueva contraseña debe ser diferente a la actual']);
+    return;
+  }
+  
+  // Enviar petición al backend
+  await changeProfessorPassword(professorId, currentPassword, newPassword);
+};
+```
+
+**Indicadores Visuales Recomendados:**
+- Mostrar checkmarks (✓) o iconos de éxito para cada criterio cumplido
+- Mostrar mensajes de error específicos para cada criterio no cumplido
+- Deshabilitar el botón de "Cambiar contraseña" hasta que todos los criterios se cumplan
+- Mostrar un indicador de fuerza de contraseña (débil, media, fuerte) basado en cuántos criterios se cumplen
+
+---
+
+### **8. Obtener Lista de Enrollments del Profesor**
 
 #### **GET** `/api/professors/:id/enrollments`
 
@@ -1018,9 +1321,9 @@ getProfessorEnrollments('6832845ebb53229d9559459b');
 |--------|-------------|---------------|
 | `200` | OK | Operación exitosa (GET) |
 | `201` | Created | Recurso creado exitosamente (POST) |
-| `400` | Bad Request | Datos inválidos, ID inválido |
-| `401` | Unauthorized | Token no proporcionado |
-| `403` | Forbidden | Token inválido o expirado |
+| `400` | Bad Request | Datos inválidos, ID inválido, campos requeridos faltantes, contraseña no cumple criterios de seguridad |
+| `401` | Unauthorized | Token no proporcionado, contraseña actual incorrecta |
+| `403` | Forbidden | Token inválido o expirado, sin permisos para realizar la operación |
 | `404` | Not Found | Profesor no encontrado |
 | `500` | Internal Server Error | Error interno del servidor |
 
@@ -1031,6 +1334,83 @@ Todos los errores siguen este formato:
 ```json
 {
   "message": "Descripción del error"
+}
+```
+
+En algunos casos, también puede incluir:
+
+```json
+{
+  "message": "Descripción del error",
+  "error": "Detalles técnicos del error (solo en desarrollo)"
+}
+```
+
+### **Ejemplos de Errores Comunes**
+
+#### **400 Bad Request - ID Inválido**
+```json
+{
+  "message": "ID de profesor inválido"
+}
+```
+
+#### **404 Not Found**
+```json
+{
+  "message": "Profesor no encontrado"
+}
+```
+
+#### **400 Bad Request - Contraseña no cumple criterios de seguridad**
+```json
+{
+  "message": "La contraseña no cumple con los criterios de seguridad requeridos.",
+  "requirements": {
+    "minLength": 8,
+    "hasUpperCase": false,
+    "hasLowerCase": true,
+    "hasNumber": true,
+    "hasSpecialChar": false,
+    "errors": [
+      "La contraseña debe contener al menos una letra mayúscula.",
+      "La contraseña debe contener al menos un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?)."
+    ]
+  }
+}
+```
+- **Causa**: La nueva contraseña no cumple con uno o más criterios de seguridad requeridos
+- **Información adicional**: El objeto `requirements` muestra qué criterios se cumplen y cuáles no, junto con mensajes específicos de error
+
+#### **401 Unauthorized - Contraseña actual incorrecta**
+```json
+{
+  "message": "La contraseña actual es incorrecta."
+}
+```
+- **Causa**: La contraseña actual proporcionada no coincide con la registrada en la base de datos
+- **Ocurre en**: Endpoint de cambio de contraseña (`PATCH /api/professors/:id/change-password`)
+
+#### **403 Forbidden - Sin permisos para cambiar contraseña**
+```json
+{
+  "message": "No tienes permisos para cambiar la contraseña de este profesor."
+}
+```
+- **Causa**: Un profesor intentó cambiar la contraseña de otro profesor (solo puede cambiar la suya propia)
+- **Ocurre en**: Endpoint de cambio de contraseña (`PATCH /api/professors/:id/change-password`)
+
+#### **401 Unauthorized**
+```json
+{
+  "message": "Token no proporcionado"
+}
+```
+
+#### **403 Forbidden**
+```json
+{
+  "message": "Token inválido o expirado"
 }
 ```
 
@@ -1086,6 +1466,7 @@ El sistema utiliza un sistema de roles basado en la colección `Role`. Cada prof
 - `GET /api/professors/:id/enrollments` - Obtener enrollments del profesor
 - `GET /api/professors/:id` - Obtener profesor por ID
 - `PUT /api/professors/:id` - Actualizar profesor
+- `PATCH /api/professors/:id/change-password` - Cambiar contraseña del profesor (un profesor solo puede cambiar su propia contraseña, un admin puede cambiar cualquier contraseña)
 
 **Nota importante:** Los profesores solo pueden ver y actualizar su propia información. El sistema verifica que el ID del profesor en la URL coincida con el ID del profesor autenticado (obtenido del token JWT) para las rutas de `GET /api/professors/:id` y `PUT /api/professors/:id`.
 

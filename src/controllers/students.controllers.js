@@ -1106,4 +1106,177 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
     }
 };
 
+/**
+ * @route PATCH /api/students/:id/change-password
+ * @description Cambia la contraseña de un estudiante
+ * @access Private (Requiere JWT) - Solo el mismo estudiante o admin
+ */
+studentCtrl.changePassword = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user?.id; // ID del usuario autenticado desde el token
+        const userRole = req.user?.role; // Rol del usuario desde el token
+
+        // Validar que el ID del estudiante sea válido
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: 'ID de estudiante inválido.' });
+        }
+
+        // Validar que se proporcionen los campos requeridos
+        if (!currentPassword || typeof currentPassword !== 'string' || currentPassword.trim() === '') {
+            return res.status(400).json({ 
+                message: 'El campo currentPassword es requerido y debe ser un string no vacío.' 
+            });
+        }
+
+        if (!newPassword || typeof newPassword !== 'string' || newPassword.trim() === '') {
+            return res.status(400).json({ 
+                message: 'El campo newPassword es requerido y debe ser un string no vacío.' 
+            });
+        }
+
+        // Verificar que el estudiante existe
+        const student = await Student.findById(id);
+        if (!student) {
+            return res.status(404).json({ message: 'Estudiante no encontrado.' });
+        }
+
+        // Validar que el usuario autenticado tenga permisos
+        // Solo el mismo estudiante o un admin pueden cambiar la contraseña
+        const isOwner = userId && userId.toString() === id.toString();
+        const isAdmin = userRole === 'admin';
+
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({ 
+                message: 'No tienes permisos para cambiar la contraseña de este estudiante.' 
+            });
+        }
+
+        // Validar que el estudiante tenga una contraseña actual
+        if (!student.password || student.password.trim() === '') {
+            return res.status(400).json({ 
+                message: 'El estudiante no tiene una contraseña registrada. Contacta a un administrador.' 
+            });
+        }
+
+        // Validar que la contraseña actual sea correcta (comparación directa porque está en texto plano)
+        if (student.password.trim() !== currentPassword.trim()) {
+            return res.status(401).json({ 
+                message: 'La contraseña actual es incorrecta.' 
+            });
+        }
+
+        // Validar que la nueva contraseña no sea igual a la actual
+        if (currentPassword.trim() === newPassword.trim()) {
+            return res.status(400).json({ 
+                message: 'La nueva contraseña debe ser diferente a la contraseña actual.' 
+            });
+        }
+
+        // Validar criterios de seguridad para la nueva contraseña
+        const passwordValidation = validatePasswordSecurity(newPassword);
+        if (!passwordValidation.isValid) {
+            return res.status(400).json({ 
+                message: passwordValidation.message,
+                requirements: passwordValidation.requirements
+            });
+        }
+
+        // Actualizar la contraseña
+        student.password = newPassword.trim();
+        await student.save();
+
+        res.status(200).json({
+            message: 'Contraseña cambiada exitosamente',
+            student: {
+                _id: student._id,
+                studentCode: student.studentCode,
+                name: student.name,
+                email: student.email,
+                updatedAt: student.updatedAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al cambiar contraseña del estudiante:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID de estudiante inválido.' });
+        }
+        res.status(500).json({ 
+            message: 'Error interno al cambiar la contraseña', 
+            error: error.message 
+        });
+    }
+};
+
+/**
+ * Función helper para validar criterios de seguridad del password
+ * @param {string} password - Password a validar
+ * @returns {Object} - Objeto con isValid (boolean) y message (string) y requirements (object)
+ */
+const validatePasswordSecurity = (password) => {
+    const requirements = {
+        minLength: 8,
+        hasUpperCase: /[A-Z]/.test(password),
+        hasLowerCase: /[a-z]/.test(password),
+        hasNumber: /[0-9]/.test(password),
+        hasSpecialChar: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    };
+
+    const errors = [];
+
+    // Validar longitud mínima
+    if (password.length < requirements.minLength) {
+        errors.push(`La contraseña debe tener al menos ${requirements.minLength} caracteres.`);
+    }
+
+    // Validar que tenga al menos una letra mayúscula
+    if (!requirements.hasUpperCase) {
+        errors.push('La contraseña debe contener al menos una letra mayúscula.');
+    }
+
+    // Validar que tenga al menos una letra minúscula
+    if (!requirements.hasLowerCase) {
+        errors.push('La contraseña debe contener al menos una letra minúscula.');
+    }
+
+    // Validar que tenga al menos un número
+    if (!requirements.hasNumber) {
+        errors.push('La contraseña debe contener al menos un número.');
+    }
+
+    // Validar que tenga al menos un carácter especial
+    if (!requirements.hasSpecialChar) {
+        errors.push('La contraseña debe contener al menos un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?).');
+    }
+
+    if (errors.length > 0) {
+        return {
+            isValid: false,
+            message: 'La contraseña no cumple con los criterios de seguridad requeridos.',
+            requirements: {
+                minLength: requirements.minLength,
+                hasUpperCase: requirements.hasUpperCase,
+                hasLowerCase: requirements.hasLowerCase,
+                hasNumber: requirements.hasNumber,
+                hasSpecialChar: requirements.hasSpecialChar,
+                errors: errors
+            }
+        };
+    }
+
+    return {
+        isValid: true,
+        message: 'La contraseña cumple con todos los criterios de seguridad.',
+        requirements: {
+            minLength: requirements.minLength,
+            hasUpperCase: requirements.hasUpperCase,
+            hasLowerCase: requirements.hasLowerCase,
+            hasNumber: requirements.hasNumber,
+            hasSpecialChar: requirements.hasSpecialChar
+        }
+    };
+};
+
 module.exports = studentCtrl;

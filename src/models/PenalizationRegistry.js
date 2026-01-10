@@ -16,27 +16,15 @@ const PenalizationRegistrySchema = new mongoose.Schema({
         // Indica qué tipo de penalización se está aplicando (opcional)
     },
     idpenalizationLevel: {
-        type: {
-            tipo: {
-                type: String,
-                required: true,
-                trim: true
-                // Tipo de penalización aplicado (ej: "Llamado de Atención", "Amonestación", "Suspensión")
-                // Debe coincidir con uno de los tipos en el array penalizationLevels del modelo Penalizacion
-            },
-            nivel: {
-                type: Number,
-                required: true,
-                min: 1
-                // Nivel de penalización aplicado (1, 2, 3, etc.)
-                // Debe coincidir con uno de los niveles en el array penalizationLevels del modelo Penalizacion
-            }
-        },
+        type: mongoose.Schema.Types.ObjectId,
         required: false,
         default: null
-        // Identifica el nivel y tipo específico de penalización aplicado
-        // Este campo referencia a un elemento específico del array penalizationLevels del modelo Penalizacion
-        // Permite saber exactamente qué nivel (1, 2, 3) y tipo (Llamado de Atención, Amonestación, etc.) se aplicó
+        // ID del elemento específico dentro del array penalizationLevels del documento Penalizacion referenciado por idPenalizacion
+        // Este ObjectId corresponde al _id de un elemento dentro del array penalizationLevels del modelo Penalizacion
+        // Permite identificar exactamente qué nivel y tipo de penalización se aplicó dentro del tipo de penalización
+        // Ejemplo: Si idPenalizacion referencia a "Contacto privado no autorizado", idpenalizationLevel puede referenciar
+        // al _id del elemento "Llamado de Atención - nivel 1" dentro del array penalizationLevels de ese documento
+        // Es opcional porque algunos tipos de penalización no tienen penalizationLevels definidos
     },
     // Referencias a las entidades que pueden recibir penalizaciones
     enrollmentId: {
