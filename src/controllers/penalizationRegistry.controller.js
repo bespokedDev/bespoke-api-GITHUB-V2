@@ -392,6 +392,104 @@ penalizationRegistryCtrl.create = async (req, res) => {
 };
 
 /**
+ * @route GET /api/penalization-registry
+ * @description Lista registros de penalización con filtros opcionales
+ * @access Private (Requiere JWT - Solo admin)
+ * 
+ * Query parameters opcionales:
+ * - professorId (ObjectId): Filtrar por ID de profesor
+ * - enrollmentId (ObjectId): Filtrar por ID de enrollment
+ * - Si no se proporciona ningún filtro, muestra todos los registros
+ */
+penalizationRegistryCtrl.list = async (req, res) => {
+    try {
+        const { professorId, enrollmentId } = req.query;
+        const query = {};
+
+        // Filtrar por professorId si se proporciona
+        if (professorId) {
+            if (!mongoose.Types.ObjectId.isValid(professorId)) {
+                return res.status(400).json({
+                    message: 'ID de profesor inválido.'
+                });
+            }
+            
+            // Verificar que el profesor exista
+            const professorExists = await Professor.findById(professorId);
+            if (!professorExists) {
+                return res.status(404).json({
+                    message: 'Profesor no encontrado.'
+                });
+            }
+            
+            query.professorId = professorId;
+        }
+
+        // Filtrar por enrollmentId si se proporciona
+        if (enrollmentId) {
+            if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
+                return res.status(400).json({
+                    message: 'ID de enrollment inválido.'
+                });
+            }
+            
+            // Verificar que el enrollment exista
+            const enrollmentExists = await Enrollment.findById(enrollmentId);
+            if (!enrollmentExists) {
+                return res.status(404).json({
+                    message: 'Enrollment no encontrado.'
+                });
+            }
+            
+            query.enrollmentId = enrollmentId;
+        }
+
+        // Si se proporcionan ambos filtros, se aplican ambos (AND)
+        // Si no se proporciona ningún filtro, query está vacío y mostrará todos los registros
+
+        // Buscar registros de penalización con populate de todas las referencias
+        const penalizations = await PenalizationRegistry.find(query)
+            .populate('idPenalizacion', 'name penalizationLevels status')
+            .populate('idpenalizationLevel')
+            .populate('enrollmentId', 'alias language enrollmentType status professorId studentIds planId')
+            .populate('professorId', 'name email phone status')
+            .populate('studentId', 'name studentCode email status')
+            .populate('userId', 'name email role')
+            .populate('payOutId', 'amount paymentDate status')
+            .sort({ createdAt: -1 }) // Más recientes primero
+            .lean();
+
+        // Preparar respuesta con información de filtros aplicados
+        const response = {
+            message: 'Registros de penalización obtenidos exitosamente',
+            count: penalizations.length,
+            filters: {}
+        };
+
+        if (professorId) {
+            response.filters.professorId = professorId;
+        }
+        if (enrollmentId) {
+            response.filters.enrollmentId = enrollmentId;
+        }
+        if (Object.keys(response.filters).length === 0) {
+            response.filters.none = 'Todos los registros';
+        }
+
+        response.penalizations = penalizations;
+
+        res.status(200).json(response);
+
+    } catch (error) {
+        console.error('Error al listar registros de penalización:', error);
+        res.status(500).json({
+            message: 'Error interno al listar registros de penalización',
+            error: error.message
+        });
+    }
+};
+
+/**
  * @route GET /api/penalization-registry/user/my-penalizations
  * @description Lista todos los registros de penalización del usuario autenticado (student, professor o admin)
  * @access Private (Requiere JWT - Cualquier usuario autenticado)

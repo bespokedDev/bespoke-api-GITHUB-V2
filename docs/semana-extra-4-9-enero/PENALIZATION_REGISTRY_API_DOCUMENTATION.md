@@ -24,6 +24,7 @@ const headers = {
 | Método | Ruta | Descripción | Acceso |
 |--------|------|-------------|--------|
 | `POST` | `/api/penalization-registry` | Crear nuevo registro de penalización | Solo admin |
+| `GET` | `/api/penalization-registry` | Listar registros de penalización con filtros opcionales | Solo admin |
 | `GET` | `/api/penalization-registry/user/my-penalizations` | Listar registros de penalización del usuario autenticado | Cualquier usuario autenticado |
 | `PATCH` | `/api/penalization-registry/:id/status` | Actualizar status de un registro de penalización | Solo admin |
 
@@ -711,7 +712,447 @@ curl -X POST http://localhost:3000/api/penalization-registry \
 
 ---
 
-## 🔍 **2. Obtener Registros de Penalización del Usuario Autenticado**
+## 🔍 **2. Listar Registros de Penalización (con Filtros Opcionales)**
+
+### **GET** `/api/penalization-registry`
+
+Lista registros de penalización con filtros opcionales. Permite filtrar por `professorId`, `enrollmentId`, o mostrar todos los registros si no se proporciona ningún filtro.
+
+#### **URL Completa**
+```
+GET /api/penalization-registry
+GET /api/penalization-registry?professorId=<id>
+GET /api/penalization-registry?enrollmentId=<id>
+GET /api/penalization-registry?professorId=<id>&enrollmentId=<id>
+```
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Query Parameters (Opcionales)**
+- **`professorId`** (ObjectId, opcional): Filtrar registros por ID de profesor
+  - Debe ser un ObjectId válido
+  - Si se proporciona, se validará que el profesor exista
+  - Si el profesor no existe, se devolverá un error 404
+
+- **`enrollmentId`** (ObjectId, opcional): Filtrar registros por ID de enrollment
+  - Debe ser un ObjectId válido
+  - Si se proporciona, se validará que el enrollment exista
+  - Si el enrollment no existe, se devolverá un error 404
+
+- **Sin filtros**: Si no se proporciona ningún query parameter, se mostrarán todos los registros de penalización
+
+#### **Lógica de Filtrado**
+- Si se proporciona **solo `professorId`**: Se muestran todos los registros donde `professorId` coincida
+- Si se proporciona **solo `enrollmentId`**: Se muestran todos los registros donde `enrollmentId` coincida
+- Si se proporcionan **ambos (`professorId` y `enrollmentId`)**: Se muestran los registros que cumplan ambas condiciones (AND)
+- Si **no se proporciona ningún filtro**: Se muestran todos los registros de penalización
+
+#### **Request Body**
+No requiere body. Los filtros se envían como query parameters en la URL.
+
+#### **Response Exitosa (200 OK)**
+
+##### **Ejemplo 1: Sin filtros (todos los registros)**
+```json
+{
+  "message": "Registros de penalización obtenidos exitosamente",
+  "count": 150,
+  "filters": {
+    "none": "Todos los registros"
+  },
+  "penalizations": [
+    {
+      "_id": "694c52084dc7f703443ceef0",
+      "idPenalizacion": {
+        "_id": "694c52084dc7f703443ceeea",
+        "name": "Penalización por vencimiento de días de pago",
+        "penalizationLevels": [
+          {
+            "_id": "694c5f57a6f775abd2c659c7",
+            "tipo": "Amonestación",
+            "nivel": 1,
+            "description": "Primera amonestación"
+          }
+        ],
+        "status": 1
+      },
+      "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
+      "enrollmentId": {
+        "_id": "694c52084dc7f703443ceef1",
+        "alias": "Enrollment de Juan",
+        "language": "English",
+        "enrollmentType": "single",
+        "status": 1,
+        "professorId": "694c52084dc7f703443ceef6",
+        "studentIds": [
+          {
+            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+          }
+        ],
+        "planId": "694c52084dc7f703443ceef7"
+      },
+      "professorId": {
+        "_id": "694c52084dc7f703443ceef6",
+        "name": "Profesor Ejemplo",
+        "email": "profesor@example.com",
+        "phone": "+1234567890",
+        "status": 1
+      },
+      "studentId": null,
+      "penalization_description": "Penalización por vencimiento de días de pago. Enrollment vencido el 2025-01-15",
+      "penalizationMoney": 50.00,
+      "lateFee": 7,
+      "endDate": "2025-01-15T00:00:00.000Z",
+      "support_file": "https://storage.example.com/files/evidence-123.pdf",
+      "userId": null,
+      "payOutId": null,
+      "status": 1,
+      "createdAt": "2025-01-16T10:30:00.000Z",
+      "updatedAt": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+##### **Ejemplo 2: Filtrado por professorId**
+```json
+{
+  "message": "Registros de penalización obtenidos exitosamente",
+  "count": 5,
+  "filters": {
+    "professorId": "694c52084dc7f703443ceef6"
+  },
+  "penalizations": [
+    {
+      "_id": "694c52084dc7f703443ceef0",
+      "idPenalizacion": {
+        "_id": "694c52084dc7f703443ceeea",
+        "name": "Penalización por vencimiento de días de pago",
+        "penalizationLevels": [],
+        "status": 1
+      },
+      "idpenalizationLevel": null,
+      "enrollmentId": null,
+      "professorId": {
+        "_id": "694c52084dc7f703443ceef6",
+        "name": "Profesor Ejemplo",
+        "email": "profesor@example.com",
+        "phone": "+1234567890",
+        "status": 1
+      },
+      "studentId": null,
+      "penalization_description": "Penalización por vencimiento de días de pago",
+      "penalizationMoney": 50.00,
+      "lateFee": 7,
+      "endDate": "2025-01-15T00:00:00.000Z",
+      "support_file": null,
+      "userId": null,
+      "payOutId": null,
+      "status": 1,
+      "createdAt": "2025-01-16T10:30:00.000Z",
+      "updatedAt": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+##### **Ejemplo 3: Filtrado por enrollmentId**
+```json
+{
+  "message": "Registros de penalización obtenidos exitosamente",
+  "count": 3,
+  "filters": {
+    "enrollmentId": "694c52084dc7f703443ceef1"
+  },
+  "penalizations": [
+    {
+      "_id": "694c52084dc7f703443ceef0",
+      "idPenalizacion": null,
+      "idpenalizationLevel": null,
+      "enrollmentId": {
+        "_id": "694c52084dc7f703443ceef1",
+        "alias": "Enrollment de Juan",
+        "language": "English",
+        "enrollmentType": "single",
+        "status": 1,
+        "professorId": "694c52084dc7f703443ceef6",
+        "studentIds": [
+          {
+            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+          }
+        ],
+        "planId": "694c52084dc7f703443ceef7"
+      },
+      "professorId": null,
+      "studentId": null,
+      "penalization_description": "Penalización por vencimiento de días de pago",
+      "penalizationMoney": 50.00,
+      "lateFee": 7,
+      "endDate": "2025-01-15T00:00:00.000Z",
+      "support_file": null,
+      "userId": null,
+      "payOutId": null,
+      "status": 1,
+      "createdAt": "2025-01-16T10:30:00.000Z",
+      "updatedAt": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+##### **Ejemplo 4: Filtrado por ambos (professorId y enrollmentId)**
+```json
+{
+  "message": "Registros de penalización obtenidos exitosamente",
+  "count": 1,
+  "filters": {
+    "professorId": "694c52084dc7f703443ceef6",
+    "enrollmentId": "694c52084dc7f703443ceef1"
+  },
+  "penalizations": [
+    {
+      "_id": "694c52084dc7f703443ceef0",
+      "idPenalizacion": "694c52084dc7f703443ceeea",
+      "idpenalizationLevel": "694c5f57a6f775abd2c659c7",
+      "enrollmentId": {
+        "_id": "694c52084dc7f703443ceef1",
+        "alias": "Enrollment de Juan",
+        "language": "English",
+        "enrollmentType": "single",
+        "status": 1,
+        "professorId": "694c52084dc7f703443ceef6",
+        "studentIds": [],
+        "planId": "694c52084dc7f703443ceef7"
+      },
+      "professorId": {
+        "_id": "694c52084dc7f703443ceef6",
+        "name": "Profesor Ejemplo",
+        "email": "profesor@example.com",
+        "phone": "+1234567890",
+        "status": 1
+      },
+      "studentId": null,
+      "penalization_description": "Penalización por vencimiento de días de pago",
+      "penalizationMoney": 50.00,
+      "lateFee": 7,
+      "endDate": "2025-01-15T00:00:00.000Z",
+      "support_file": null,
+      "userId": null,
+      "payOutId": null,
+      "status": 1,
+      "createdAt": "2025-01-16T10:30:00.000Z",
+      "updatedAt": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### **Errores Posibles**
+
+**400 - Bad Request**
+```json
+{
+  "message": "ID de profesor inválido."
+}
+```
+- **Causa**: El `professorId` proporcionado no es un ObjectId válido
+
+```json
+{
+  "message": "ID de enrollment inválido."
+}
+```
+- **Causa**: El `enrollmentId` proporcionado no es un ObjectId válido
+
+**404 - Not Found**
+```json
+{
+  "message": "Profesor no encontrado."
+}
+```
+- **Causa**: El `professorId` proporcionado no existe en la base de datos
+
+```json
+{
+  "message": "Enrollment no encontrado."
+}
+```
+- **Causa**: El `enrollmentId` proporcionado no existe en la base de datos
+
+**401 - Unauthorized**
+```json
+{
+  "message": "Token no proporcionado"
+}
+```
+- **Causa**: No se incluyó el header de autorización
+
+**403 - Forbidden**
+```json
+{
+  "message": "Token inválido o expirado"
+}
+```
+- **Causa**: El token JWT es inválido o el usuario no tiene rol de administrador
+
+**500 - Internal Server Error**
+```json
+{
+  "message": "Error interno al listar registros de penalización",
+  "error": "Mensaje de error detallado"
+}
+```
+- **Causa**: Error inesperado del servidor
+
+#### **Ejemplo de Uso (JavaScript/Fetch)**
+
+##### **Ejemplo 1: Listar todos los registros**
+```javascript
+const listAllPenalizations = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/penalization-registry', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Total de registros: ${data.count}`);
+    console.log('Penalizaciones:', data.penalizations);
+    return data;
+  } catch (error) {
+    console.error('Error al listar registros:', error);
+    throw error;
+  }
+};
+```
+
+##### **Ejemplo 2: Filtrar por profesor**
+```javascript
+const listPenalizationsByProfessor = async (professorId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/penalization-registry?professorId=${professorId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Registros del profesor: ${data.count}`);
+    console.log('Penalizaciones:', data.penalizations);
+    return data;
+  } catch (error) {
+    console.error('Error al listar registros por profesor:', error);
+    throw error;
+  }
+};
+```
+
+##### **Ejemplo 3: Filtrar por enrollment**
+```javascript
+const listPenalizationsByEnrollment = async (enrollmentId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/penalization-registry?enrollmentId=${enrollmentId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Registros del enrollment: ${data.count}`);
+    console.log('Penalizaciones:', data.penalizations);
+    return data;
+  } catch (error) {
+    console.error('Error al listar registros por enrollment:', error);
+    throw error;
+  }
+};
+```
+
+##### **Ejemplo 4: Filtrar por ambos (profesor y enrollment)**
+```javascript
+const listPenalizationsByProfessorAndEnrollment = async (professorId, enrollmentId) => {
+  try {
+    const url = new URL('http://localhost:3000/api/penalization-registry');
+    url.searchParams.append('professorId', professorId);
+    url.searchParams.append('enrollmentId', enrollmentId);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Registros encontrados: ${data.count}`);
+    console.log('Penalizaciones:', data.penalizations);
+    return data;
+  } catch (error) {
+    console.error('Error al listar registros:', error);
+    throw error;
+  }
+};
+```
+
+#### **Ejemplo con cURL**
+```bash
+# Listar todos los registros
+curl -X GET http://localhost:3000/api/penalization-registry \
+  -H "Authorization: Bearer <tu-token>"
+
+# Filtrar por profesor
+curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c52084dc7f703443ceef6" \
+  -H "Authorization: Bearer <tu-token>"
+
+# Filtrar por enrollment
+curl -X GET "http://localhost:3000/api/penalization-registry?enrollmentId=694c52084dc7f703443ceef1" \
+  -H "Authorization: Bearer <tu-token>"
+
+# Filtrar por ambos
+curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c52084dc7f703443ceef6&enrollmentId=694c52084dc7f703443ceef1" \
+  -H "Authorization: Bearer <tu-token>"
+```
+
+#### **Notas Importantes**
+- Todas las referencias externas se popula automáticamente con información completa
+- Los registros se ordenan por fecha de creación descendente (más recientes primero)
+- El endpoint requiere permisos de administrador (`admin` o `admin-jr`)
+- Si se proporcionan ambos filtros, se aplican ambos (lógica AND)
+- Si no se proporciona ningún filtro, se muestran todos los registros sin restricciones
+- Los filtros se validan antes de realizar la búsqueda (verificando que los IDs existan)
+
+---
+
+## 🔍 **3. Obtener Registros de Penalización del Usuario Autenticado**
 
 ### **GET** `/api/penalization-registry/user/my-penalizations`
 
@@ -914,7 +1355,7 @@ const getMyPenalizations = async () => {
 
 ---
 
-## 🔍 **3. Actualizar Status de un Registro de Penalización**
+## 🔍 **4. Actualizar Status de un Registro de Penalización**
 
 ### **PATCH** `/api/penalization-registry/:id/status`
 

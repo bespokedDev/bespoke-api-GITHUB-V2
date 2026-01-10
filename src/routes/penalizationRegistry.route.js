@@ -11,6 +11,10 @@ const verifyRole = require('../middlewares/verifyRole');
 // Acceso: Solo admin
 router.post('/', verifyToken, verifyRole('admin', 'admin-jr'), penalizationRegistryCtrl.create);
 
+// GET /api/penalization-registry - Lista registros de penalización con filtros opcionales
+// Acceso: Solo admin
+router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), penalizationRegistryCtrl.list);
+
 // GET /api/penalization-registry/user/my-penalizations - Lista registros de penalización del usuario autenticado
 // Acceso: Cualquier usuario autenticado (student, professor, admin)
 router.get('/user/my-penalizations', verifyToken, penalizationRegistryCtrl.getMyPenalizations);
