@@ -418,6 +418,93 @@
     };
 
     /**
+     * @route GET /api/professors/:id/substitute-enrollments
+     * @description Obtiene todos los enrollments donde el profesor es suplente
+     * @access Private (Requiere JWT) - Admin, professor, admin-jr
+     */
+    professorCtrl.getSubstituteEnrollments = async (req, res) => {
+        try {
+            const { id } = req.params;
+
+            // Validar que el ID del profesor sea válido
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                return res.status(400).json({ message: 'ID de profesor inválido.' });
+            }
+
+            // Verificar que el profesor existe
+            const professor = await Professor.findById(id);
+            if (!professor) {
+                return res.status(404).json({ message: 'Profesor no encontrado.' });
+            }
+
+            // Buscar todos los enrollments donde este profesor sea suplente
+            const enrollments = await Enrollment.find({
+                'substituteProfessor.professorId': id
+            })
+            .populate('professorId', 'name email phone')
+            .populate('planId', 'name')
+            .lean();
+
+            // Procesar enrollments para formatear la respuesta
+            const processedEnrollments = enrollments.map(enrollment => {
+                // Obtener información de fechas de suplencia
+                const substituteInfo = enrollment.substituteProfessor || {};
+                const assignedDate = substituteInfo.assignedDate 
+                    ? substituteInfo.assignedDate 
+                    : 'sin fecha asignada';
+                const expiryDate = substituteInfo.expiryDate 
+                    ? substituteInfo.expiryDate 
+                    : 'sin fecha asignada';
+
+                return {
+                    _id: enrollment._id,
+                    alias: enrollment.alias || null,
+                    enrollmentType: enrollment.enrollmentType || null,
+                    language: enrollment.language || null,
+                    status: enrollment.status || null,
+                    startDate: enrollment.startDate || null,
+                    endDate: enrollment.endDate || null,
+                    planId: enrollment.planId ? {
+                        _id: enrollment.planId._id,
+                        name: enrollment.planId.name
+                    } : null,
+                    professor: enrollment.professorId ? {
+                        _id: enrollment.professorId._id,
+                        name: enrollment.professorId.name,
+                        email: enrollment.professorId.email,
+                        phone: enrollment.professorId.phone
+                    } : null,
+                    substituteInfo: {
+                        assignedDate: assignedDate,
+                        expiryDate: expiryDate
+                    }
+                };
+            });
+
+            res.status(200).json({
+                message: 'Enrollments con suplencia obtenidos exitosamente',
+                professor: {
+                    id: professor._id,
+                    name: professor.name,
+                    email: professor.email
+                },
+                enrollments: processedEnrollments,
+                total: processedEnrollments.length
+            });
+
+        } catch (error) {
+            console.error('Error al obtener enrollments con suplencia:', error);
+            if (error.name === 'CastError') {
+                return res.status(400).json({ message: 'ID de profesor inválido.' });
+            }
+            res.status(500).json({ 
+                message: 'Error interno al obtener enrollments con suplencia', 
+                error: error.message 
+            });
+        }
+    };
+
+    /**
      * @route PATCH /api/professors/:id/change-password
      * @description Cambia la contraseña de un profesor
      * @access Private (Requiere JWT) - Solo el mismo profesor o admin

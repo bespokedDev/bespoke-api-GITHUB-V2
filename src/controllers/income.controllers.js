@@ -1241,26 +1241,159 @@ const generateExcedenteReportLogic = async (month) => {
         createdAt: bonus.createdAt
     }));
 
-    // Calcular total general de excedentes (ingresos + clases no vistas - bonos)
+    // 🆕 PARTE 12: Buscar enrollments futuros prepagados (creados en el mes pero con fechas fuera del rango)
+    // Enrollments cuyo createdAt está dentro del mes, pero startDate y endDate están completamente fuera del rango
+    // Para estar "fuera del rango": endDate < inicio del mes (completamente antes) O startDate > fin del mes (completamente después)
+    const prepaidEnrollments = await Enrollment.find({
+        createdAt: {
+            $gte: startDate,
+            $lte: endDate
+        },
+        $or: [
+            // Opción 1: Completamente antes del mes (endDate < inicio del mes)
+            {
+                endDate: { $lt: startDate }
+            },
+            // Opción 2: Completamente después del mes (startDate > fin del mes)
+            {
+                startDate: { $gt: endDate }
+            }
+        ]
+    })
+    .populate('planId', 'name pricing')
+    .populate({
+        path: 'professorId',
+        select: 'name'
+    })
+    .populate({
+        path: 'studentIds.studentId',
+        select: 'name'
+    })
+    .lean();
+
+    const prepaidEnrollmentsDetails = [];
+    let totalPrepaidEnrollments = 0;
+    let prepaidIncomesCount = 0;
+    let prepaidIncomesTotal = 0;
+
+    // Para cada enrollment prepagado, buscar incomes y calcular excedente
+    for (const enrollment of prepaidEnrollments) {
+        if (!enrollment.planId || !enrollment.enrollmentType) {
+            continue;
+        }
+
+        // Buscar incomes asociados a este enrollment dentro del rango del mes
+        const prepaidIncomes = await Income.find({
+            idEnrollment: enrollment._id,
+            income_date: {
+                $gte: startDate,
+                $lte: endDate
+            }
+        })
+        .populate('idDivisa', 'name')
+        .populate('idPaymentMethod', 'name type')
+        .lean();
+
+        if (prepaidIncomes.length === 0) {
+            continue; // Si no hay incomes, no incluir este enrollment
+        }
+
+        // Calcular excedente usando la misma lógica que enrollments ordinarios
+        const availableBalance = enrollment.available_balance || 0;
+        const totalAmount = enrollment.totalAmount || 0;
+        
+        let calculatedAmount = 0;
+        let calculatedBalance = 0;
+        
+        if (availableBalance >= totalAmount) {
+            calculatedAmount = totalAmount;
+            calculatedBalance = availableBalance - totalAmount;
+        } else {
+            calculatedAmount = 0;
+            calculatedBalance = availableBalance;
+        }
+
+        // El excedente es el calculatedAmount (o calculatedBalance si es diferente)
+        // Usamos calculatedAmount como excedente para estos enrollments prepagados
+        const excedenteForPrepaidEnrollment = calculatedAmount;
+        totalPrepaidEnrollments += excedenteForPrepaidEnrollment;
+
+        // Sumar incomes a los totales
+        const prepaidIncomesSum = prepaidIncomes.reduce((sum, income) => sum + (income.amount || 0), 0);
+        prepaidIncomesTotal += prepaidIncomesSum;
+        prepaidIncomesCount += prepaidIncomes.length;
+
+        // Agregar incomes a incomeDetails
+        const prepaidIncomeDetails = prepaidIncomes.map(income => ({
+            incomeId: income._id,
+            deposit_name: income.deposit_name || 'Sin nombre',
+            amount: income.amount || 0,
+            amountInDollars: income.amountInDollars || 0,
+            tasa: income.tasa || 0,
+            divisa: income.idDivisa ? income.idDivisa.name : 'Sin divisa',
+            paymentMethod: income.idPaymentMethod ? income.idPaymentMethod.name : 'Sin método de pago',
+            note: income.note || 'Sin nota',
+            income_date: income.income_date,
+            createdAt: income.createdAt
+        }));
+        incomeDetails.push(...prepaidIncomeDetails);
+
+        // Obtener nombres de estudiantes (usar alias si existe, sino concatenar nombres)
+        const hasAlias = enrollment.alias !== null && enrollment.alias !== undefined;
+        const studentNames = hasAlias
+            ? (typeof enrollment.alias === 'string' ? enrollment.alias.trim() : String(enrollment.alias))
+            : enrollment.studentIds && enrollment.studentIds.length > 0
+                ? enrollment.studentIds.map(s => {
+                    if (s.studentId && s.studentId.name) {
+                        return s.studentId.name;
+                    }
+                    return 'Estudiante Desconocido';
+                }).join(' & ')
+            : 'Estudiante Desconocido';
+
+        const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';
+        const planName = enrollment.planId ? enrollment.planId.name : 'N/A';
+        const planDisplay = `${planPrefix} - ${planName}`;
+
+        prepaidEnrollmentsDetails.push({
+            enrollmentId: enrollment._id,
+            enrollmentAlias: enrollment.alias || null,
+            studentNames: studentNames,
+            professorName: enrollment.professorId ? (enrollment.professorId.name || 'Profesor Desconocido') : 'Profesor Desconocido',
+            plan: planDisplay,
+            startDate: enrollment.startDate,
+            endDate: enrollment.endDate,
+            excedente: parseFloat(excedenteForPrepaidEnrollment.toFixed(2)),
+            incomes: prepaidIncomeDetails
+        });
+    }
+
+    // Actualizar totales incluyendo enrollments prepagados
+    const updatedTotalExcedenteIncomes = totalExcedenteIncomes + prepaidIncomesTotal;
+    const updatedNumberOfIncomes = excedenteIncomes.length + prepaidIncomesCount;
+
+    // Calcular total general de excedentes (ingresos + clases no vistas + enrollments prepagados - bonos)
     // Los bonos se restan porque aparecen con valor negativo
-    const totalExcedente = totalExcedenteIncomes + totalExcedenteClasses - totalBonuses;
+    const totalExcedente = updatedTotalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses;
 
     // Si no hay excedentes de ningún tipo, retornar null
-    if (excedenteIncomes.length === 0 && classNotViewedDetails.length === 0 && professorBonuses.length === 0) {
+    if (excedenteIncomes.length === 0 && classNotViewedDetails.length === 0 && professorBonuses.length === 0 && prepaidEnrollmentsDetails.length === 0) {
         return null;
     }
 
     return {
         reportDateRange: `${moment.utc(startDate).format("MMM Do YYYY")} - ${moment.utc(endDate).format("MMM Do YYYY")}`,
         totalExcedente: parseFloat(totalExcedente.toFixed(2)),
-        totalExcedenteIncomes: parseFloat(totalExcedenteIncomes.toFixed(2)),
+        totalExcedenteIncomes: parseFloat(updatedTotalExcedenteIncomes.toFixed(2)),
         totalExcedenteClasses: parseFloat(totalExcedenteClasses.toFixed(2)),
+        totalPrepaidEnrollments: parseFloat(totalPrepaidEnrollments.toFixed(2)), // 🆕 Total de enrollments prepagados
         totalBonuses: parseFloat(totalBonuses.toFixed(2)), // PARTE 11: Total de bonos (positivo)
-        numberOfIncomes: excedenteIncomes.length,
+        numberOfIncomes: updatedNumberOfIncomes,
         numberOfClassesNotViewed: classNotViewedDetails.reduce((sum, detail) => sum + detail.numberOfClasses, 0),
         numberOfBonuses: professorBonuses.length,
-        incomeDetails: incomeDetails, // Array de ingresos excedentes
+        incomeDetails: incomeDetails, // Array de ingresos excedentes (incluye enrollments prepagados)
         classNotViewedDetails: classNotViewedDetails, // PARTE 9: Array de clases no vistas con su excedente calculado
+        prepaidEnrollmentsDetails: prepaidEnrollmentsDetails, // 🆕 Array de enrollments prepagados
         bonusDetails: bonusDetails // PARTE 11: Array de bonos de profesores (con valor negativo para excedentes)
     };
 };

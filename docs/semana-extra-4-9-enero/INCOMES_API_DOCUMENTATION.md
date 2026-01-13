@@ -936,11 +936,12 @@ GET /api/incomes/professors-payout-report?month=2025-01
   },
   "excedente": {
     "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
-    "totalExcedente": 1300.00,
+    "totalExcedente": 1500.00,
     "totalExcedenteIncomes": 500.00,
     "totalExcedenteClasses": 1000.00,
+    "totalPrepaidEnrollments": 200.00,
     "totalBonuses": 200.00,
-    "numberOfIncomes": 3,
+    "numberOfIncomes": 5,
     "numberOfClassesNotViewed": 20,
     "numberOfBonuses": 2,
     "incomeDetails": [
@@ -979,6 +980,32 @@ GET /api/incomes/professors-payout-report?month=2025-01
         "pricePerHour": 20.00,
         "excedente": 100.00,
         "classesNotViewed": [...]
+      }
+    ],
+    "prepaidEnrollmentsDetails": [
+      {
+        "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9db",
+        "enrollmentAlias": "Enrollment Futuro - Juan",
+        "studentNames": "Juan García",
+        "professorName": "María López",
+        "plan": "S - Plan Básico",
+        "startDate": "2025-03-01T00:00:00.000Z",
+        "endDate": "2025-03-31T23:59:59.999Z",
+        "excedente": 200.00,
+        "incomes": [
+          {
+            "incomeId": "64f8a1b2c3d4e5f6a7b8c9dc",
+            "deposit_name": "Pago anticipado",
+            "amount": 200.00,
+            "amountInDollars": 200.00,
+            "tasa": 1.0,
+            "divisa": "USD",
+            "paymentMethod": "Transferencia",
+            "note": "Pago por enrollment futuro",
+            "income_date": "2025-01-20T10:30:00.000Z",
+            "createdAt": "2025-01-20T10:30:00.000Z"
+          }
+        ]
       }
     ],
     "bonusDetails": [
@@ -1206,31 +1233,34 @@ El reporte de excedentes ahora incluye tres componentes:
 
 #### **🆕 Estructura Actualizada del Campo `excedente`**
 
-El reporte de excedentes ahora incluye tres tipos de excedentes:
+El reporte de excedentes ahora incluye cuatro tipos de excedentes:
 
 1. **Ingresos excedentes**: Ingresos sin enrollment ni profesor
 2. **Clases no vistas**: Clases con `classViewed = 0` o `3` (Parte 9)
 3. **Bonos de profesores**: Bonos con valor negativo (Parte 11)
+4. **Enrollments prepagados**: Enrollments creados en el mes pero con fechas fuera del rango (Parte 12)
 
 ```json
 {
   "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
-  "totalExcedente": 1300.00,                    // Total: ingresos + clases - bonos
-  "totalExcedenteIncomes": 500.00,              // Total de ingresos excedentes
+  "totalExcedente": 1300.00,                    // Total: ingresos + clases + prepagados - bonos
+  "totalExcedenteIncomes": 500.00,              // Total de ingresos excedentes (incluye prepagados)
   "totalExcedenteClasses": 1000.00,             // Total de excedente por clases no vistas
+  "totalPrepaidEnrollments": 200.00,            // 🆕 Total de enrollments prepagados (Parte 12)
   "totalBonuses": 200.00,                       // Total de bonos (se resta del total)
-  "numberOfIncomes": 3,                         // Cantidad de ingresos excedentes
+  "numberOfIncomes": 3,                         // Cantidad de ingresos excedentes (incluye prepagados)
   "numberOfClassesNotViewed": 20,               // Cantidad de clases no vistas
   "numberOfBonuses": 2,                         // Cantidad de bonos
-  "incomeDetails": [...],                        // Array de ingresos excedentes
+  "incomeDetails": [...],                        // Array de ingresos excedentes (incluye prepagados)
   "classNotViewedDetails": [...],               // Array de clases no vistas (Parte 9)
+  "prepaidEnrollmentsDetails": [...],           // 🆕 Array de enrollments prepagados (Parte 12)
   "bonusDetails": [...]                          // Array de bonos con valor negativo (Parte 11)
 }
 ```
 
 **Cálculo del Total:**
 ```
-totalExcedente = totalExcedenteIncomes + totalExcedenteClasses - totalBonuses
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses
 ```
 
 #### **🆕 Lógica de Alias y Ordenamiento**
@@ -2537,7 +2567,7 @@ Balance Remaining = (Amount + Old Balance) - Total
 #### **Integración en Reporte de Excedentes:**
 - Los bonos aparecen con **valor negativo** en el reporte de excedentes
 - Se incluyen en `bonusDetails` con `negativeAmount`
-- El total de excedentes se calcula como: `totalExcedenteIncomes + totalExcedenteClasses - totalBonuses`
+- El total de excedentes se calcula como: `totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses`
 
 #### **Integración en Reporte de Pagos de Profesores:**
 - Sección `abonos` en el reporte de cada profesor
@@ -2591,11 +2621,111 @@ Balance Remaining = (Amount + Old Balance) - Total
 
 ---
 
+### **PARTE 12: Enrollments Futuros Prepagados en Excedentes**
+
+#### **Implementación:**
+- Se buscan enrollments creados en el mes (`createdAt` dentro del rango) pero cuyas fechas de inicio y fin (`startDate` y `endDate`) están completamente fuera del rango del mes
+- Para cada enrollment encontrado:
+  - Se buscan los `incomes` asociados a ese enrollment dentro del rango del mes
+  - Se calcula el excedente usando la misma lógica que enrollments ordinarios (`available_balance` y `totalAmount`)
+  - Los incomes se agregan a `totalExcedenteIncomes` y se cuentan en `numberOfIncomes`
+  - Los incomes se agregan al array `incomeDetails`
+  - El excedente calculado se suma a `totalPrepaidEnrollments` y luego a `totalExcedente`
+
+#### **Criterios de Búsqueda:**
+- `createdAt` dentro del rango del mes (startDate del mes <= createdAt <= endDate del mes)
+- `startDate` fuera del rango (startDate < startDate del mes O startDate > endDate del mes)
+- `endDate` fuera del rango (endDate < startDate del mes O endDate > endDate del mes)
+
+#### **Cálculo del Excedente:**
+- Se usa la misma lógica que enrollments ordinarios:
+  - Si `available_balance >= totalAmount`: `calculatedAmount = totalAmount`
+  - Si `available_balance < totalAmount`: `calculatedAmount = 0`
+- El excedente es igual a `calculatedAmount`
+
+#### **Estructura en Reporte de Excedentes:**
+```json
+{
+  "totalExcedente": 1500.00,
+  "totalExcedenteIncomes": 500.00,
+  "totalExcedenteClasses": 1000.00,
+  "totalPrepaidEnrollments": 200.00,
+  "totalBonuses": 200.00,
+  "numberOfIncomes": 5,
+  "numberOfClassesNotViewed": 20,
+  "numberOfBonuses": 2,
+  "incomeDetails": [
+    {
+      "incomeId": "64f8a1b2c3d4e5f6a7b8c9d9",
+      "deposit_name": "Pago adicional",
+      "amount": 50.00,
+      "amountInDollars": 50.00,
+      "tasa": 1.0,
+      "divisa": "USD",
+      "paymentMethod": "Efectivo",
+      "note": "Pago extra por material",
+      "income_date": "2025-01-15T10:30:00.000Z",
+      "createdAt": "2025-01-15T10:30:00.000Z"
+    }
+  ],
+  "classNotViewedDetails": [...],
+  "prepaidEnrollmentsDetails": [
+    {
+      "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9db",
+      "enrollmentAlias": "Enrollment Futuro - Juan",
+      "studentNames": "Juan García",
+      "professorName": "María López",
+      "plan": "S - Plan Básico",
+      "startDate": "2025-03-01T00:00:00.000Z",
+      "endDate": "2025-03-31T23:59:59.999Z",
+      "excedente": 200.00,
+      "incomes": [
+        {
+          "incomeId": "64f8a1b2c3d4e5f6a7b8c9dc",
+          "deposit_name": "Pago anticipado",
+          "amount": 200.00,
+          "amountInDollars": 200.00,
+          "tasa": 1.0,
+          "divisa": "USD",
+          "paymentMethod": "Transferencia",
+          "note": "Pago por enrollment futuro",
+          "income_date": "2025-01-20T10:30:00.000Z",
+          "createdAt": "2025-01-20T10:30:00.000Z"
+        }
+      ]
+    }
+  ],
+  "bonusDetails": [...]
+}
+```
+
+#### **Campos del Array `prepaidEnrollmentsDetails`:**
+- `enrollmentId` (String): ID del enrollment prepagado
+- `enrollmentAlias` (String/null): Alias del enrollment (si existe)
+- `studentNames` (String): Nombres de estudiantes concatenados (o alias si existe)
+- `professorName` (String): Nombre del profesor encargado
+- `plan` (String): Nombre del plan formateado (ej: "S - Plan Básico")
+- `startDate` (Date): Fecha de inicio del enrollment
+- `endDate` (Date): Fecha de fin del enrollment
+- `excedente` (Number): Excedente calculado para este enrollment (basado en `available_balance` y `totalAmount`)
+- `incomes` (Array): Array de objetos con los incomes asociados a este enrollment dentro del rango del mes (misma estructura que `incomeDetails`)
+
+#### **Cálculo del Total:**
+```
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses
+```
+
+#### **Aplicado en:**
+- Función `generateExcedenteReportLogic`
+- Endpoint `/api/incomes/professors-payout-report` (campo `excedente`)
+
+---
+
 ### **📋 Resumen de Archivos Modificados/Creados**
 
 #### **Archivos Modificados:**
 1. `src/controllers/income.controllers.js`
-   - Partes 1-9, 11: Todas las mejoras en reportes financieros
+   - Partes 1-9, 11, 12: Todas las mejoras en reportes financieros
 2. `src/controllers/specialProfessorReport.controller.js`
    - Partes 1-5, 7, 10, 11: Ajustes para reporte especial
 3. `src/app.js`

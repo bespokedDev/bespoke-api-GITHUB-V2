@@ -723,7 +723,11 @@ Lista registros de penalización con filtros opcionales. Permite filtrar por `pr
 GET /api/penalization-registry
 GET /api/penalization-registry?professorId=<id>
 GET /api/penalization-registry?enrollmentId=<id>
+GET /api/penalization-registry?studentId=<id>
 GET /api/penalization-registry?professorId=<id>&enrollmentId=<id>
+GET /api/penalization-registry?professorId=<id>&studentId=<id>
+GET /api/penalization-registry?enrollmentId=<id>&studentId=<id>
+GET /api/penalization-registry?professorId=<id>&enrollmentId=<id>&studentId=<id>
 ```
 
 #### **Headers Requeridos**
@@ -744,12 +748,18 @@ GET /api/penalization-registry?professorId=<id>&enrollmentId=<id>
   - Si se proporciona, se validará que el enrollment exista
   - Si el enrollment no existe, se devolverá un error 404
 
+- **`studentId`** (ObjectId, opcional): Filtrar registros por ID de estudiante
+  - Debe ser un ObjectId válido
+  - Si se proporciona, se validará que el estudiante exista
+  - Si el estudiante no existe, se devolverá un error 404
+
 - **Sin filtros**: Si no se proporciona ningún query parameter, se mostrarán todos los registros de penalización
 
 #### **Lógica de Filtrado**
 - Si se proporciona **solo `professorId`**: Se muestran todos los registros donde `professorId` coincida
 - Si se proporciona **solo `enrollmentId`**: Se muestran todos los registros donde `enrollmentId` coincida
-- Si se proporcionan **ambos (`professorId` y `enrollmentId`)**: Se muestran los registros que cumplan ambas condiciones (AND)
+- Si se proporciona **solo `studentId`**: Se muestran todos los registros donde `studentId` coincida
+- Si se proporcionan **múltiples filtros** (combinaciones de `professorId`, `enrollmentId`, `studentId`): Se muestran los registros que cumplan todas las condiciones especificadas (AND)
 - Si **no se proporciona ningún filtro**: Se muestran todos los registros de penalización
 
 #### **Request Body**
@@ -905,7 +915,44 @@ No requiere body. Los filtros se envían como query parameters en la URL.
 }
 ```
 
-##### **Ejemplo 4: Filtrado por ambos (professorId y enrollmentId)**
+##### **Ejemplo 4: Filtrado por studentId**
+```json
+{
+  "message": "Registros de penalización obtenidos exitosamente",
+  "count": 2,
+  "filters": {
+    "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+  },
+  "penalizations": [
+    {
+      "_id": "694c52084dc7f703443ceef0",
+      "idPenalizacion": null,
+      "idpenalizationLevel": null,
+      "enrollmentId": null,
+      "professorId": null,
+      "studentId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+        "name": "Juan Pérez",
+        "studentCode": "BES-0001",
+        "email": "juan.perez@example.com",
+        "status": 1
+      },
+      "penalization_description": "Falta de asistencia repetida",
+      "penalizationMoney": null,
+      "lateFee": null,
+      "endDate": null,
+      "support_file": null,
+      "userId": null,
+      "payOutId": null,
+      "status": 1,
+      "createdAt": "2025-01-16T10:30:00.000Z",
+      "updatedAt": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+##### **Ejemplo 5: Filtrado por ambos (professorId y enrollmentId)**
 ```json
 {
   "message": "Registros de penalización obtenidos exitosamente",
@@ -969,6 +1016,13 @@ No requiere body. Los filtros se envían como query parameters en la URL.
 ```
 - **Causa**: El `enrollmentId` proporcionado no es un ObjectId válido
 
+```json
+{
+  "message": "ID de estudiante inválido."
+}
+```
+- **Causa**: El `studentId` proporcionado no es un ObjectId válido
+
 **404 - Not Found**
 ```json
 {
@@ -983,6 +1037,13 @@ No requiere body. Los filtros se envían como query parameters en la URL.
 }
 ```
 - **Causa**: El `enrollmentId` proporcionado no existe en la base de datos
+
+```json
+{
+  "message": "Estudiante no encontrado."
+}
+```
+- **Causa**: El `studentId` proporcionado no existe en la base de datos
 
 **401 - Unauthorized**
 ```json
@@ -1092,13 +1153,41 @@ const listPenalizationsByEnrollment = async (enrollmentId) => {
 };
 ```
 
-##### **Ejemplo 4: Filtrar por ambos (profesor y enrollment)**
+##### **Ejemplo 4: Filtrar por estudiante**
 ```javascript
-const listPenalizationsByProfessorAndEnrollment = async (professorId, enrollmentId) => {
+const listPenalizationsByStudent = async (studentId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/penalization-registry?studentId=${studentId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    const data = await response.json();
+    console.log(`Registros del estudiante: ${data.count}`);
+    console.log('Penalizaciones:', data.penalizations);
+    return data;
+  } catch (error) {
+    console.error('Error al listar registros por estudiante:', error);
+    throw error;
+  }
+};
+```
+
+##### **Ejemplo 5: Filtrar por múltiples parámetros (profesor, enrollment y estudiante)**
+```javascript
+const listPenalizationsByMultipleFilters = async (professorId, enrollmentId, studentId) => {
   try {
     const url = new URL('http://localhost:3000/api/penalization-registry');
-    url.searchParams.append('professorId', professorId);
-    url.searchParams.append('enrollmentId', enrollmentId);
+    if (professorId) url.searchParams.append('professorId', professorId);
+    if (enrollmentId) url.searchParams.append('enrollmentId', enrollmentId);
+    if (studentId) url.searchParams.append('studentId', studentId);
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -1137,8 +1226,16 @@ curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c520
 curl -X GET "http://localhost:3000/api/penalization-registry?enrollmentId=694c52084dc7f703443ceef1" \
   -H "Authorization: Bearer <tu-token>"
 
-# Filtrar por ambos
+# Filtrar por estudiante
+curl -X GET "http://localhost:3000/api/penalization-registry?studentId=64f8a1b2c3d4e5f6a7b8c9d4" \
+  -H "Authorization: Bearer <tu-token>"
+
+# Filtrar por múltiples parámetros (profesor y enrollment)
 curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c52084dc7f703443ceef6&enrollmentId=694c52084dc7f703443ceef1" \
+  -H "Authorization: Bearer <tu-token>"
+
+# Filtrar por múltiples parámetros (profesor, enrollment y estudiante)
+curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c52084dc7f703443ceef6&enrollmentId=694c52084dc7f703443ceef1&studentId=64f8a1b2c3d4e5f6a7b8c9d4" \
   -H "Authorization: Bearer <tu-token>"
 ```
 
@@ -1146,9 +1243,10 @@ curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c520
 - Todas las referencias externas se popula automáticamente con información completa
 - Los registros se ordenan por fecha de creación descendente (más recientes primero)
 - El endpoint requiere permisos de administrador (`admin` o `admin-jr`)
-- Si se proporcionan ambos filtros, se aplican ambos (lógica AND)
+- Si se proporcionan múltiples filtros (`professorId`, `enrollmentId`, `studentId`), se aplican todos (lógica AND)
 - Si no se proporciona ningún filtro, se muestran todos los registros sin restricciones
 - Los filtros se validan antes de realizar la búsqueda (verificando que los IDs existan)
+- Los filtros pueden combinarse de cualquier manera (solo `professorId`, solo `enrollmentId`, solo `studentId`, o cualquier combinación de ellos)
 
 ---
 

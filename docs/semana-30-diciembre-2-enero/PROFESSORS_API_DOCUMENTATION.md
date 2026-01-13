@@ -36,6 +36,7 @@ Para información completa sobre el sistema de autenticación, login y tokens JW
 | `POST` | `/api/professors` | Crear nuevo profesor |
 | `GET` | `/api/professors` | Listar todos los profesores |
 | `GET` | `/api/professors/:id/enrollments` | Obtener lista de enrollments del profesor |
+| `GET` | `/api/professors/:id/substitute-enrollments` | Obtener enrollments donde el profesor es suplente |
 | `GET` | `/api/professors/:id` | Obtener profesor por ID |
 | `PUT` | `/api/professors/:id` | Actualizar profesor por ID |
 | `PATCH` | `/api/professors/:id/activate` | Activar profesor |
@@ -1313,6 +1314,350 @@ getProfessorEnrollments('6832845ebb53229d9559459b');
 
 ---
 
+### **9. Obtener Enrollments donde el Profesor es Suplente**
+
+#### **GET** `/api/professors/:id/substitute-enrollments`
+
+Obtiene todos los enrollments donde el profesor especificado actúa como suplente. Muestra información básica del enrollment, datos del profesor encargado principal, y las fechas de asignación y vencimiento de la suplencia.
+
+#### **Headers Requeridos**
+```javascript
+{
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del profesor suplente (ObjectId de MongoDB)
+  - Debe ser un ObjectId válido
+  - El profesor debe existir en la base de datos
+
+#### **Request Body**
+No requiere body. El ID del profesor se envía como parámetro en la URL.
+
+#### **Ejemplo de Request**
+```
+GET /api/professors/6832845ebb53229d9559459b/substitute-enrollments
+```
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Enrollments con suplencia obtenidos exitosamente",
+  "professor": {
+    "id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "email": "juan.perez@example.com"
+  },
+  "enrollments": [
+    {
+      "_id": "692a1f4a5fa3f53b825ee53f",
+      "alias": "Enrollment de Inglés Avanzado",
+      "enrollmentType": "single",
+      "language": "English",
+      "status": 1,
+      "startDate": "2025-01-15T00:00:00.000Z",
+      "endDate": "2025-02-14T23:59:59.999Z",
+      "planId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+        "name": "Panda_W"
+      },
+      "professor": {
+        "_id": "6858c84b1b114315ccdf65d0",
+        "name": "María García",
+        "email": "maria.garcia@example.com",
+        "phone": "+584121234567"
+      },
+      "substituteInfo": {
+        "assignedDate": "2025-01-20T00:00:00.000Z",
+        "expiryDate": "2025-02-20T23:59:59.999Z"
+      }
+    },
+    {
+      "_id": "692a1f4a5fa3f53b825ee540",
+      "alias": null,
+      "enrollmentType": "couple",
+      "language": "French",
+      "status": 1,
+      "startDate": "2025-01-10T00:00:00.000Z",
+      "endDate": "2025-02-09T23:59:59.999Z",
+      "planId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "name": "Panda_M"
+      },
+      "professor": {
+        "_id": "6858c84b1b114315ccdf65d1",
+        "name": "Carlos Rodríguez",
+        "email": "carlos.rodriguez@example.com",
+        "phone": "+584129876543"
+      },
+      "substituteInfo": {
+        "assignedDate": "sin fecha asignada",
+        "expiryDate": "2025-02-15T23:59:59.999Z"
+      }
+    },
+    {
+      "_id": "692a1f4a5fa3f53b825ee541",
+      "alias": "Grupo de Francés",
+      "enrollmentType": "group",
+      "language": "French",
+      "status": 1,
+      "startDate": "2025-01-05T00:00:00.000Z",
+      "endDate": "2025-02-04T23:59:59.999Z",
+      "planId": {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
+        "name": "Panda_S"
+      },
+      "professor": {
+        "_id": "6858c84b1b114315ccdf65d2",
+        "name": "Ana Martínez",
+        "email": "ana.martinez@example.com",
+        "phone": "+584123456789"
+      },
+      "substituteInfo": {
+        "assignedDate": "sin fecha asignada",
+        "expiryDate": "sin fecha asignada"
+      }
+    }
+  ],
+  "total": 3
+}
+```
+
+#### **Estructura de la Response**
+
+**professor:**
+- `id` (String): ID del profesor suplente
+- `name` (String): Nombre completo del profesor suplente
+- `email` (String): Correo electrónico del profesor suplente
+
+**enrollments:**
+- Array de objetos con información de enrollments donde el profesor es suplente. Cada objeto contiene:
+  - `_id` (String): ID único del enrollment
+  - `alias` (String/null): Alias del enrollment. `null` si no tiene alias
+  - `enrollmentType` (String/null): Tipo de enrollment (`single`, `couple` o `group`)
+  - `language` (String/null): Idioma del enrollment (`English` o `French`)
+  - `status` (Number/null): Estado del enrollment:
+    - `1` = Activo
+    - `0` = Disuelto
+    - `2` = Inactivo
+    - `3` = En pausa
+  - `startDate` (Date/String/null): Fecha de inicio del enrollment (formato ISO 8601)
+  - `endDate` (Date/String/null): Fecha de fin del enrollment (formato ISO 8601)
+  - `planId` (Object/null): Información del plan:
+    - `_id` (String): ID del plan
+    - `name` (String): Nombre del plan
+  - `professor` (Object/null): Información del profesor encargado principal (no del suplente):
+    - `_id` (String): ID del profesor encargado
+    - `name` (String): Nombre completo del profesor encargado
+    - `email` (String): Correo electrónico del profesor encargado
+    - `phone` (String): Teléfono del profesor encargado
+  - `substituteInfo` (Object): Información de la suplencia:
+    - `assignedDate` (Date/String): Fecha en que se asignó la suplencia. Si no existe o es `null`, retorna `"sin fecha asignada"` (string)
+    - `expiryDate` (Date/String): Fecha en que debe vencer la suplencia. Si no existe o es `null`, retorna `"sin fecha asignada"` (string)
+
+**total:**
+- `total` (Number): Cantidad total de enrollments donde el profesor es suplente
+
+#### **Lógica de Fechas de Suplencia**
+
+El sistema maneja las fechas de suplencia de la siguiente manera:
+
+- **Si `assignedDate` existe y tiene valor**: Se retorna la fecha en formato ISO 8601 (Date object convertido a string)
+- **Si `assignedDate` no existe o es `null`**: Se retorna el string `"sin fecha asignada"`
+- **Si `expiryDate` existe y tiene valor**: Se retorna la fecha en formato ISO 8601 (Date object convertido a string)
+- **Si `expiryDate` no existe o es `null`**: Se retorna el string `"sin fecha asignada"`
+
+**Nota importante:** 
+- Si el campo `substituteProfessor` no existe en el enrollment, ambas fechas retornarán `"sin fecha asignada"`
+- Si las keys `assignedDate` o `expiryDate` no existen dentro de `substituteProfessor`, la fecha correspondiente retornará `"sin fecha asignada"`
+- Si las keys existen pero su valor es `null` o `undefined`, también retornarán `"sin fecha asignada"`
+
+#### **Notas Importantes**
+- Solo se buscan enrollments donde el profesor especificado esté registrado como suplente en el campo `substituteProfessor.professorId`
+- El endpoint muestra información del profesor encargado principal (`professorId`) del enrollment, no del profesor suplente
+- Si un enrollment no tiene `substituteProfessor` o el `professorId` dentro de `substituteProfessor` no coincide con el ID proporcionado, no aparecerá en los resultados
+- Las fechas de suplencia se muestran tal como están almacenadas, o `"sin fecha asignada"` si no existen o son `null`
+- El endpoint no filtra por status del enrollment, muestra todos los enrollments donde el profesor es suplente, independientemente de su status
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+```json
+{
+  "message": "ID de profesor inválido."
+}
+```
+- **Causa**: El ID del profesor proporcionado no es un ObjectId válido de MongoDB
+- **Solución**: Verificar que el ID tenga el formato correcto (24 caracteres hexadecimales)
+
+**404 Not Found**
+```json
+{
+  "message": "Profesor no encontrado."
+}
+```
+- **Causa**: El ID del profesor no existe en la base de datos
+- **Solución**: Verificar que el profesor exista antes de hacer la petición
+
+**401 Unauthorized**
+```json
+{
+  "message": "Token no proporcionado"
+}
+```
+- **Causa**: No se incluyó el header de autorización
+- **Solución**: Incluir el header `Authorization: Bearer <token>` en la petición
+
+**403 Forbidden**
+```json
+{
+  "message": "Token inválido o expirado"
+}
+```
+- **Causa**: El token JWT es inválido, expirado o el usuario no tiene permisos (rol `admin`, `professor` o `admin-jr`)
+- **Solución**: Verificar que el token sea válido y que el usuario tenga los permisos necesarios
+
+**500 Internal Server Error**
+```json
+{
+  "message": "Error interno al obtener enrollments con suplencia",
+  "error": "Mensaje de error detallado"
+}
+```
+- **Causa**: Error inesperado del servidor
+- **Solución**: Contactar al equipo de desarrollo
+
+#### **Ejemplo con cURL**
+```bash
+curl -X GET http://localhost:3000/api/professors/6832845ebb53229d9559459b/substitute-enrollments \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const getSubstituteEnrollments = async (professorId) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/professors/${professorId}/substitute-enrollments`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Profesor suplente:', data.professor);
+      console.log('Total de enrollments:', data.total);
+      console.log('Enrollments:', data.enrollments);
+      
+      // Ejemplo de uso
+      data.enrollments.forEach(enrollment => {
+        console.log(`\n--- Enrollment ${enrollment._id} ---`);
+        console.log(`Alias: ${enrollment.alias || 'Sin alias'}`);
+        console.log(`Tipo: ${enrollment.enrollmentType}`);
+        console.log(`Idioma: ${enrollment.language}`);
+        console.log(`Estado: ${enrollment.status}`);
+        console.log(`Fecha Inicio: ${enrollment.startDate || 'No definida'}`);
+        console.log(`Fecha Fin: ${enrollment.endDate || 'No definida'}`);
+        console.log(`Plan: ${enrollment.planId?.name || 'No asignado'}`);
+        console.log(`Profesor encargado: ${enrollment.professor?.name || 'No asignado'}`);
+        console.log(`Email profesor: ${enrollment.professor?.email || 'No disponible'}`);
+        console.log(`Teléfono profesor: ${enrollment.professor?.phone || 'No disponible'}`);
+        console.log(`Fecha asignación suplencia: ${enrollment.substituteInfo.assignedDate}`);
+        console.log(`Fecha vencimiento suplencia: ${enrollment.substituteInfo.expiryDate}`);
+      });
+      
+      return data;
+    } else {
+      console.error('Error:', data.message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    return null;
+  }
+};
+
+// Uso
+getSubstituteEnrollments('6832845ebb53229d9559459b');
+```
+
+#### **Casos de Uso**
+
+**Caso 1: Profesor con suplencias activas y fechas completas**
+```json
+{
+  "message": "Enrollments con suplencia obtenidos exitosamente",
+  "professor": {
+    "id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "email": "juan.perez@example.com"
+  },
+  "enrollments": [
+    {
+      "_id": "692a1f4a5fa3f53b825ee53f",
+      "alias": "Enrollment de Inglés",
+      "enrollmentType": "single",
+      "language": "English",
+      "status": 1,
+      "professor": {
+        "_id": "6858c84b1b114315ccdf65d0",
+        "name": "María García",
+        "email": "maria.garcia@example.com",
+        "phone": "+584121234567"
+      },
+      "substituteInfo": {
+        "assignedDate": "2025-01-20T00:00:00.000Z",
+        "expiryDate": "2025-02-20T23:59:59.999Z"
+      }
+    }
+  ],
+  "total": 1
+}
+```
+
+**Caso 2: Profesor sin suplencias**
+```json
+{
+  "message": "Enrollments con suplencia obtenidos exitosamente",
+  "professor": {
+    "id": "6832845ebb53229d9559459b",
+    "name": "Juan Pérez",
+    "email": "juan.perez@example.com"
+  },
+  "enrollments": [],
+  "total": 0
+}
+```
+
+**Caso 3: Enrollment con fecha de asignación faltante**
+```json
+{
+  "_id": "692a1f4a5fa3f53b825ee53f",
+  "alias": "Enrollment de Francés",
+  "substituteInfo": {
+    "assignedDate": "sin fecha asignada",
+    "expiryDate": "2025-02-20T23:59:59.999Z"
+  }
+}
+```
+
+**Caso 4: Enrollment con ambas fechas faltantes**
+```json
+{
+  "_id": "692a1f4a5fa3f53b825ee53f",
+  "alias": "Enrollment de Inglés",
+  "substituteInfo": {
+    "assignedDate": "sin fecha asignada",
+    "expiryDate": "sin fecha asignada"
+  }
+}
+```
+
+---
+
 ## 🔄 **Manejo de Errores**
 
 ### **Códigos de Estado HTTP**
@@ -1464,6 +1809,7 @@ El sistema utiliza un sistema de roles basado en la colección `Role`. Cada prof
 
 **Admin y Professor:**
 - `GET /api/professors/:id/enrollments` - Obtener enrollments del profesor
+- `GET /api/professors/:id/substitute-enrollments` - Obtener enrollments donde el profesor es suplente
 - `GET /api/professors/:id` - Obtener profesor por ID
 - `PUT /api/professors/:id` - Actualizar profesor
 - `PATCH /api/professors/:id/change-password` - Cambiar contraseña del profesor (un profesor solo puede cambiar su propia contraseña, un admin puede cambiar cualquier contraseña)

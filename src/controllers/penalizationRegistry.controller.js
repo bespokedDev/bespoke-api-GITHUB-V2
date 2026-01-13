@@ -399,11 +399,12 @@ penalizationRegistryCtrl.create = async (req, res) => {
  * Query parameters opcionales:
  * - professorId (ObjectId): Filtrar por ID de profesor
  * - enrollmentId (ObjectId): Filtrar por ID de enrollment
+ * - studentId (ObjectId): Filtrar por ID de estudiante
  * - Si no se proporciona ningún filtro, muestra todos los registros
  */
 penalizationRegistryCtrl.list = async (req, res) => {
     try {
-        const { professorId, enrollmentId } = req.query;
+        const { professorId, enrollmentId, studentId } = req.query;
         const query = {};
 
         // Filtrar por professorId si se proporciona
@@ -444,7 +445,26 @@ penalizationRegistryCtrl.list = async (req, res) => {
             query.enrollmentId = enrollmentId;
         }
 
-        // Si se proporcionan ambos filtros, se aplican ambos (AND)
+        // Filtrar por studentId si se proporciona
+        if (studentId) {
+            if (!mongoose.Types.ObjectId.isValid(studentId)) {
+                return res.status(400).json({
+                    message: 'ID de estudiante inválido.'
+                });
+            }
+            
+            // Verificar que el estudiante exista
+            const studentExists = await Student.findById(studentId);
+            if (!studentExists) {
+                return res.status(404).json({
+                    message: 'Estudiante no encontrado.'
+                });
+            }
+            
+            query.studentId = studentId;
+        }
+
+        // Si se proporcionan múltiples filtros, se aplican todos (AND)
         // Si no se proporciona ningún filtro, query está vacío y mostrará todos los registros
 
         // Buscar registros de penalización con populate de todas las referencias
@@ -471,6 +491,9 @@ penalizationRegistryCtrl.list = async (req, res) => {
         }
         if (enrollmentId) {
             response.filters.enrollmentId = enrollmentId;
+        }
+        if (studentId) {
+            response.filters.studentId = studentId;
         }
         if (Object.keys(response.filters).length === 0) {
             response.filters.none = 'Todos los registros';
