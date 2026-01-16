@@ -860,7 +860,12 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             status: 1,
             penalizationMoney: { $gt: 0 }
         })
-        .select('penalizationMoney penalization_description createdAt endDate support_file')
+        .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel')
+        .populate({
+            path: 'idPenalizacion',
+            select: 'name penalizationLevels',
+            model: 'Penalizacion'
+        })
         .sort({ createdAt: -1 })
         .lean();
 
@@ -868,14 +873,38 @@ const generateGeneralProfessorsReportLogic = async (month) => {
         const totalPenalizationMoney = monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
 
         // Crear detalles de penalizaciones (similar a abonosDetails)
-        const penalizationsDetails = monetaryPenalizations.map(penalization => ({
-            penalizationId: penalization._id,
-            penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
-            description: penalization.penalization_description || null,
-            endDate: penalization.endDate || null,
-            support_file: penalization.support_file || null,
-            createdAt: penalization.createdAt
-        }));
+        const penalizationsDetails = monetaryPenalizations.map(penalization => {
+            // Buscar el nivel de penalización dentro del array penalizationLevels
+            let penalizationLevel = null;
+            if (penalization.idPenalizacion && penalization.idpenalizationLevel) {
+                const levelId = penalization.idpenalizationLevel.toString();
+                const foundLevel = penalization.idPenalizacion.penalizationLevels?.find(
+                    level => level._id.toString() === levelId
+                );
+                if (foundLevel) {
+                    penalizationLevel = {
+                        id: foundLevel._id.toString(),
+                        tipo: foundLevel.tipo || null,
+                        nivel: foundLevel.nivel || null,
+                        description: foundLevel.description || null
+                    };
+                }
+            }
+
+            return {
+                penalizationId: penalization._id,
+                penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+                description: penalization.penalization_description || null,
+                endDate: penalization.endDate || null,
+                support_file: penalization.support_file || null,
+                createdAt: penalization.createdAt,
+                penalizationType: penalization.idPenalizacion ? {
+                    id: penalization.idPenalizacion._id.toString(),
+                    name: penalization.idPenalizacion.name || null
+                } : null,
+                penalizationLevel: penalizationLevel
+            };
+        });
 
         // Calcular totalFinal: totalTeacher + totalBonuses - totalPenalizationMoney
         const totalFinal = totalTeacher + totalBonuses - totalPenalizationMoney;
@@ -1235,7 +1264,12 @@ const generateSpecificProfessorReportLogic = async (month) => {
         status: 1,
         penalizationMoney: { $gt: 0 }
     })
-    .select('penalizationMoney penalization_description createdAt endDate support_file')
+    .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel')
+    .populate({
+        path: 'idPenalizacion',
+        select: 'name penalizationLevels',
+        model: 'Penalizacion'
+    })
     .sort({ createdAt: -1 })
     .lean();
 
@@ -1243,14 +1277,38 @@ const generateSpecificProfessorReportLogic = async (month) => {
     const totalPenalizationMoney = monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
 
     // Crear detalles de penalizaciones (similar a abonosDetails)
-    const penalizationsDetails = monetaryPenalizations.map(penalization => ({
-        penalizationId: penalization._id,
-        penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
-        description: penalization.penalization_description || null,
-        endDate: penalization.endDate || null,
-        support_file: penalization.support_file || null,
-        createdAt: penalization.createdAt
-    }));
+    const penalizationsDetails = monetaryPenalizations.map(penalization => {
+        // Buscar el nivel de penalización dentro del array penalizationLevels
+        let penalizationLevel = null;
+        if (penalization.idPenalizacion && penalization.idpenalizationLevel) {
+            const levelId = penalization.idpenalizationLevel.toString();
+            const foundLevel = penalization.idPenalizacion.penalizationLevels?.find(
+                level => level._id.toString() === levelId
+            );
+            if (foundLevel) {
+                penalizationLevel = {
+                    id: foundLevel._id.toString(),
+                    tipo: foundLevel.tipo || null,
+                    nivel: foundLevel.nivel || null,
+                    description: foundLevel.description || null
+                };
+            }
+        }
+
+        return {
+            penalizationId: penalization._id,
+            penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+            description: penalization.penalization_description || null,
+            endDate: penalization.endDate || null,
+            support_file: penalization.support_file || null,
+            createdAt: penalization.createdAt,
+            penalizationType: penalization.idPenalizacion ? {
+                id: penalization.idPenalizacion._id.toString(),
+                name: penalization.idPenalizacion.name || null
+            } : null,
+            penalizationLevel: penalizationLevel
+        };
+    });
 
     // Calcular totalFinal: subtotal.total + totalBonuses - totalPenalizationMoney
     // En el reporte especial, subtotal.total es equivalente a totalTeacher
@@ -1589,12 +1647,29 @@ const generateExcedenteReportLogic = async (month) => {
     const updatedTotalExcedenteIncomes = totalExcedenteIncomes + prepaidIncomesTotal;
     const updatedNumberOfIncomes = excedenteIncomes.length + prepaidIncomesCount;
 
-    // Calcular total general de excedentes (ingresos + clases no vistas + enrollments prepagados - bonos)
+    // 🆕 PARTE 13: Buscar todas las penalizaciones monetarias del mes del reporte (status: 1 y penalizationMoney > 0)
+    // Filtrar por createdAt dentro del rango del mes para ser consistente con la lógica del reporte mensual
+    const allMonetaryPenalizations = await PenalizationRegistry.find({
+        status: 1,
+        penalizationMoney: { $gt: 0 },
+        createdAt: {
+            $gte: startDate,
+            $lte: endDate
+        }
+    })
+    .select('penalizationMoney')
+    .lean();
+
+    // Calcular total de excedente por penalizaciones (suma de todas las penalizaciones monetarias)
+    const totalExcedentePenalizations = allMonetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
+
+    // Calcular total general de excedentes (ingresos + clases no vistas + enrollments prepagados - bonos + penalizaciones)
     // Los bonos se restan porque aparecen con valor negativo
-    const totalExcedente = updatedTotalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses;
+    // Las penalizaciones se suman porque representan dinero que se debe pagar (excedente)
+    const totalExcedente = updatedTotalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations;
 
     // Si no hay excedentes de ningún tipo, retornar null
-    if (excedenteIncomes.length === 0 && classNotViewedDetails.length === 0 && professorBonuses.length === 0 && prepaidEnrollmentsDetails.length === 0) {
+    if (excedenteIncomes.length === 0 && classNotViewedDetails.length === 0 && professorBonuses.length === 0 && prepaidEnrollmentsDetails.length === 0 && totalExcedentePenalizations === 0) {
         return null;
     }
 
@@ -1605,6 +1680,7 @@ const generateExcedenteReportLogic = async (month) => {
         totalExcedenteClasses: parseFloat(totalExcedenteClasses.toFixed(2)),
         totalPrepaidEnrollments: parseFloat(totalPrepaidEnrollments.toFixed(2)), // 🆕 Total de enrollments prepagados
         totalBonuses: parseFloat(totalBonuses.toFixed(2)), // PARTE 11: Total de bonos (positivo)
+        totalExcedentePenalizations: parseFloat(totalExcedentePenalizations.toFixed(2)), // 🆕 PARTE 13: Total de excedente por penalizaciones monetarias
         numberOfIncomes: updatedNumberOfIncomes,
         numberOfClassesNotViewed: classNotViewedDetails.reduce((sum, detail) => sum + detail.numberOfClasses, 0),
         numberOfBonuses: professorBonuses.length,

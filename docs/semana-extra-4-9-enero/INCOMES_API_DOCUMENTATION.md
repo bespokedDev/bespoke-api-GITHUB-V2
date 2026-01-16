@@ -889,7 +889,17 @@ GET /api/incomes/professors-payout-report?month=2025-01
             "description": "Penalización por vencimiento de días de pago",
             "endDate": "2025-01-15T00:00:00.000Z",
             "support_file": null,
-            "createdAt": "2025-01-10T10:30:00.000Z"
+            "createdAt": "2025-01-10T10:30:00.000Z",
+            "penalizationType": {
+              "id": "6968e7379495801acdbb2fe8",
+              "name": "Contacto privado no autorizado"
+            },
+            "penalizationLevel": {
+              "id": "6968e7379495801acdbb2fe9",
+              "tipo": "Llamado de Atención",
+              "nivel": 1,
+              "description": "Primera advertencia por contacto privado no autorizado"
+            }
           },
           {
             "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d8",
@@ -897,7 +907,17 @@ GET /api/incomes/professors-payout-report?month=2025-01
             "description": "Penalización por cancelación tardía",
             "endDate": null,
             "support_file": "https://example.com/file.pdf",
-            "createdAt": "2025-01-20T14:00:00.000Z"
+            "createdAt": "2025-01-20T14:00:00.000Z",
+            "penalizationType": {
+              "id": "6968e7379495801acdbb2fea",
+              "name": "Cancelación tardía"
+            },
+            "penalizationLevel": {
+              "id": "6968e7379495801acdbb2feb",
+              "tipo": "Amonestación",
+              "nivel": 2,
+              "description": "Segunda amonestación por cancelación tardía"
+            }
           }
         ]
       },
@@ -1082,9 +1102,9 @@ GET /api/incomes/professors-payout-report?month=2025-01
 }
 ```
 
-#### **🆕 Nueva Funcionalidad - Excedente (Actualizada con Partes 9 y 11)**
+#### **🆕 Nueva Funcionalidad - Excedente (Actualizada con Partes 9, 11 y 13)**
 
-El reporte de excedentes ahora incluye tres componentes:
+El reporte de excedentes ahora incluye cinco componentes:
 
 1. **Ingresos Excedentes**:
    - Ingresos que no tienen enrollment ni profesor asociado
@@ -1099,6 +1119,16 @@ El reporte de excedentes ahora incluye tres componentes:
    - Bonos creados desde el perfil del profesor
    - Aparecen con **valor negativo** en el reporte de excedentes
    - Se restan del total de excedentes
+
+4. **Enrollments Prepagados** (Parte 12):
+   - Enrollments creados en el mes pero con fechas fuera del rango
+   - Se calcula el excedente usando la misma lógica que enrollments ordinarios
+
+5. **Penalizaciones Monetarias** (Parte 13): 🆕 **NUEVO**
+   - Penalizaciones monetarias activas creadas en el mes del reporte
+   - Se suman todas las penalizaciones con `status: 1` y `penalizationMoney > 0`
+   - Filtradas por `createdAt` dentro del rango del mes
+   - Se suman al total de excedentes porque representan dinero que se debe pagar
 
 #### **🆕 Mejoras de Ordenamiento y Visualización**
 - **Ordenamiento de Planes**: Los enrollments se ordenan alfabéticamente por nombre del plan (A-Z)
@@ -1223,7 +1253,17 @@ El reporte de excedentes ahora incluye tres componentes:
         "description": "Penalización por vencimiento de días de pago",
         "endDate": "2025-01-15T00:00:00.000Z",
         "support_file": null,
-        "createdAt": "2025-01-10T10:30:00.000Z"
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "6968e7379495801acdbb2fe8",
+          "name": "Contacto privado no autorizado"
+        },
+        "penalizationLevel": {
+          "id": "6968e7379495801acdbb2fe9",
+          "tipo": "Llamado de Atención",
+          "nivel": 1,
+          "description": "Primera advertencia por contacto privado no autorizado"
+        }
       },
       {
         "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d8",
@@ -1231,7 +1271,17 @@ El reporte de excedentes ahora incluye tres componentes:
         "description": "Penalización por cancelación tardía",
         "endDate": null,
         "support_file": "https://example.com/file.pdf",
-        "createdAt": "2025-01-20T14:00:00.000Z"
+        "createdAt": "2025-01-20T14:00:00.000Z",
+        "penalizationType": {
+          "id": "6968e7379495801acdbb2fea",
+          "name": "Cancelación tardía"
+        },
+        "penalizationLevel": {
+          "id": "6968e7379495801acdbb2feb",
+          "tipo": "Amonestación",
+          "nivel": 2,
+          "description": "Segunda amonestación por cancelación tardía"
+        }
       }
     ]
   },
@@ -1306,21 +1356,23 @@ El reporte de excedentes ahora incluye tres componentes:
 
 #### **🆕 Estructura Actualizada del Campo `excedente`**
 
-El reporte de excedentes ahora incluye cuatro tipos de excedentes:
+El reporte de excedentes ahora incluye cinco tipos de excedentes:
 
 1. **Ingresos excedentes**: Ingresos sin enrollment ni profesor
 2. **Clases no vistas**: Clases con `classViewed = 0` o `3` (Parte 9)
 3. **Bonos de profesores**: Bonos con valor negativo (Parte 11)
 4. **Enrollments prepagados**: Enrollments creados en el mes pero con fechas fuera del rango (Parte 12)
+5. **Penalizaciones monetarias**: Penalizaciones activas del mes (Parte 13) 🆕 **NUEVO**
 
 ```json
 {
   "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
-  "totalExcedente": 1300.00,                    // Total: ingresos + clases + prepagados - bonos
+  "totalExcedente": 1500.00,                    // Total: ingresos + clases + prepagados - bonos + penalizaciones
   "totalExcedenteIncomes": 500.00,              // Total de ingresos excedentes (incluye prepagados)
   "totalExcedenteClasses": 1000.00,             // Total de excedente por clases no vistas
   "totalPrepaidEnrollments": 200.00,            // 🆕 Total de enrollments prepagados (Parte 12)
   "totalBonuses": 200.00,                       // Total de bonos (se resta del total)
+  "totalExcedentePenalizations": 0.00,          // 🆕 PARTE 13: Total de excedente por penalizaciones monetarias
   "numberOfIncomes": 3,                         // Cantidad de ingresos excedentes (incluye prepagados)
   "numberOfClassesNotViewed": 20,               // Cantidad de clases no vistas
   "numberOfBonuses": 2,                         // Cantidad de bonos
@@ -1333,8 +1385,13 @@ El reporte de excedentes ahora incluye cuatro tipos de excedentes:
 
 **Cálculo del Total:**
 ```
-totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations
 ```
+
+**Notas Importantes:**
+- `totalExcedentePenalizations`: Suma de todas las penalizaciones monetarias activas (`status: 1` y `penalizationMoney > 0`) creadas en el mes del reporte
+- Las penalizaciones se filtran por `createdAt` dentro del rango del mes para ser consistentes con la lógica del reporte mensual
+- Las penalizaciones se suman al total de excedentes porque representan dinero que se debe pagar
 
 #### **🆕 Lógica de Alias y Ordenamiento**
 
@@ -1456,6 +1513,16 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
     - `endDate` (Date/null): Fecha de fin relacionada con la penalización (si existe)
     - `support_file` (string/null): Archivo de soporte o evidencia (URL o ruta)
     - `createdAt` (Date): Fecha de creación de la penalización
+    - `penalizationType` (object/null): 🆕 **NUEVO** - Información del tipo de penalización
+      - `id` (string): ID del tipo de penalización (referencia a `Penalizacion`)
+      - `name` (string/null): Nombre del tipo de penalización
+      - Si la penalización no tiene un tipo asociado, este campo será `null`
+    - `penalizationLevel` (object/null): 🆕 **NUEVO** - Información del nivel específico de penalización
+      - `id` (string): ID del nivel de penalización (referencia al `_id` dentro del array `penalizationLevels` del tipo de penalización)
+      - `tipo` (string/null): Tipo de penalización dentro del nivel (ej: "Llamado de Atención", "Amonestación", "Suspensión")
+      - `nivel` (number/null): Nivel numérico de la penalización (1, 2, 3, etc.)
+      - `description` (string/null): Descripción específica para este nivel y tipo de penalización
+      - Si la penalización no tiene un nivel asociado, este campo será `null`
   - Ordenado por fecha de creación descendente (más recientes primero)
 
 **Criterios de Filtrado:**
@@ -1466,6 +1533,27 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
 **Aplicado en:**
 - Reporte general de profesores (cada profesor en el array `report`)
 - Reporte especial del profesor (Andrea Wias) en `specialProfessorReport`
+
+#### **🆕 Información del Tipo y Nivel de Penalización**
+
+Cada elemento en `penalizations.details` ahora incluye información detallada sobre el tipo y nivel de penalización:
+
+**Estructura de `penalizationType`:**
+- **`id`** (string): ID del tipo de penalización (referencia al documento `Penalizacion` en la colección `penalizaciones`)
+- **`name`** (string/null): Nombre del tipo de penalización (ej: "Contacto privado no autorizado", "Cancelación tardía")
+- Si la penalización no tiene un tipo asociado (`idPenalizacion` es `null` en `PenalizationRegistry`), este campo será `null`
+
+**Estructura de `penalizationLevel`:**
+- **`id`** (string): ID del nivel específico de penalización (corresponde al `_id` de un elemento dentro del array `penalizationLevels` del documento `Penalizacion`)
+- **`tipo`** (string/null): Tipo de penalización dentro del nivel (ej: "Llamado de Atención", "Amonestación", "Suspensión")
+- **`nivel`** (number/null): Nivel numérico de la penalización (1, 2, 3, etc.)
+- **`description`** (string/null): Descripción específica para este nivel y tipo de penalización
+- Si la penalización no tiene un nivel asociado (`idpenalizationLevel` es `null` en `PenalizationRegistry`), este campo será `null`
+
+**Relación con el Modelo:**
+- `penalizationType.id` corresponde a `PenalizationRegistry.idPenalizacion` (referencia a `Penalizacion`)
+- `penalizationLevel.id` corresponde a `PenalizationRegistry.idpenalizationLevel` (referencia al `_id` dentro del array `penalizationLevels` del documento `Penalizacion` poblado)
+- El nivel se busca dentro del array `penalizationLevels` del tipo de penalización poblado, comparando el `_id` del elemento con `idpenalizationLevel`
 
 **Ejemplo de Uso:**
 ```json
@@ -1490,7 +1578,17 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
         "description": "Penalización por vencimiento de días de pago",
         "endDate": "2025-01-15T00:00:00.000Z",
         "support_file": null,
-        "createdAt": "2025-01-10T10:30:00.000Z"
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "6968e7379495801acdbb2fe8",
+          "name": "Contacto privado no autorizado"
+        },
+        "penalizationLevel": {
+          "id": "6968e7379495801acdbb2fe9",
+          "tipo": "Llamado de Atención",
+          "nivel": 1,
+          "description": "Primera advertencia por contacto privado no autorizado"
+        }
       }
     ]
   },
@@ -1580,7 +1678,7 @@ El campo `totals` ahora incluye una estructura completa con subtotales por secci
    - `totalFinal`: 🆕 **NUEVO** - `totalFinal` del profesor especial (después de bonos y penalizaciones)
 
 3. **`subtotals.excedents`**: Total de excedentes
-   - `totalExcedente`: Suma de ingresos excedentes + excedentes por clases no vistas - bonos de profesores
+   - `totalExcedente`: Suma de ingresos excedentes + excedentes por clases no vistas + enrollments prepagados - bonos de profesores + penalizaciones monetarias
 
 4. **`grandTotal.balanceRemaining`**: Total general del reporte
    - Suma de los `balanceRemaining` de las tres secciones:
@@ -2729,7 +2827,7 @@ Balance Remaining = (Amount + Old Balance) - Total
 #### **Integración en Reporte de Excedentes:**
 - Los bonos aparecen con **valor negativo** en el reporte de excedentes
 - Se incluyen en `bonusDetails` con `negativeAmount`
-- El total de excedentes se calcula como: `totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses`
+- El total de excedentes se calcula como: `totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations`
 
 #### **Integración en Reporte de Pagos de Profesores:**
 - Sección `abonos` en el reporte de cada profesor
@@ -2813,6 +2911,7 @@ Balance Remaining = (Amount + Old Balance) - Total
   "totalExcedenteClasses": 1000.00,
   "totalPrepaidEnrollments": 200.00,
   "totalBonuses": 200.00,
+  "totalExcedentePenalizations": 0.00,  // 🆕 PARTE 13: Total de penalizaciones monetarias del mes
   "numberOfIncomes": 5,
   "numberOfClassesNotViewed": 20,
   "numberOfBonuses": 2,
@@ -2874,8 +2973,67 @@ Balance Remaining = (Amount + Old Balance) - Total
 
 #### **Cálculo del Total:**
 ```
-totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations
 ```
+
+#### **Aplicado en:**
+- Función `generateExcedenteReportLogic`
+- Endpoint `/api/incomes/professors-payout-report` (campo `excedente`)
+
+---
+
+### **PARTE 13: Penalizaciones Monetarias en Excedentes** 🆕 **NUEVO**
+
+#### **Implementación:**
+- Se buscan todas las penalizaciones monetarias activas creadas en el mes del reporte
+- Filtros aplicados:
+  - `status: 1` (activas)
+  - `penalizationMoney > 0` (monetarias)
+  - `createdAt` dentro del rango del mes (para ser consistente con la lógica del reporte mensual)
+
+#### **Cálculo del Excedente:**
+- Se suman todos los valores de `penalizationMoney` de las penalizaciones que cumplen los filtros
+- El resultado se agrega al campo `totalExcedentePenalizations`
+- Las penalizaciones se suman al total de excedentes porque representan dinero que se debe pagar
+
+#### **Estructura en Reporte de Excedentes:**
+```json
+{
+  "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
+  "totalExcedente": 1500.00,
+  "totalExcedenteIncomes": 500.00,
+  "totalExcedenteClasses": 1000.00,
+  "totalPrepaidEnrollments": 200.00,
+  "totalBonuses": 200.00,
+  "totalExcedentePenalizations": 0.00,  // 🆕 PARTE 13: Total de penalizaciones monetarias del mes
+  "numberOfIncomes": 3,
+  "numberOfClassesNotViewed": 20,
+  "numberOfBonuses": 2,
+  "incomeDetails": [...],
+  "classNotViewedDetails": [...],
+  "prepaidEnrollmentsDetails": [...],
+  "bonusDetails": [...]
+}
+```
+
+#### **Campos del Reporte:**
+- `totalExcedentePenalizations` (number): Suma total de todas las penalizaciones monetarias activas creadas en el mes del reporte
+  - Se calcula sumando todos los valores de `penalizationMoney` de las penalizaciones que cumplen:
+    - `status: 1` (activas)
+    - `penalizationMoney > 0` (monetarias)
+    - `createdAt` dentro del rango del mes del reporte
+  - Representa el total de dinero de penalizaciones que se debe pagar en el mes
+
+#### **Cálculo del Total:**
+```
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations
+```
+
+#### **Notas Importantes:**
+- Las penalizaciones se filtran por `createdAt` dentro del rango del mes para ser consistentes con la lógica del reporte mensual
+- Solo se consideran penalizaciones con `status: 1` (activas) y `penalizationMoney > 0` (monetarias)
+- Las penalizaciones se suman al total de excedentes porque representan dinero que se debe pagar
+- Si no hay penalizaciones en el mes, `totalExcedentePenalizations` será `0.00`
 
 #### **Aplicado en:**
 - Función `generateExcedenteReportLogic`
@@ -3162,7 +3320,7 @@ Similar a `generateGeneralProfessorsReportLogic` pero con diferencias:
 
 ### **5. `generateExcedenteReportLogic(month)`**
 
-Genera el reporte de excedentes (ingresos sin enrollment/profesor, clases no vistas, bonos).
+Genera el reporte de excedentes (ingresos sin enrollment/profesor, clases no vistas, bonos, enrollments prepagados, penalizaciones).
 
 **Parámetros:**
 - `month` (string): Mes en formato YYYY-MM
@@ -3175,11 +3333,16 @@ Genera el reporte de excedentes (ingresos sin enrollment/profesor, clases no vis
 1. **Buscar ingresos excedentes** (sin `idEnrollment` ni `idProfessor`)
 2. **Buscar clases no vistas** (`classViewed = 0` o `3`) dentro del mes
 3. **Buscar bonos de profesores** del mes (con valor negativo)
-4. **Calcular totales**:
-   - `totalExcedenteIncomes`: Suma de ingresos excedentes
+4. **Buscar enrollments prepagados** (creados en el mes pero con fechas fuera del rango)
+5. **Buscar penalizaciones monetarias** del mes (Parte 13) 🆕 **NUEVO**
+   - Filtradas por `status: 1`, `penalizationMoney > 0` y `createdAt` dentro del rango del mes
+6. **Calcular totales**:
+   - `totalExcedenteIncomes`: Suma de ingresos excedentes (incluye prepagados)
    - `totalExcedenteClasses`: Suma de excedentes de clases no vistas
+   - `totalPrepaidEnrollments`: Suma de excedentes de enrollments prepagados
    - `totalBonuses`: Suma de bonos (positivo)
-   - `totalExcedente`: `totalExcedenteIncomes + totalExcedenteClasses - totalBonuses`
+   - `totalExcedentePenalizations`: 🆕 **NUEVO** - Suma de penalizaciones monetarias del mes
+   - `totalExcedente`: `totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations`
 
 **Uso:**
 - Se llama desde `incomesCtrl.professorsPayoutReport`
