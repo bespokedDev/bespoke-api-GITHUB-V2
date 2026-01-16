@@ -471,7 +471,15 @@ penalizationRegistryCtrl.list = async (req, res) => {
         const penalizations = await PenalizationRegistry.find(query)
             .populate('idPenalizacion', 'name penalizationLevels status')
             .populate('idpenalizationLevel')
-            .populate('enrollmentId', 'alias language enrollmentType status professorId studentIds planId')
+            .populate({
+                path: 'enrollmentId',
+                select: 'alias language enrollmentType status professorId studentIds planId',
+                populate: [
+                    { path: 'planId', select: 'name' },
+                    { path: 'professorId', select: 'name' },
+                    { path: 'studentIds.studentId', select: 'name studentCode email' }
+                ]
+            })
             .populate('professorId', 'name email phone status')
             .populate('studentId', 'name studentCode email status')
             .populate('userId', 'name email role')
