@@ -878,7 +878,24 @@ GET /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
     },
     "totalPenalizationMoney": 50.00
   },
-  "conversationalAttendances": [ ... ]
+  "conversationalAttendances": [
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d5",
+      "description": "Asistencia conversacional registrada durante la clase",
+      "idEnrollment": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "status": 1,
+      "createdAt": "2024-01-25T10:30:00.000Z",
+      "updatedAt": "2024-01-25T10:30:00.000Z"
+    },
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
+      "description": "Práctica de conversación adicional fuera del horario de clase",
+      "idEnrollment": "64f8a1b2c3d4e5f6a7b8c9d0",
+      "status": 1,
+      "createdAt": "2024-02-05T14:15:00.000Z",
+      "updatedAt": "2024-02-05T14:15:00.000Z"
+    }
+  ]
 }
 ```
 
@@ -919,6 +936,64 @@ El endpoint incluye información detallada sobre las penalizaciones del enrollme
 - **Penalización de Tipo Amonestación**: Penalizaciones con `status: 1` y `penalizationMoney = 0` o `null`
 
 **Nota**: Solo se consideran penalizaciones activas (`status: 1`) para todos los cálculos y categorizaciones.
+
+#### **Conversational Attendances (`conversationalAttendances`)**
+
+El endpoint incluye todos los registros de `ConversationalAttendance` relacionados con el enrollment en el array `conversationalAttendances`.
+
+**Estructura de `conversationalAttendances`:**
+```json
+[
+  {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d5",
+    "description": "Asistencia conversacional registrada durante la clase",
+    "idEnrollment": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "status": 1,
+    "createdAt": "2024-01-25T10:30:00.000Z",
+    "updatedAt": "2024-01-25T10:30:00.000Z"
+  }
+]
+```
+
+**Campos de cada `ConversationalAttendance`:**
+- **`_id`** (ObjectId): ID único del registro de conversational attendance
+- **`description`** (string): Descripción del conversational attendance
+- **`idEnrollment`** (ObjectId): Referencia al enrollment asociado
+- **`status`** (number): Estado del registro
+  - `1` = Activo
+  - `2` = Anulado
+- **`createdAt`** (Date): Fecha de creación del registro
+- **`updatedAt`** (Date): Fecha de última actualización
+
+**Lógica de Filtrado:**
+
+Los `ConversationalAttendance` se filtran según los siguientes criterios:
+
+1. **Por `idEnrollment`**: Solo se incluyen registros cuyo `idEnrollment` coincida con el `_id` del enrollment consultado
+
+2. **Por `status`**: Solo se incluyen registros con `status: 1` (activos)
+
+3. **Por rango de fechas** (si `startDate` y `endDate` existen):
+   - Solo se incluyen registros cuyo `createdAt` esté dentro del rango entre `startDate` y `endDate` del enrollment
+   - `startDate` se establece al inicio del día (00:00:00.000)
+   - `endDate` se establece al final del día (23:59:59.999)
+   - **Condición**: `createdAt >= startDate AND createdAt <= endDate`
+
+4. **Fallback** (si no hay `startDate` o `endDate`):
+   - Si el enrollment no tiene `startDate` o `endDate` definidos, se buscan todos los registros activos relacionados con el enrollment (sin filtro por fecha)
+
+**Ordenamiento:**
+- Los registros se ordenan por `createdAt` de forma descendente (más recientes primero)
+
+**Ejemplo de Filtrado:**
+- `enrollment.startDate`: `2024-01-22T00:00:00.000Z`
+- `enrollment.endDate`: `2024-02-21T23:59:59.999Z`
+- Se incluirán solo los `ConversationalAttendance` con:
+  - `idEnrollment` igual al `_id` del enrollment
+  - `status: 1` (activo)
+  - `createdAt` entre `2024-01-22T00:00:00.000Z` y `2024-02-21T23:59:59.999Z`
+
+**Nota**: Si el enrollment no tiene `conversationalAttendances` asociados o ninguno cumple los criterios de filtrado, el array `conversationalAttendances` estará vacío `[]`.
 
 #### **Errores Posibles**
 - `404`: Matrícula no encontrada
@@ -1042,11 +1117,7 @@ No requiere body.
             "_id": "6858c84b1b114315ccdf65d0",
             "studentCode": "BES-0084",
             "name": "Jose Orlando Contreras",
-            "email": "contrerasnorlando@gmail.com",
-            "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
-            "avatarPermission": 1,
-            "dob": "1990-05-15",
-            "createdAt": "2024-01-10T10:30:00.000Z"
+            "email": "contrerasnorlando@gmail.com"
           },
           "preferences": "Prefiere clases prácticas y conversacionales",
           "firstTimeLearningLanguage": "Sí, es la primera vez",
@@ -1091,17 +1162,6 @@ No requiere body.
 }
 ```
 
-#### **Campos Incluidos en studentId**
-Cada objeto `studentId` dentro de `studentIds` incluye la siguiente información del estudiante:
-- `_id` (ObjectId): ID único del estudiante
-- `studentCode` (String): Código único del estudiante (ej: "BES-0084")
-- `name` (String): Nombre completo del estudiante
-- `email` (String): Correo electrónico del estudiante
-- `avatar` (String): Avatar del estudiante en formato base64 (puede ser `null` si no tiene avatar asignado)
-- `avatarPermission` (Number): Permiso para compartir el avatar. Valores: `0` = no, `1` = sí, `null` = no definido
-- `dob` (String): Fecha de nacimiento del estudiante (Date of Birth)
-- `createdAt` (Date): Fecha de creación del registro del estudiante
-
 #### **Campos Excluidos (No se incluyen en la respuesta)**
 Los siguientes campos sensibles **NO** se incluyen en la respuesta:
 - `pricing` del `planId`
@@ -1119,14 +1179,6 @@ Los siguientes campos sensibles **NO** se incluyen en la respuesta:
 - `400`: ID de enrollment inválido
 - `404`: Enrollment no encontrado
 - `500`: Error interno del servidor
-
-#### **Notas Importantes**
-- Los campos `avatar`, `avatarPermission`, `dob` y `createdAt` del estudiante están incluidos en cada objeto `studentId` dentro de `studentIds`
-- El `avatar` se devuelve como string en formato base64 (puede ser `null` si el estudiante no tiene avatar asignado)
-- El `avatarPermission` indica si el estudiante ha dado permiso para compartir su avatar (0 = no, 1 = sí, null = no definido)
-- El `dob` contiene la fecha de nacimiento del estudiante en formato string
-- El `createdAt` indica cuándo se creó el registro del estudiante en el sistema
-- Este endpoint excluye campos sensibles como precios y balances para proteger información financiera
 
 #### **Ejemplo con cURL**
 ```bash

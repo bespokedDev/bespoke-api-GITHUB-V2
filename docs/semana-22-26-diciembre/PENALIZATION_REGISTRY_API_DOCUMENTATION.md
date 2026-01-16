@@ -676,13 +676,24 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
         "language": "English",
         "enrollmentType": "single",
         "status": 1,
-        "professorId": "694c52084dc7f703443ceef6",
+        "professorId": {
+          "_id": "694c52084dc7f703443ceef6",
+          "name": "Profesor Ejemplo"
+        },
         "studentIds": [
           {
-            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+            "studentId": {
+              "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+              "name": "Juan Pérez",
+              "studentCode": "BES-0001",
+              "email": "juan.perez@example.com"
+            }
           }
         ],
-        "planId": "694c52084dc7f703443ceef7"
+        "planId": {
+          "_id": "694c52084dc7f703443ceef7",
+          "name": "Plan Mensual Básico"
+        }
       },
       "professorId": null,
       "studentId": {
