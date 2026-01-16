@@ -798,13 +798,24 @@ No requiere body. Los filtros se envían como query parameters en la URL.
         "language": "English",
         "enrollmentType": "single",
         "status": 1,
-        "professorId": "694c52084dc7f703443ceef6",
+        "professorId": {
+          "_id": "694c52084dc7f703443ceef6",
+          "name": "Profesor Ejemplo"
+        },
         "studentIds": [
           {
-            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+            "studentId": {
+              "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+              "name": "Juan Pérez",
+              "studentCode": "BES-0001",
+              "email": "juan.perez@example.com"
+            }
           }
         ],
-        "planId": "694c52084dc7f703443ceef7"
+        "planId": {
+          "_id": "694c52084dc7f703443ceef7",
+          "name": "Plan Mensual Básico"
+        }
       },
       "professorId": {
         "_id": "694c52084dc7f703443ceef6",
@@ -890,13 +901,24 @@ No requiere body. Los filtros se envían como query parameters en la URL.
         "language": "English",
         "enrollmentType": "single",
         "status": 1,
-        "professorId": "694c52084dc7f703443ceef6",
+        "professorId": {
+          "_id": "694c52084dc7f703443ceef6",
+          "name": "Profesor Ejemplo"
+        },
         "studentIds": [
           {
-            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+            "studentId": {
+              "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+              "name": "Juan Pérez",
+              "studentCode": "BES-0001",
+              "email": "juan.perez@example.com"
+            }
           }
         ],
-        "planId": "694c52084dc7f703443ceef7"
+        "planId": {
+          "_id": "694c52084dc7f703443ceef7",
+          "name": "Plan Mensual Básico"
+        }
       },
       "professorId": null,
       "studentId": null,
@@ -972,9 +994,15 @@ No requiere body. Los filtros se envían como query parameters en la URL.
         "language": "English",
         "enrollmentType": "single",
         "status": 1,
-        "professorId": "694c52084dc7f703443ceef6",
+        "professorId": {
+          "_id": "694c52084dc7f703443ceef6",
+          "name": "Profesor Ejemplo"
+        },
         "studentIds": [],
-        "planId": "694c52084dc7f703443ceef7"
+        "planId": {
+          "_id": "694c52084dc7f703443ceef7",
+          "name": "Plan Mensual Básico"
+        }
       },
       "professorId": {
         "_id": "694c52084dc7f703443ceef6",
@@ -1241,6 +1269,10 @@ curl -X GET "http://localhost:3000/api/penalization-registry?professorId=694c520
 
 #### **Notas Importantes**
 - Todas las referencias externas se popula automáticamente con información completa
+- **Campos populados dentro de `enrollmentId`**: Cuando existe un `enrollmentId`, el enrollment incluye información populada de:
+  - `planId`: Objeto con `_id` y `name` del plan
+  - `professorId`: Objeto con `_id` y `name` del profesor
+  - `studentIds`: Array donde cada elemento contiene `studentId` populado con `_id`, `name`, `studentCode` y `email` del estudiante
 - Los registros se ordenan por fecha de creación descendente (más recientes primero)
 - El endpoint requiere permisos de administrador (`admin` o `admin-jr`)
 - Si se proporcionan múltiples filtros (`professorId`, `enrollmentId`, `studentId`), se aplican todos (lógica AND)
@@ -1305,13 +1337,24 @@ No requiere body. El ID y tipo de usuario se obtienen automáticamente del token
         "language": "English",
         "enrollmentType": "single",
         "status": 1,
-        "professorId": "694c52084dc7f703443ceef6",
+        "professorId": {
+          "_id": "694c52084dc7f703443ceef6",
+          "name": "Profesor Ejemplo"
+        },
         "studentIds": [
           {
-            "studentId": "64f8a1b2c3d4e5f6a7b8c9d4"
+            "studentId": {
+              "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+              "name": "Juan Pérez",
+              "studentCode": "BES-0001",
+              "email": "juan.perez@example.com"
+            }
           }
         ],
-        "planId": "694c52084dc7f703443ceef7"
+        "planId": {
+          "_id": "694c52084dc7f703443ceef7",
+          "name": "Plan Mensual Básico"
+        }
       },
       "professorId": null,
       "studentId": {
