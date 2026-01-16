@@ -243,7 +243,7 @@ notificationCtrl.list = async (req, res) => {
                     message: 'ID de estudiante inválido'
                 });
             }
-            query.idStudent = { $in: [mongoose.Types.ObjectId(idStudent)] };
+            query.idStudent = { $in: [idStudent] };
         }
 
         // Filtro por isActive
@@ -307,13 +307,13 @@ notificationCtrl.getMyNotifications = async (req, res) => {
         // Construir query según el tipo de usuario
         if (userType === 'student') {
             // Buscar notificaciones donde el estudiante esté en el array idStudent
-            query.idStudent = { $in: [mongoose.Types.ObjectId(userId)] };
+            query.idStudent = { $in: [userId] };
         } else if (userType === 'professor') {
             // Buscar notificaciones donde el profesor coincida
-            query.idProfessor = mongoose.Types.ObjectId(userId);
+            query.idProfessor = userId;
         } else if (userType === 'admin') {
             // Buscar notificaciones donde el usuario admin coincida
-            query.userId = mongoose.Types.ObjectId(userId);
+            query.userId = userId;
         } else {
             return res.status(400).json({
                 message: 'Tipo de usuario no válido o no encontrado en el token'

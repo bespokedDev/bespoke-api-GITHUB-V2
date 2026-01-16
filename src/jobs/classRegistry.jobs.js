@@ -215,6 +215,20 @@ const processClassFinalization = async () => {
 
         for (const enrollment of expiredEnrollments) {
             try {
+                // Verificar si el enrollment está en pausa (status: 3)
+                if (enrollment.status === 3) {
+                    // Si está en pausa pero no tiene pauseDate, saltar completamente
+                    if (!enrollment.pauseDate) {
+                        console.log(`[CRONJOB] Enrollment ${enrollment._id} está en pausa (status: 3) pero no tiene pauseDate. Omitiendo procesamiento.`);
+                        processedCount++;
+                        continue;
+                    }
+                    // Si tiene pauseDate, solo procesar clases anteriores a la pausa
+                    // Convertir pauseDate a string YYYY-MM-DD para comparar con classDate
+                    const pauseDateStr = new Date(enrollment.pauseDate).toISOString().split('T')[0];
+                    console.log(`[CRONJOB] Enrollment ${enrollment._id} está en pausa. Solo procesando clases anteriores a ${pauseDateStr}`);
+                }
+
                 // Buscar todas las ClassRegistry de este enrollment
                 const classRegistries = await ClassRegistry.find({
                     enrollmentId: enrollment._id
@@ -226,15 +240,29 @@ const processClassFinalization = async () => {
                     continue;
                 }
 
+                // Filtrar clases según el estado de pausa
+                let classesToProcess = classRegistries;
+                if (enrollment.status === 3 && enrollment.pauseDate) {
+                    const pauseDateStr = new Date(enrollment.pauseDate).toISOString().split('T')[0];
+                    // Solo procesar clases donde classDate < pauseDate
+                    classesToProcess = classRegistries.filter(cr => {
+                        const classDateStr = cr.classDate; // classDate ya es string YYYY-MM-DD
+                        return classDateStr < pauseDateStr;
+                    });
+                    console.log(`[CRONJOB] Enrollment ${enrollment._id}: ${classesToProcess.length} clases anteriores a la pausa de ${classRegistries.length} totales`);
+                }
+
                 // Actualizar clases con classViewed = 0 y reschedule = 0 → cambiar a classViewed = 4 (Class Lost)
-                const classesToUpdate = classRegistries.filter(
+                const classesToUpdate = classesToProcess.filter(
                     cr => cr.classViewed === 0 && cr.reschedule === 0
                 );
 
                 if (classesToUpdate.length > 0) {
+                    // Obtener IDs de las clases a actualizar
+                    const classIdsToUpdate = classesToUpdate.map(cr => cr._id);
                     const updateResult = await ClassRegistry.updateMany(
                         {
-                            enrollmentId: enrollment._id,
+                            _id: { $in: classIdsToUpdate },
                             classViewed: 0,
                             reschedule: 0
                         },
@@ -256,10 +284,8 @@ const processClassFinalization = async () => {
                     }
                 }
 
-                // Obtener todas las clases actualizadas (incluyendo las que acabamos de actualizar)
-                const allClasses = await ClassRegistry.find({
-                    enrollmentId: enrollment._id
-                }).lean();
+                // Obtener todas las clases a procesar (solo las que cumplen el criterio de pausa si aplica)
+                const allClasses = classesToProcess;
 
                 // Contar estadísticas
                 const stats = {
@@ -496,6 +522,19 @@ const processMonthlyClassClosure = async () => {
 
         for (const enrollment of enrollmentsToProcess) {
             try {
+                // Verificar si el enrollment está en pausa (status: 3)
+                if (enrollment.status === 3) {
+                    // Si está en pausa pero no tiene pauseDate, saltar completamente
+                    if (!enrollment.pauseDate) {
+                        console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} está en pausa (status: 3) pero no tiene pauseDate. Omitiendo procesamiento.`);
+                        processedCount++;
+                        continue;
+                    }
+                    // Si tiene pauseDate, solo procesar clases anteriores a la pausa
+                    const pauseDateStr = new Date(enrollment.pauseDate).toISOString().split('T')[0];
+                    console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} está en pausa. Solo procesando clases anteriores a ${pauseDateStr}`);
+                }
+
                 // Buscar todas las ClassRegistry de este enrollment
                 const classRegistries = await ClassRegistry.find({
                     enrollmentId: enrollment._id
@@ -508,14 +547,25 @@ const processMonthlyClassClosure = async () => {
                 }
 
                 // Filtrar clases que estén dentro del rango del mes actual
-                const classesInMonth = classRegistries.filter(cr => {
+                let classesInMonth = classRegistries.filter(cr => {
                     // classDate está en formato YYYY-MM-DD (string)
                     const classDateStr = cr.classDate;
                     return classDateStr >= firstDayOfMonth && classDateStr <= lastDayOfMonthStr;
                 });
 
+                // Si el enrollment está en pausa y tiene pauseDate, filtrar también por pauseDate
+                if (enrollment.status === 3 && enrollment.pauseDate) {
+                    const pauseDateStr = new Date(enrollment.pauseDate).toISOString().split('T')[0];
+                    // Solo procesar clases donde classDate < pauseDate
+                    classesInMonth = classesInMonth.filter(cr => {
+                        const classDateStr = cr.classDate;
+                        return classDateStr < pauseDateStr;
+                    });
+                    console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id}: ${classesInMonth.length} clases del mes anteriores a la pausa`);
+                }
+
                 if (classesInMonth.length === 0) {
-                    console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} no tiene clases en el mes ${monthYear}`);
+                    console.log(`[CRONJOB MENSUAL] Enrollment ${enrollment._id} no tiene clases en el mes ${monthYear} (o todas son posteriores a la pausa)`);
                     processedCount++;
                     continue;
                 }
@@ -540,11 +590,8 @@ const processMonthlyClassClosure = async () => {
                     console.log(`[CRONJOB MENSUAL] Actualizadas ${updateResult.modifiedCount} clases a Class Lost (4) para enrollment ${enrollment._id} (mes ${monthYear})`);
                 }
 
-                // Obtener todas las clases del mes actualizadas (incluyendo las que acabamos de actualizar)
-                const allClassesInMonth = await ClassRegistry.find({
-                    enrollmentId: enrollment._id,
-                    classDate: { $gte: firstDayOfMonth, $lte: lastDayOfMonthStr }
-                }).lean();
+                // Obtener todas las clases del mes a procesar (solo las que cumplen el criterio de pausa si aplica)
+                const allClassesInMonth = classesInMonth;
 
                 // Contar estadísticas del mes
                 const stats = {
@@ -697,10 +744,48 @@ const processWeeklyUnguidedClasses = async () => {
         // Obtener IDs únicos de enrollments
         const enrollmentIds = [...new Set(unguidedClasses.map(c => c.enrollmentId.toString()))];
         
-        // Buscar enrollments con sus professorId
+        // Buscar enrollments con sus professorId, status y pauseDate
         const enrollments = await Enrollment.find({
             _id: { $in: enrollmentIds }
-        }).select('_id professorId').lean();
+        }).select('_id professorId status pauseDate').lean();
+        
+        // Crear un mapa de enrollmentId -> enrollment para verificar status y pauseDate
+        const enrollmentMap = new Map();
+        enrollments.forEach(enrollment => {
+            enrollmentMap.set(enrollment._id.toString(), enrollment);
+        });
+        
+        // Filtrar clases según el estado de pausa de los enrollments
+        const filteredUnguidedClasses = unguidedClasses.filter(classRecord => {
+            const enrollmentId = classRecord.enrollmentId.toString();
+            const enrollment = enrollmentMap.get(enrollmentId);
+            
+            if (!enrollment) {
+                return false; // Si no se encuentra el enrollment, excluir la clase
+            }
+            
+            // Si el enrollment está en pausa (status: 3)
+            if (enrollment.status === 3) {
+                // Si no tiene pauseDate, excluir completamente
+                if (!enrollment.pauseDate) {
+                    return false;
+                }
+                // Si tiene pauseDate, solo incluir clases donde classDate < pauseDate
+                const pauseDateStr = new Date(enrollment.pauseDate).toISOString().split('T')[0];
+                const classDateStr = classRecord.classDate; // classDate ya es string YYYY-MM-DD
+                return classDateStr < pauseDateStr;
+            }
+            
+            // Si no está en pausa, incluir normalmente
+            return true;
+        });
+        
+        console.log(`[CRONJOB SEMANAL] Clases no gestionadas después de filtrar enrollments en pausa: ${filteredUnguidedClasses.length} de ${unguidedClasses.length}`);
+        
+        if (filteredUnguidedClasses.length === 0) {
+            console.log('[CRONJOB SEMANAL] No hay clases no gestionadas para procesar después del filtrado');
+            return;
+        }
         
         // Crear un mapa de enrollmentId -> professorId
         const enrollmentToProfessorMap = new Map();
@@ -710,9 +795,9 @@ const processWeeklyUnguidedClasses = async () => {
             }
         });
         
-        // Agrupar clases por professorId
+        // Agrupar clases por professorId (usar las clases filtradas)
         const classesByProfessor = new Map();
-        unguidedClasses.forEach(classRecord => {
+        filteredUnguidedClasses.forEach(classRecord => {
             const enrollmentId = classRecord.enrollmentId.toString();
             const professorId = enrollmentToProfessorMap.get(enrollmentId);
             
@@ -830,6 +915,7 @@ const processWeeklyUnguidedClasses = async () => {
         console.log(`[CRONJOB SEMANAL] Procesamiento de clases no gestionadas completado:`);
         console.log(`  - Semana procesada: ${weekRange.startDate} a ${weekRange.endDate}`);
         console.log(`  - Clases no gestionadas encontradas: ${unguidedClasses.length}`);
+        console.log(`  - Clases después de filtrar enrollments en pausa: ${filteredUnguidedClasses.length}`);
         console.log(`  - Profesores afectados: ${classesByProfessor.size}`);
         console.log(`  - Penalizaciones creadas: ${penalizationsCreated}`);
         console.log(`  - Notificaciones creadas: ${notificationsCreated}`);

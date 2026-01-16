@@ -881,14 +881,49 @@ GET /api/incomes/professors-payout-report?month=2025-01
       },
       "penalizations": {
         "count": 3,
-        "totalMoney": 150.00
-      }
+        "totalMoney": 150.00,
+        "details": [
+          {
+            "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+            "penalizationMoney": 50.00,
+            "description": "Penalización por vencimiento de días de pago",
+            "endDate": "2025-01-15T00:00:00.000Z",
+            "support_file": null,
+            "createdAt": "2025-01-10T10:30:00.000Z"
+          },
+          {
+            "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d8",
+            "penalizationMoney": 100.00,
+            "description": "Penalización por cancelación tardía",
+            "endDate": null,
+            "support_file": "https://example.com/file.pdf",
+            "createdAt": "2025-01-20T14:00:00.000Z"
+          }
+        ]
+      },
+      "totalFinal": 900.00
     }
   ],
   "totals": {
-    "totalTeacher": 1234.56,
-    "totalBespoke": 567.89,
-    "balanceRemaining": 890.12
+    "subtotals": {
+      "normalProfessors": {
+        "totalTeacher": 1234.56,
+        "totalBespoke": 567.89,
+        "balanceRemaining": 890.12,
+        "totalFinal": 1134.56
+      },
+      "specialProfessor": {
+        "total": 187.50,
+        "balanceRemaining": 62.50,
+        "totalFinal": 212.50
+      },
+      "excedents": {
+        "totalExcedente": 1300.00
+      }
+    },
+    "grandTotal": {
+      "balanceRemaining": 2252.62
+    }
   },
   "specialProfessorReport": {
     "professorId": "685a1caa6c566777c1b5dc4b",
@@ -931,8 +966,27 @@ GET /api/incomes/professors-payout-report?month=2025-01
     },
     "penalizations": {
       "count": 2,
-      "totalMoney": 75.00
-    }
+      "totalMoney": 75.00,
+      "details": [
+        {
+          "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d9",
+          "penalizationMoney": 50.00,
+          "description": "Penalización por falta de asistencia",
+          "endDate": null,
+          "support_file": null,
+          "createdAt": "2025-01-15T10:30:00.000Z"
+        },
+        {
+          "penalizationId": "64f8a1b2c3d4e5f6a7b8c9da",
+          "penalizationMoney": 25.00,
+          "description": "Penalización por retraso en entrega de material",
+          "endDate": "2025-01-20T00:00:00.000Z",
+          "support_file": null,
+          "createdAt": "2025-01-18T14:00:00.000Z"
+        }
+      ]
+    },
+    "totalFinal": 212.50
   },
   "excedente": {
     "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
@@ -1161,8 +1215,27 @@ El reporte de excedentes ahora incluye tres componentes:
   },
   "penalizations": {
     "count": 3,
-    "totalMoney": 150.00
-  }
+    "totalMoney": 150.00,
+    "details": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+        "penalizationMoney": 50.00,
+        "description": "Penalización por vencimiento de días de pago",
+        "endDate": "2025-01-15T00:00:00.000Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z"
+      },
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d8",
+        "penalizationMoney": 100.00,
+        "description": "Penalización por cancelación tardía",
+        "endDate": null,
+        "support_file": "https://example.com/file.pdf",
+        "createdAt": "2025-01-20T14:00:00.000Z"
+      }
+    ]
+  },
+  "totalFinal": 221.00  // 🆕 NUEVO: 321.00 + 50.00 - 150.00 = 221.00
 }
 ```
 
@@ -1313,11 +1386,12 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 3. **Por Estudiante**: Dentro de cada enrollment, los estudiantes se ordenan alfabéticamente (solo cuando se concatenan nombres)
 
 #### **🆕 Sumatorias por Profesor**
-Cada objeto en el array `report` ahora incluye tres campos de sumatorias que agregan los valores de todos los `details` del profesor:
+Cada objeto en el array `report` ahora incluye cuatro campos de sumatorias que agregan los valores de todos los `details` del profesor:
 
-- **`totalTeacher`** (number): Suma de todos los valores `totalTeacher` de los enrollments en `details`. Representa el total a pagar al profesor por las horas vistas.
+- **`totalTeacher`** (number): Suma de todos los valores `totalTeacher` de los enrollments en `details`. Representa el total a pagar al profesor por las horas vistas (solo por clases, sin ajustes).
 - **`totalBespoke`** (number): Suma de todos los valores `totalBespoke` de los enrollments en `details`. Representa el total que queda para Bespoke después de pagar al profesor.
 - **`totalBalanceRemaining`** (number): Suma de todos los valores `balanceRemaining` de los enrollments en `details`. Representa el balance total restante después de todos los cálculos.
+- **`totalFinal`** (number): 🆕 **NUEVO** - Total final a pagar al profesor después de aplicar bonos y penalizaciones. Se calcula como: `totalTeacher + abonos.total - penalizations.totalMoney`.
 
 **Ejemplo:**
 ```json
@@ -1328,9 +1402,16 @@ Cada objeto en el array `report` ahora incluye tres campos de sumatorias que agr
     { "totalTeacher": 97.50, "totalBespoke": 24.38, "balanceRemaining": 48.12 },
     { "totalTeacher": 103.00, "totalBespoke": 30.63, "balanceRemaining": 46.37 }
   ],
-  "totalTeacher": 200.50,        // 97.50 + 103.00
+  "totalTeacher": 200.50,        // 97.50 + 103.00 (solo por clases)
   "totalBespoke": 55.01,         // 24.38 + 30.63
-  "totalBalanceRemaining": 94.49 // 48.12 + 46.37
+  "totalBalanceRemaining": 94.49, // 48.12 + 46.37
+  "abonos": {
+    "total": 50.00
+  },
+  "penalizations": {
+    "totalMoney": 150.00
+  },
+  "totalFinal": 100.50           // 🆕 NUEVO: 200.50 + 50.00 - 150.00 = 100.50
 }
 ```
 
@@ -1342,7 +1423,17 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
 {
   "penalizations": {
     "count": 3,
-    "totalMoney": 150.00
+    "totalMoney": 150.00,
+    "details": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+        "penalizationMoney": 50.00,
+        "description": "Penalización por vencimiento de días de pago",
+        "endDate": "2025-01-15T00:00:00.000Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z"
+      }
+    ]
   }
 }
 ```
@@ -1356,6 +1447,16 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
     - `status: 1` (activas)
     - `penalizationMoney > 0` (monetarias)
   - Representa el total de dinero que el profesor debe por penalizaciones
+- **`details`** (array): 🆕 **NUEVO** - Array de objetos con información detallada de cada penalización
+  - Similar a `abonos.details`, proporciona un desglose completo de todas las penalizaciones
+  - Cada objeto incluye:
+    - `penalizationId` (string): ID único de la penalización
+    - `penalizationMoney` (number): Monto de dinero de la penalización
+    - `description` (string/null): Descripción detallada de la penalización
+    - `endDate` (Date/null): Fecha de fin relacionada con la penalización (si existe)
+    - `support_file` (string/null): Archivo de soporte o evidencia (URL o ruta)
+    - `createdAt` (Date): Fecha de creación de la penalización
+  - Ordenado por fecha de creación descendente (más recientes primero)
 
 **Criterios de Filtrado:**
 - Solo se consideran penalizaciones con `status: 1` (activas)
@@ -1375,13 +1476,65 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
   "totalTeacher": 200.50,
   "totalBespoke": 55.01,
   "totalBalanceRemaining": 94.49,
-  "abonos": {...},
+  "abonos": {
+    "total": 50.00,
+    "details": [...]
+  },
   "penalizations": {
     "count": 3,        // Tiene 3 penalizaciones monetarias activas
-    "totalMoney": 150.00  // Total de dinero de penalizaciones: $150.00
-  }
+    "totalMoney": 150.00,  // Total de dinero de penalizaciones: $150.00
+    "details": [        // 🆕 NUEVO: Array con detalles de cada penalización
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+        "penalizationMoney": 50.00,
+        "description": "Penalización por vencimiento de días de pago",
+        "endDate": "2025-01-15T00:00:00.000Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z"
+      }
+    ]
+  },
+  "totalFinal": 100.50  // 🆕 NUEVO: totalTeacher + abonos.total - penalizations.totalMoney
 }
 ```
+
+#### **🆕 Campo Total Final (totalFinal)**
+Cada profesor en el reporte incluye un nuevo campo `totalFinal` que representa el total a pagar después de aplicar bonos y penalizaciones:
+
+**Fórmula:**
+```
+totalFinal = totalTeacher + abonos.total - penalizations.totalMoney
+```
+
+**Descripción:**
+- **`totalFinal`** (number): Total final a pagar al profesor después de ajustes
+  - Se calcula sumando `totalTeacher` (ganancias por clases) y `abonos.total` (bonos)
+  - Se resta `penalizations.totalMoney` (penalizaciones monetarias)
+  - Representa el monto real que se debe pagar al profesor considerando todos los ajustes
+
+**Aplicado en:**
+- Reporte general de profesores (cada profesor en el array `report`)
+- Reporte especial del profesor (Andrea Wias) en `specialProfessorReport`
+- Totales generales en `totals.subtotals.normalProfessors.totalFinal` y `totals.subtotals.specialProfessor.totalFinal`
+
+**Ejemplo de Cálculo:**
+```json
+{
+  "totalTeacher": 200.50,        // Ganancias por clases
+  "abonos": {
+    "total": 50.00               // Bonos recibidos
+  },
+  "penalizations": {
+    "totalMoney": 150.00         // Penalizaciones a descontar
+  },
+  "totalFinal": 100.50           // 200.50 + 50.00 - 150.00 = 100.50
+}
+```
+
+**Nota Importante:**
+- `totalTeacher` se mantiene como el total solo por clases (sin cambios)
+- `totalFinal` es el nuevo campo que refleja el total después de ajustes
+- Esto permite ver claramente cuánto gana el profesor por clases vs. cuánto se le debe pagar en total
 
 #### **🆕 Estructura de Subtotales y Total General**
 El campo `totals` ahora incluye una estructura completa con subtotales por sección y un total general:
@@ -1394,11 +1547,13 @@ El campo `totals` ahora incluye una estructura completa con subtotales por secci
       "normalProfessors": {
         "totalTeacher": 1234.56,      // Suma de totalTeacher de todos los profesores normales
         "totalBespoke": 567.89,       // Suma de totalBespoke de todos los profesores normales
-        "balanceRemaining": 890.12    // Suma de balanceRemaining de todos los profesores normales
+        "balanceRemaining": 890.12,   // Suma de balanceRemaining de todos los profesores normales
+        "totalFinal": 1134.56          // 🆕 NUEVO: Suma de totalFinal de todos los profesores normales
       },
       "specialProfessor": {
         "total": 187.50,              // Suma de 'total' del profesor especial (equivalente a totalTeacher + totalBespoke)
-        "balanceRemaining": 62.50     // balanceRemaining del profesor especial (de subtotal.balanceRemaining)
+        "balanceRemaining": 62.50,     // balanceRemaining del profesor especial (de subtotal.balanceRemaining)
+        "totalFinal": 212.50           // 🆕 NUEVO: totalFinal del profesor especial
       },
       "excedents": {
         "totalExcedente": 1300.00     // Total de excedentes (ingresos + clases no vistas - bonos)
@@ -1414,13 +1569,15 @@ El campo `totals` ahora incluye una estructura completa con subtotales por secci
 **Descripción de Campos:**
 
 1. **`subtotals.normalProfessors`**: Sumatorias de todos los profesores normales (excluyendo al profesor especial)
-   - `totalTeacher`: Total a pagar a todos los profesores normales
+   - `totalTeacher`: Total a pagar a todos los profesores normales (solo por clases, sin ajustes)
    - `totalBespoke`: Total que queda para Bespoke de profesores normales
    - `balanceRemaining`: Balance restante total de profesores normales
+   - `totalFinal`: 🆕 **NUEVO** - Suma de `totalFinal` de todos los profesores normales (después de bonos y penalizaciones)
 
 2. **`subtotals.specialProfessor`**: Sumatorias del profesor especial (Andrea Wias)
    - `total`: Suma de todos los valores `total` del profesor especial (equivalente a totalTeacher + totalBespoke)
    - `balanceRemaining`: Balance restante del profesor especial
+   - `totalFinal`: 🆕 **NUEVO** - `totalFinal` del profesor especial (después de bonos y penalizaciones)
 
 3. **`subtotals.excedents`**: Total de excedentes
    - `totalExcedente`: Suma de ingresos excedentes + excedentes por clases no vistas - bonos de profesores
@@ -1447,9 +1604,14 @@ grandTotal.balanceRemaining =
 - Los ingresos excedentes se identifican por no tener `idEnrollment` ni `idProfessor`
 - **🆕 Ordenamiento**: Los datos ahora vienen pre-ordenados desde el backend
 - **🆕 Sumatorias**: Cada profesor incluye sumatorias de `totalTeacher`, `totalBespoke` y `totalBalanceRemaining`
-- **🆕 Penalizaciones**: Cada profesor incluye información de penalizaciones monetarias activas (`penalizations.count` y `penalizations.totalMoney`)
+- **🆕 Penalizaciones**: Cada profesor incluye información de penalizaciones monetarias activas (`penalizations.count`, `penalizations.totalMoney` y `penalizations.details`)
   - Solo se consideran penalizaciones con `status: 1` (activas) y `penalizationMoney > 0` (monetarias)
   - Las penalizaciones de tipo amonestación no se incluyen en el conteo
+  - `penalizations.details` es un array con información detallada de cada penalización (similar a `abonos.details`)
+- **🆕 Total Final**: Cada profesor incluye el campo `totalFinal` que representa el total a pagar después de aplicar bonos y penalizaciones
+  - Fórmula: `totalFinal = totalTeacher + abonos.total - penalizations.totalMoney`
+  - `totalTeacher` se mantiene como el total solo por clases (sin ajustes)
+  - `totalFinal` refleja el monto real a pagar considerando todos los ajustes
 
 #### **Errores Posibles**
 - **400**: Parámetro `month` faltante o formato inválido

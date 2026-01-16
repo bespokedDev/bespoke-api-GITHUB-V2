@@ -22,6 +22,70 @@ Todos los cronjobs están configurados para usar la zona horaria `America/Caraca
 
 ---
 
+## 🚫 **Manejo de Enrollments en Pausa (Status: 3)**
+
+### **Descripción General**
+
+El sistema incluye una funcionalidad de "pausa administrativa" para enrollments. Cuando un enrollment tiene `status: 3` (en pausa), se aplican reglas especiales en los cronjobs para proteger estos enrollments de procesamientos automáticos.
+
+### **Campo `pauseDate`**
+
+El modelo `Enrollment` incluye un campo `pauseDate` (tipo Date) que almacena la fecha y hora en que se pausó el enrollment:
+- Se establece automáticamente cuando se ejecuta el endpoint de pausa (`PATCH /api/enrollments/:id/pause`)
+- Puede ser `null` si el enrollment nunca ha sido pausado
+- Se mantiene para registro histórico cuando el enrollment se reactiva
+
+### **Reglas de Negocio para Cronjobs de Clases**
+
+Para los cronjobs que procesan clases (`processClassFinalization`, `processMonthlyClassClosure`, `processWeeklyUnguidedClasses`):
+
+**Si el enrollment tiene `status: 3` (en pausa):**
+1. **Si `pauseDate` no existe (es `null` o `undefined`)**:
+   - **NO se procesa ninguna clase** del enrollment
+   - El enrollment se omite completamente del procesamiento
+   - Se registra en los logs que el enrollment está en pausa sin `pauseDate`
+
+2. **Si `pauseDate` existe**:
+   - **Solo se procesan clases donde `classDate < pauseDate`**
+   - Las clases con `classDate >= pauseDate` se excluyen del procesamiento
+   - Esto asegura que solo se administren las clases que ocurrieron **antes** de que se pausara el enrollment
+   - Las clases programadas para después de la pausa no se procesan hasta que el enrollment se reactive
+
+**Si el enrollment NO está en pausa (`status !== 3`)**:
+- Se procesan todas las clases normalmente según las reglas del cronjob
+
+**Ejemplo:**
+- Enrollment pausado el `2025-01-15` (`pauseDate: 2025-01-15`)
+- Clases del enrollment:
+  - `2025-01-10` (antes de la pausa) → ✅ Se procesa
+  - `2025-01-14` (antes de la pausa) → ✅ Se procesa
+  - `2025-01-15` (día de la pausa) → ❌ No se procesa
+  - `2025-01-20` (después de la pausa) → ❌ No se procesa
+
+### **Reglas de Negocio para Cronjobs de Enrollments**
+
+Para los cronjobs que procesan enrollments directamente (`processEnrollmentsPaymentStatus`, `processAutomaticPayments`):
+
+**Si el enrollment tiene `status: 3` (en pausa)**:
+- **NO se cancela/anula** el enrollment automáticamente
+- **NO se aplican penalizaciones** por vencimiento de pago
+- **NO se procesan pagos automáticos**
+- El enrollment está **protegido** de todas las acciones automáticas
+
+**Filtros Aplicados:**
+- `processEnrollmentsPaymentStatus`: Solo procesa enrollments con `status: 1` (activos), excluyendo automáticamente los enrollments en pausa
+- `processAutomaticPayments`: Excluye explícitamente enrollments con `status: 3` mediante filtro `status: { $ne: 3 }`
+
+### **Motivación**
+
+Esta funcionalidad permite:
+1. **Pausar temporalmente enrollments** sin afectar el procesamiento histórico de clases
+2. **Proteger enrollments en pausa** de cancelaciones y penalizaciones automáticas
+3. **Administrar solo clases previas a la pausa**, manteniendo la integridad de los registros históricos
+4. **Flexibilidad administrativa** para manejar situaciones especiales sin perder el control sobre el procesamiento automático
+
+---
+
 ## 📊 **Cronjobs Disponibles**
 
 ### **1. Cronjob de Enrollments por Impago**
@@ -47,6 +111,7 @@ Este cronjob gestiona automáticamente el estado de los enrollments que han venc
 
 1. **Búsqueda de Enrollments**
    - Busca todos los enrollments activos (`status = 1`)
+   - **⚠️ Los enrollments con `status: 3` (en pausa) están excluidos automáticamente** del procesamiento
    - Compara el `endDate` de cada enrollment con la fecha actual
 
 2. **Aplicación de Reglas**
@@ -122,7 +187,9 @@ Este cronjob procesa automáticamente los pagos de enrollments que tienen habili
 
 1. **Búsqueda de Enrollments Elegibles**
    - Busca todos los enrollments con `cancellationPaymentsEnabled: true`
+   - **⚠️ Excluye explícitamente enrollments con `status: 3` (en pausa)** mediante filtro `status: { $ne: 3 }`
    - Filtra enrollments cuyo `endDate` coincida con la fecha actual (mismo día, ignorando la hora)
+   - Los enrollments en pausa están protegidos de pagos automáticos
 
 2. **Verificación de Saldo Antes del Pago**
    - Si `available_balance < totalAmount` ANTES de procesar el pago:
@@ -148,12 +215,18 @@ Este cronjob procesa automáticamente los pagos de enrollments que tienen habili
 1. **Búsqueda de Enrollments**
    ```javascript
    const enrollmentsWithAutoPayments = await Enrollment.find({
-       cancellationPaymentsEnabled: true
+       cancellationPaymentsEnabled: true,
+       status: { $ne: 3 } // Excluir enrollments en pausa
    })
        .populate('planId')
        .populate('studentIds.studentId')
        .lean();
    ```
+   
+   **⚠️ Protección de Enrollments en Pausa:**
+   - El filtro `status: { $ne: 3 }` excluye explícitamente todos los enrollments con `status: 3` (en pausa)
+   - Los enrollments en pausa están completamente protegidos de pagos automáticos
+   - No se procesan pagos automáticos para enrollments en pausa, independientemente de su `pauseDate`
 
 2. **Filtrado por Fecha**
    - Normaliza `endDate` a medianoche (ignorando hora)
@@ -399,6 +472,9 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
 2. **Búsqueda de Enrollments Vencidos**
    - Busca todos los enrollments cuyo `endDate` < fecha actual
    - No importa el `status` del enrollment (procesa activos e inactivos)
+   - **⚠️ Manejo especial para enrollments en pausa (`status: 3`)**:
+     - Si el enrollment está en pausa pero **no tiene `pauseDate`**: se omite completamente, no se procesa ninguna clase
+     - Si el enrollment está en pausa y **tiene `pauseDate`**: solo se procesan clases donde `classDate < pauseDate` (clases anteriores a la pausa)
 
 3. **Actualización de Clases No Vistas**
    - Para cada enrollment vencido, busca todas sus ClassRegistry
@@ -447,9 +523,23 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
    }).lean();
    ```
 
-3. **Actualización de Clases**
-   - Para cada enrollment, busca todas sus ClassRegistry
+3. **Verificación de Enrollments en Pausa**
+   - Para cada enrollment, verifica si tiene `status: 3` (en pausa)
+   - **Si está en pausa sin `pauseDate`**:
+     - Se omite completamente el enrollment
+     - No se procesa ninguna clase del enrollment
+     - Se registra en logs: `"Enrollment [ID] está en pausa (status: 3) pero no tiene pauseDate. Omitiendo procesamiento."`
+     - Continúa con el siguiente enrollment
+   - **Si está en pausa con `pauseDate`**:
+     - Se filtra las clases para procesar solo aquellas donde `classDate < pauseDate`
+     - Se registra en logs: `"Enrollment [ID] está en pausa. Solo procesando clases anteriores a [pauseDate]"`
+     - Solo se procesan clases que ocurrieron **antes** de que se pausara el enrollment
+
+4. **Actualización de Clases**
+   - Busca las ClassRegistry del enrollment (o las filtradas por fecha de pausa si aplica)
    - Actualiza las clases con `classViewed: 0` y `reschedule: 0` a `classViewed: 4` (Class Lost)
+   - **Solo se procesan clases que cumplen los criterios de pausa** (si el enrollment está en pausa)
+   - Las clases posteriores a la pausa están protegidas y no se marcan como "Class Lost"
 
 4. **Creación de Penalización y Notificación para Profesor**
    - **Solo si se actualizaron clases a Class Lost** (`classesToUpdate.length > 0`):
@@ -567,6 +657,9 @@ El cronjob incluye verificaciones para evitar crear penalizaciones y notificacio
 El cronjob registra en consola:
 - Mes procesado (el mes que está terminando)
 - Número de enrollments vencidos encontrados
+- **Información sobre enrollments en pausa**:
+  - Si un enrollment está en pausa sin `pauseDate`: se registra que se omite completamente
+  - Si un enrollment está en pausa con `pauseDate`: se registra la fecha de pausa y cuántas clases se procesarán
 - Número de clases actualizadas a Class Lost (4)
 - Número de penalizaciones creadas para profesores
 - Número de notificaciones creadas (tanto para profesores como de estadísticas)
@@ -579,6 +672,9 @@ El cronjob registra en consola:
 [CRONJOB] Iniciando procesamiento de finalización de clases...
 [CRONJOB] Encontrados 5 enrollments vencidos para procesar
 [CRONJOB] Procesando clases del mes: 2025-01
+[CRONJOB] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 está en pausa. Solo procesando clases anteriores a 2025-01-15
+[CRONJOB] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0: 2 clases anteriores a la pausa de 5 totales
+[CRONJOB] Enrollment 64f8a1b2c3d4e5f6a7b8c9d1 está en pausa (status: 3) pero no tiene pauseDate. Omitiendo procesamiento.
 [CRONJOB] Actualizadas 3 clases a Class Lost (4) para enrollment 64f8a1b2c3d4e5f6a7b8c9d0
 [CRONJOB] Penalización creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1 por 3 clase(s) perdida(s) en el mes 2025-01
 [CRONJOB] Notificación creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1 y enrollment 64f8a1b2c3d4e5f6a7b8c9d0
@@ -627,9 +723,15 @@ Este cronjob revisa semanalmente las clases que no han sido gestionadas por los 
      - `classViewed: 0` (clase no vista)
      - `reschedule: 0` (solo clases normales, no reschedules)
      - `classDate` dentro del rango lunes-domingo de la semana
+   - **⚠️ Filtrado por Enrollments en Pausa**:
+     - Obtiene los enrollments asociados a las clases encontradas
+     - Para enrollments con `status: 3` (en pausa):
+       - Si no tiene `pauseDate`: se excluyen **todas** las clases del enrollment
+       - Si tiene `pauseDate`: se excluyen las clases donde `classDate >= pauseDate` (solo se incluyen clases anteriores a la pausa)
+     - Solo se procesan las clases que cumplen estos criterios
 
 3. **Agrupación por Profesor**
-   - Agrupa todas las clases no gestionadas por `professorId` (obtenido del enrollment)
+   - Agrupa todas las clases no gestionadas **filtradas** por `professorId` (obtenido del enrollment)
    - Crea una sola penalización y notificación por profesor, incluso si tiene múltiples clases sin gestionar en la semana
 
 4. **Creación de Penalización Administrativa**
@@ -661,13 +763,24 @@ Este cronjob revisa semanalmente las clases que no han sido gestionadas por los 
    }).select('enrollmentId classDate').lean();
    ```
 
-3. **Obtención de Profesores**
-   - Obtiene los enrollments asociados a las clases encontradas
-   - Crea un mapa de `enrollmentId` → `professorId`
+3. **Obtención de Enrollments y Filtrado por Pausa**
+   - Obtiene los enrollments asociados a las clases encontradas, incluyendo los campos `status` y `pauseDate`
+   ```javascript
+   const enrollments = await Enrollment.find({
+       _id: { $in: enrollmentIds }
+   }).select('_id professorId status pauseDate').lean();
+   ```
+   - Crea un mapa de `enrollmentId` → `enrollment` completo para verificar status y pauseDate
+   - Filtra las clases según el estado de pausa de los enrollments:
+     - **Si el enrollment tiene `status: 3` y no tiene `pauseDate`**: se excluyen **todas** las clases del enrollment
+     - **Si el enrollment tiene `status: 3` y tiene `pauseDate`**: solo se incluyen clases donde `classDate < pauseDate` (clases anteriores a la pausa)
+     - **Si el enrollment no está en pausa (`status !== 3`)**: se incluyen todas sus clases normalmente
+   - Las clases resultantes después del filtrado son las que se procesarán
+   - Se registra en logs: `"Clases después de filtrar enrollments en pausa: [X] de [Y]"`
 
 4. **Agrupación por Profesor**
-   - Agrupa las clases por `professorId`
-   - Cada profesor tiene un array de clases no gestionadas
+   - Agrupa las clases **filtradas** por `professorId`
+   - Cada profesor tiene un array de clases no gestionadas que cumplen los criterios de pausa
 
 5. **Creación de Penalización y Notificación**
    - Para cada profesor único:
@@ -762,6 +875,7 @@ El cronjob incluye verificaciones para evitar crear penalizaciones y notificacio
 El cronjob registra en consola:
 - Rango de semana procesado (lunes a domingo)
 - Número de clases no gestionadas encontradas
+- **Número de clases después de filtrar enrollments en pausa** (si aplica)
 - Número de profesores afectados
 - Número de penalizaciones creadas
 - Número de notificaciones creadas
@@ -774,6 +888,7 @@ El cronjob registra en consola:
 [CRONJOB SEMANAL] Iniciando procesamiento de clases no gestionadas semanalmente...
 [CRONJOB SEMANAL] Rango de semana: 2025-01-05 (lunes) a 2025-01-11 (domingo)
 [CRONJOB SEMANAL] Encontradas 6 clases no gestionadas en la semana
+[CRONJOB SEMANAL] Clases después de filtrar enrollments en pausa: 4
 [CRONJOB SEMANAL] Profesores con clases no gestionadas: 2
 [CRONJOB SEMANAL] Penalización creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1 (3 clase(s) no gestionada(s))
 [CRONJOB SEMANAL] Notificación creada para profesor 64f8a1b2c3d4e5f6a7b8c9d1
@@ -782,11 +897,31 @@ El cronjob registra en consola:
 [CRONJOB SEMANAL] Procesamiento de clases no gestionadas completado:
   - Semana procesada: 2025-01-05 a 2025-01-11
   - Clases no gestionadas encontradas: 6
+  - Clases después de filtrar enrollments en pausa: 4
   - Profesores afectados: 2
   - Penalizaciones creadas: 2
   - Notificaciones creadas: 2
 [CRONJOB SEMANAL] Finalizando procesamiento de clases no gestionadas semanalmente
 ```
+
+#### **Manejo de Enrollments en Pausa**
+
+Este cronjob incluye lógica especial para enrollments en pausa:
+
+1. **Filtrado de Clases**
+   - Después de encontrar las clases no gestionadas en la semana, obtiene los enrollments asociados
+   - Verifica el `status` y `pauseDate` de cada enrollment
+   - **Si el enrollment tiene `status: 3` y no tiene `pauseDate`**: se excluyen todas sus clases del procesamiento
+   - **Si el enrollment tiene `status: 3` y tiene `pauseDate`**: solo se incluyen clases donde `classDate < pauseDate` (clases anteriores a la pausa)
+   - Las clases posteriores a la pausa no generan penalizaciones ni notificaciones
+
+2. **Ejemplo de Filtrado**
+   - Enrollment pausado el `2025-01-08` (`pauseDate: 2025-01-08`)
+   - Semana procesada: `2025-01-05` a `2025-01-11`
+   - Clases encontradas:
+     - `2025-01-06` (antes de la pausa) → ✅ Se incluye en el procesamiento
+     - `2025-01-08` (día de la pausa) → ❌ No se incluye
+     - `2025-01-10` (después de la pausa) → ❌ No se incluye
 
 #### **Notas Importantes**
 
@@ -805,6 +940,192 @@ El cronjob registra en consola:
 7. **Categoría de Notificación**: Todas las notificaciones usan la categoría "Administrativa" (`idCategoryNotification: "6941c9b30646c9359c7f9f68"`).
 
 8. **Sin Actualización de `penalizationCount`**: Este cronjob **NO incrementa** el campo `penalizationCount` del enrollment porque las penalizaciones no están asociadas a un enrollment específico (solo al profesor).
+
+9. **Protección de Enrollments en Pausa**: Los enrollments en pausa están protegidos de penalizaciones automáticas. Solo se procesan las clases que ocurrieron antes de la pausa.
+
+---
+
+### **6. Cronjob de Cierre Mensual de Clases**
+
+**Archivo**: `src/jobs/classRegistry.jobs.js`  
+**Función**: `processMonthlyClassClosure`  
+**Inicialización**: `initMonthlyClassClosureCronjob`
+
+#### **Descripción**
+Este cronjob procesa el cierre mensual de clases, marcando las clases no vistas como "Class Lost" (clase perdida) y generando notificaciones con estadísticas del mes. Se ejecuta el último día de cada mes para procesar las clases del mes que está terminando.
+
+#### **Reglas de Negocio**
+
+1. **Frecuencia de Ejecución**
+   - Se ejecuta el **último día de cada mes** a las 00:00 (medianoche)
+   - Usa la expresión cron `'0 0 28-31 * *'` con verificación del último día del mes
+   - Procesa el mes que está terminando (mes actual)
+
+2. **Búsqueda de Enrollments con Clases en el Mes**
+   - Busca todos los enrollments que tengan clases en el mes actual (sin filtrar por status)
+   - No importa el `status` del enrollment (procesa activos, inactivos y en pausa)
+   - **⚠️ Manejo especial para enrollments en pausa (`status: 3`)**:
+     - Si el enrollment está en pausa pero **no tiene `pauseDate`**: se omite completamente, no se procesa ninguna clase
+     - Si el enrollment está en pausa y **tiene `pauseDate`**: solo se procesan clases del mes donde `classDate < pauseDate` (clases anteriores a la pausa)
+
+3. **Actualización de Clases No Vistas del Mes**
+   - Para cada enrollment, busca todas sus ClassRegistry
+   - Filtra clases que estén dentro del rango del mes actual (primer día a último día del mes)
+   - Si el enrollment está en pausa con `pauseDate`, aplica el filtro adicional de `classDate < pauseDate`
+   - Si una clase tiene `classViewed: 0`:
+     - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
+     - Solo se actualizan las clases que cumplen los criterios de pausa (si aplica)
+
+4. **Generación de Estadísticas del Mes**
+   - Cuenta las clases por tipo dentro del mes:
+     - **Clases marcadas como Class Lost en este procesamiento**: Clases actualizadas a `classViewed: 4` en esta ejecución
+     - **Total de clases del mes**: Todas las clases que caen dentro del mes actual
+     - **Clases vistas**: Clases con `classViewed: 1`
+     - **Clases parcialmente vistas**: Clases con `classViewed: 2`
+     - **Clases ya marcadas como Class Lost**: Clases con `classViewed: 4` que ya estaban marcadas antes
+
+5. **Creación de Notificación de Estadísticas**
+   - Crea una notificación por enrollment con las estadísticas calculadas del mes
+   - La notificación es de tipo "Administrativa" (`idCategoryNotification: "6941c9b30646c9359c7f9f68"`)
+   - Incluye el mes procesado en formato legible (ej: "ENERO 2025")
+
+#### **Proceso de Ejecución**
+
+1. **Cálculo del Mes Actual**
+   - Obtiene el mes y año actual (el mes que está terminando)
+   - Calcula el rango del mes: primer día (`YYYY-MM-01`) a último día del mes
+
+2. **Búsqueda de Enrollments con Clases en el Mes**
+   ```javascript
+   const classesInMonth = await ClassRegistry.find({
+       classDate: { $gte: firstDayOfMonth, $lte: lastDayOfMonthStr }
+   }).select('enrollmentId').lean();
+   
+   const enrollmentsToProcess = await Enrollment.find({
+       _id: { $in: enrollmentIds }
+   }).lean();
+   ```
+
+3. **Verificación de Enrollments en Pausa**
+   - Para cada enrollment, verifica si tiene `status: 3` (en pausa)
+   - **Si está en pausa sin `pauseDate`**:
+     - Se omite completamente el enrollment
+     - No se procesa ninguna clase del mes
+     - Se registra en logs: `"Enrollment [ID] está en pausa (status: 3) pero no tiene pauseDate. Omitiendo procesamiento."`
+     - Continúa con el siguiente enrollment
+   - **Si está en pausa con `pauseDate`**:
+     - Se filtra las clases del mes para procesar solo aquellas donde `classDate < pauseDate` Y estén dentro del rango del mes
+     - Se registra en logs: `"Enrollment [ID] está en pausa. Solo procesando clases anteriores a [pauseDate]"`
+     - Solo se procesan clases que ocurrieron **antes** de que se pausara el enrollment
+
+4. **Actualización de Clases del Mes**
+   - Busca las ClassRegistry del enrollment dentro del mes (o las filtradas por fecha de pausa si aplica)
+   - Filtra clases que estén dentro del rango del mes actual (primer día a último día del mes)
+   - Si el enrollment está en pausa con `pauseDate`, aplica el filtro adicional de `classDate < pauseDate`
+   - Actualiza las clases con `classViewed: 0` a `classViewed: 4` (Class Lost)
+   - **Solo se procesan clases que cumplen los criterios de pausa** (si el enrollment está en pausa)
+   - Las clases posteriores a la pausa están protegidas y no se marcan como "Class Lost"
+
+4. **Cálculo de Estadísticas del Mes**
+   - Recorre todas las clases del mes (filtradas por pausa si aplica)
+   - Cuenta por tipo de `classViewed` dentro del mes
+
+5. **Generación de Notificación de Estadísticas**
+   - Crea una notificación con descripción dinámica que incluye todas las estadísticas del mes
+   - Previene duplicados verificando si ya existe una notificación para el enrollment y mes
+
+#### **Notificación de Cierre Mensual Generada**
+
+**Estructura de la Notificación:**
+```json
+{
+  "idCategoryNotification": "6941c9b30646c9359c7f9f68",
+  "notification_description": "Cierre mensual de clases - [MES] [AÑO]. Enrollment [ID]. [X] clase(s) marcada(s) como Class Lost (clase perdida) del mes de [mes], Total de clases del mes: [Y], [Z] vista(s), [W] parcialmente vista(s), [V] ya marcada(s) como Class Lost.",
+  "idEnrollment": "[ID del enrollment]",
+  "idPenalization": null,
+  "idProfessor": null,
+  "idStudent": [],
+  "isActive": true
+}
+```
+
+**Ejemplo de Descripción:**
+```
+Cierre mensual de clases - ENERO 2025. Enrollment 64f8a1b2c3d4e5f6a7b8c9d0. 2 clase(s) marcada(s) como Class Lost (clase perdida) del mes de enero, Total de clases del mes: 10, 5 vista(s), 3 parcialmente vista(s), 0 ya marcada(s) como Class Lost.
+```
+
+#### **Prevención de Duplicados**
+
+El cronjob incluye verificaciones para evitar crear notificaciones duplicadas:
+
+1. **Verificación de Notificación Existente**
+   - Busca si ya existe una notificación de cierre mensual para el enrollment y mes
+   - Usa el mes/año en formato legible (ej: "ENERO 2025") en la descripción para identificar duplicados
+   - Si existe, omite la creación
+
+#### **Logs del Cronjob**
+El cronjob registra en consola:
+- Mes procesado (el mes que está terminando)
+- Rango de fechas del mes (primer día a último día)
+- Número de enrollments encontrados con clases en el mes
+- Número de enrollments procesados
+- Número de clases actualizadas a Class Lost (4)
+- Número de notificaciones creadas
+- Estadísticas detalladas por enrollment procesado
+- Errores específicos por enrollment (si los hay)
+
+**Ejemplo de Logs:**
+```
+[CRONJOB MENSUAL] Ejecutando cronjob de cierre mensual de clases - 2025-01-31T00:00:00.000Z
+[CRONJOB MENSUAL] Iniciando procesamiento de cierre mensual de clases...
+[CRONJOB MENSUAL] Procesando clases del mes: 2025-01 (2025-01-01 a 2025-01-31)
+[CRONJOB MENSUAL] Encontrados 10 enrollments con clases en el mes 2025-01 para procesar
+[CRONJOB MENSUAL] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 está en pausa. Solo procesando clases anteriores a 2025-01-15
+[CRONJOB MENSUAL] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0: 3 clases del mes anteriores a la pausa
+[CRONJOB MENSUAL] Enrollment 64f8a1b2c3d4e5f6a7b8c9d1 está en pausa (status: 3) pero no tiene pauseDate. Omitiendo procesamiento.
+[CRONJOB MENSUAL] Actualizadas 2 clases a Class Lost (4) para enrollment 64f8a1b2c3d4e5f6a7b8c9d0 (mes 2025-01)
+[CRONJOB MENSUAL] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0 procesado (mes 2025-01): 2 marcadas como Class Lost, 5 vistas, 3 parcialmente vistas, 0 ya Class Lost
+[CRONJOB MENSUAL] Procesamiento de cierre mensual completado:
+  - Mes procesado: 2025-01
+  - Enrollments procesados: 10
+  - Clases actualizadas a Class Lost (4): 15
+  - Notificaciones creadas: 10
+[CRONJOB MENSUAL] Finalizando procesamiento de cierre mensual de clases
+```
+
+#### **Manejo de Enrollments en Pausa**
+
+Este cronjob incluye lógica especial para enrollments en pausa:
+
+1. **Verificación de Status y pauseDate**
+   - Para cada enrollment encontrado, verifica si tiene `status: 3` (en pausa)
+   - **Si está en pausa sin `pauseDate`**: se omite completamente, no se procesa ninguna clase del mes
+   - **Si está en pausa con `pauseDate`**: se filtran las clases del mes para procesar solo aquellas donde `classDate < pauseDate`
+
+2. **Ejemplo de Filtrado**
+   - Mes procesado: `2025-01-01` a `2025-01-31`
+   - Enrollment pausado el `2025-01-15` (`pauseDate: 2025-01-15`)
+   - Clases del enrollment en el mes:
+     - `2025-01-10` (antes de la pausa) → ✅ Se procesa
+     - `2025-01-14` (antes de la pausa) → ✅ Se procesa
+     - `2025-01-15` (día de la pausa) → ❌ No se procesa
+     - `2025-01-20` (después de la pausa) → ❌ No se procesa
+
+3. **Estadísticas Afectadas**
+   - Solo las clases que se procesan (anteriores a la pausa) se incluyen en las estadísticas del mes
+   - Las clases posteriores a la pausa no se cuentan ni se actualizan
+
+#### **Notas Importantes**
+
+1. **Frecuencia de Ejecución**: El cronjob se ejecuta el **último día de cada mes** a las 00:00 (medianoche).
+
+2. **Procesamiento del Mes Actual**: Procesa el mes que está terminando, no meses anteriores.
+
+3. **Sin Penalizaciones para Profesores**: Este cronjob **NO crea penalizaciones** para profesores, solo actualiza clases y genera notificaciones de estadísticas.
+
+4. **Comparación de Fechas**: Usa comparación de strings para `classDate` (formato `YYYY-MM-DD`) y `pauseDate` (convertido a `YYYY-MM-DD` para comparación).
+
+5. **Protección de Enrollments en Pausa**: Los enrollments en pausa están protegidos. Solo se procesan las clases que ocurrieron antes de la pausa, asegurando que las clases posteriores a la pausa no se marquen como "Class Lost" automáticamente.
 
 ---
 
@@ -915,11 +1236,18 @@ cron.schedule('0 0 * * 0', async () => {
 1. **Ejecución Automática**: Los cronjobs se ejecutan automáticamente cuando se inicia la API. No requieren intervención manual.
 
 2. **Procesamiento de Enrollments**: 
-   - El cronjob de enrollments por impago solo procesa enrollments con `status: 1` (activos)
-   - El cronjob de pagos automáticos procesa enrollments con `cancellationPaymentsEnabled: true`, independientemente del `status`
-   - El cronjob de profesores suplentes expirados procesa todos los enrollments con `substituteProfessor` no null, independientemente del `status`
-   - El cronjob de finalización de clases procesa todos los enrollments vencidos, independientemente de su status
-   - El cronjob de clases no gestionadas semanalmente procesa todas las clases con `classViewed: 0` dentro del rango semanal, independientemente del status del enrollment
+   - **Cronjob de enrollments por impago**: Solo procesa enrollments con `status: 1` (activos). Los enrollments con `status: 3` (en pausa) están excluidos automáticamente.
+   - **Cronjob de pagos automáticos**: Procesa enrollments con `cancellationPaymentsEnabled: true`, pero **excluye explícitamente enrollments con `status: 3`** mediante filtro `status: { $ne: 3 }`. Los enrollments en pausa están protegidos de pagos automáticos.
+   - **Cronjob de profesores suplentes expirados**: Procesa todos los enrollments con `substituteProfessor` no null, independientemente del `status` (incluyendo enrollments en pausa).
+   - **Cronjob de finalización de clases**: Procesa todos los enrollments vencidos, pero con manejo especial para enrollments en pausa:
+     - Si `status: 3` y no tiene `pauseDate`: se omite completamente
+     - Si `status: 3` y tiene `pauseDate`: solo procesa clases donde `classDate < pauseDate`
+   - **Cronjob de clases no gestionadas semanalmente**: Procesa clases con `classViewed: 0` dentro del rango semanal, pero filtra según el estado de pausa del enrollment:
+     - Si el enrollment tiene `status: 3` y no tiene `pauseDate`: se excluyen todas sus clases
+     - Si el enrollment tiene `status: 3` y tiene `pauseDate`: solo se incluyen clases donde `classDate < pauseDate`
+   - **Cronjob de cierre mensual de clases**: Procesa enrollments con clases en el mes, pero con manejo especial para enrollments en pausa:
+     - Si `status: 3` y no tiene `pauseDate`: se omite completamente
+     - Si `status: 3` y tiene `pauseDate`: solo procesa clases del mes donde `classDate < pauseDate`
 
 3. **Notificaciones**: 
    - Las notificaciones se crean automáticamente y están disponibles para los usuarios del sistema

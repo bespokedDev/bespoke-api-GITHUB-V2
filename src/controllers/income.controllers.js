@@ -61,6 +61,9 @@ const convertMinutesToFractionalHours = (minutes) => {
  * PARTE 4 y 5: Procesa ClassRegistry dentro del mes, calcula horas vistas con reschedules
  * PARTE 6: Asigna dinero al profesor correcto (enrollment.professorId o classRegistry.professorId o userId)
  * 
+ * Incluye clases con classViewed: 1 (vista), 2 (parcialmente vista) y 3 (no show)
+ * Las clases no show (3) también se pagan al profesor según las reglas de negocio
+ * 
  * @param {Object} enrollment - Enrollment object
  * @param {Date} monthStartDate - Primer día del mes del reporte
  * @param {Date} monthEndDate - Último día del mes del reporte
@@ -76,35 +79,76 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
     const monthStartStr = moment(monthStartDate).format('YYYY-MM-DD');
     const monthEndStr = moment(monthEndDate).format('YYYY-MM-DD');
 
-    // PARTE 5: Buscar todas las clases normales (reschedule = 0) dentro del mes con classViewed = 1 o 2
+    // 🐛 DEBUG: Identificar enrollment específico para logging
+    const TARGET_ENROLLMENT_ID = "6966bab5e258e901ef589e19";
+    const enrollmentIdStr = enrollment._id ? enrollment._id.toString() : enrollment.toString();
+    const isTargetEnrollment = enrollmentIdStr === TARGET_ENROLLMENT_ID;
+
+    if (isTargetEnrollment) {
+        console.log('\n🔍 ========== DEBUG: processClassRegistryForEnrollment ==========');
+        console.log(`📋 Enrollment ID: ${enrollmentIdStr}`);
+        console.log(`📅 Rango de fechas: ${monthStartStr} a ${monthEndStr}`);
+    }
+
+    // PARTE 5: Buscar todas las clases originales (padre) dentro del mes
+    // Las clases originales pueden tener reschedule: 0 (normales) o reschedule: 1 (con reschedule asociado)
+    // La diferencia es que las clases originales tienen originalClassId: null (son clases padre)
+    // Incluir también clases con classViewed: 0 si tienen reschedules asociados (se procesarán después)
+    // classViewed: 1 = vista, 2 = parcialmente vista, 3 = no show (también se paga al profesor)
+    // classViewed: 0 = no vista, pero puede tener reschedules que sí se deben contar
     const classRegistriesInMonth = await ClassRegistry.find({
         enrollmentId: enrollment._id,
         classDate: {
             $gte: monthStartStr,
             $lte: monthEndStr
         },
-        reschedule: 0, // Solo clases normales, no reschedules
-        classViewed: { $in: [1, 2] } // Solo clases vistas (1) o parcialmente vistas (2)
+        reschedule: { $in: [0, 1] }, // Clases originales: normales (0) o con reschedule (1)
+        originalClassId: null // Solo clases padre (originales), no clases hijas (reschedules)
+        // NOTA: No filtrar por classViewed aquí, se filtrará en el procesamiento
+        // Necesitamos encontrar clases con classViewed: 0 que tengan reschedules asociados
     })
     .populate('professorId', 'name ciNumber typeId')
     .populate('userId', 'name email role')
     .lean();
 
-    // PARTE 5: Buscar todos los reschedules dentro del mes para optimizar consultas
-    // Buscar reschedules que estén dentro del mes y que tengan originalClassId de las clases normales
-    const normalClassIds = classRegistriesInMonth.map(cr => cr._id);
+    if (isTargetEnrollment) {
+        console.log(`\n📚 Clases originales (padre) encontradas: ${classRegistriesInMonth.length}`);
+        classRegistriesInMonth.forEach((cr, idx) => {
+            console.log(`  [${idx + 1}] ClassRegistry ID: ${cr._id}`);
+            console.log(`      - classDate: ${cr.classDate}`);
+            console.log(`      - classViewed: ${cr.classViewed} (${cr.classViewed === 1 ? 'Vista' : cr.classViewed === 2 ? 'Parcial' : 'No Show'})`);
+            console.log(`      - minutesViewed: ${cr.minutesViewed} (${cr.minutesViewed ? `${cr.minutesViewed} min` : 'null/0'})`);
+            console.log(`      - reschedule: ${cr.reschedule} (${cr.reschedule === 0 ? 'Normal' : 'Con reschedule'})`);
+            console.log(`      - originalClassId: ${cr.originalClassId} (${cr.originalClassId ? 'Hija' : 'Padre'})`);
+        });
+    }
+
+    // PARTE 5: Buscar todos los reschedules (clases hijas) dentro del mes para optimizar consultas
+    // Buscar reschedules que estén dentro del mes y que tengan originalClassId de las clases originales encontradas
+    const originalClassIds = classRegistriesInMonth.map(cr => cr._id);
     const reschedulesInMonth = await ClassRegistry.find({
         enrollmentId: enrollment._id,
         classDate: {
             $gte: monthStartStr,
             $lte: monthEndStr
         },
-        originalClassId: { $in: normalClassIds },
-        reschedule: { $in: [1, 2] } // Clases en reschedule (1 = en reschedule, 2 = reschedule visto)
+        originalClassId: { $in: originalClassIds }, // Reschedules que apuntan a las clases originales encontradas
+        reschedule: { $in: [1, 2] } // Clases hijas en reschedule (1 = en reschedule, 2 = reschedule visto)
     })
     .populate('professorId', 'name ciNumber typeId')
     .populate('userId', 'name email role')
     .lean();
+
+    if (isTargetEnrollment) {
+        console.log(`\n🔄 Reschedules (clases hijas) encontrados: ${reschedulesInMonth.length}`);
+        reschedulesInMonth.forEach((rs, idx) => {
+            console.log(`  [${idx + 1}] Reschedule ID: ${rs._id}`);
+            console.log(`      - classDate: ${rs.classDate}`);
+            console.log(`      - reschedule: ${rs.reschedule} (${rs.reschedule === 1 ? 'En reschedule' : 'Reschedule visto'})`);
+            console.log(`      - minutesViewed: ${rs.minutesViewed} (${rs.minutesViewed ? `${rs.minutesViewed} min` : 'null/0'})`);
+            console.log(`      - originalClassId: ${rs.originalClassId} (apunta a clase padre)`);
+        });
+    }
 
     // Crear un mapa de reschedules por originalClassId para acceso rápido
     const reschedulesMap = new Map();
@@ -127,37 +171,50 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         (enrollment.professorId._id ? enrollment.professorId._id.toString() : enrollment.professorId.toString()) : 
         null;
 
-    // PARTE 5 y 6: Procesar cada clase normal y sumar minutos de reschedules si existen
+    // PARTE 5 y 6: Procesar cada clase original (padre) y sumar minutos de reschedules (hijos) si existen
     // También determinar a qué profesor asignar las horas (considerando reschedules)
     for (const classRecord of classRegistriesInMonth) {
-        let totalMinutes = classRecord.minutesViewed || 0;
-        
-        // PARTE 5: Buscar reschedules de esta clase normal dentro del mes
+        // PARTE 5: Buscar reschedules (clases hijas) de esta clase original dentro del mes
         const classRecordId = classRecord._id.toString();
         const reschedulesForThisClass = reschedulesMap.get(classRecordId) || [];
         
-        // PARTE 6: Determinar el profesor de la clase normal
-        let classNormalProfessorId = enrollmentProfessorId; // Por defecto, profesor del enrollment
+        if (isTargetEnrollment) {
+            console.log(`\n📝 Procesando clase original (padre) ID: ${classRecordId}`);
+            console.log(`   - classDate: ${classRecord.classDate}`);
+            console.log(`   - classViewed: ${classRecord.classViewed} (${classRecord.classViewed === 1 ? 'Vista' : classRecord.classViewed === 2 ? 'Parcial' : 'No Show'})`);
+            console.log(`   - minutesViewed original: ${classRecord.minutesViewed}`);
+            console.log(`   - reschedule: ${classRecord.reschedule} (${classRecord.reschedule === 0 ? 'Normal' : 'Con reschedule'})`);
+            console.log(`   - Reschedules (hijos) asociados: ${reschedulesForThisClass.length}`);
+        }
+        
+        // PARTE 6: Determinar el profesor de la clase original
+        let classOriginalProfessorId = enrollmentProfessorId; // Por defecto, profesor del enrollment
         
         if (classRecord.professorId) {
             const classProfessorId = classRecord.professorId._id ? 
                 classRecord.professorId._id.toString() : 
                 classRecord.professorId.toString();
-            classNormalProfessorId = classProfessorId;
+            classOriginalProfessorId = classProfessorId;
         } else if (classRecord.userId) {
             // Si no hay professorId, usar userId (si existe y es válido)
             // Pero el dinero sigue yendo al profesor del enrollment según las reglas
-            classNormalProfessorId = enrollmentProfessorId;
+            classOriginalProfessorId = enrollmentProfessorId;
         }
         
-        // PARTE 6: Determinar el profesor de los reschedules y agrupar por profesor
+        // PARTE 6: Determinar el profesor de los reschedules (hijos) y agrupar por profesor
         // Si hay reschedules, verificar si tienen un profesor diferente
         const reschedulesByProfessor = new Map(); // Map<professorId, totalMinutes>
         
         for (const reschedule of reschedulesForThisClass) {
+            if (isTargetEnrollment) {
+                console.log(`   🔄 Procesando reschedule (hijo) ID: ${reschedule._id}`);
+                console.log(`      - reschedule: ${reschedule.reschedule}`);
+                console.log(`      - minutesViewed: ${reschedule.minutesViewed} (${reschedule.minutesViewed ? '✅ Se procesará' : '❌ Se ignorará (null/0)'})`);
+            }
+            
             if (reschedule.minutesViewed) {
                 // PARTE 6: Determinar a qué profesor asignar los minutos del reschedule
-                let rescheduleProfessorId = classNormalProfessorId; // Por defecto, profesor de la clase normal
+                let rescheduleProfessorId = classOriginalProfessorId; // Por defecto, profesor de la clase original
                 
                 if (reschedule.professorId) {
                     const rescheduleProfId = reschedule.professorId._id ? 
@@ -166,69 +223,163 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                     rescheduleProfessorId = rescheduleProfId;
                 } else if (reschedule.userId) {
                     // Si no hay professorId en reschedule, usar userId (si existe y es válido)
-                    // Pero el dinero sigue yendo al profesor de la clase normal según las reglas
-                    rescheduleProfessorId = classNormalProfessorId;
+                    // Pero el dinero sigue yendo al profesor de la clase original según las reglas
+                    rescheduleProfessorId = classOriginalProfessorId;
                 }
                 
                 // Agrupar minutos de reschedules por profesor
                 if (!reschedulesByProfessor.has(rescheduleProfessorId)) {
                     reschedulesByProfessor.set(rescheduleProfessorId, 0);
                 }
+                const currentMinutes = reschedulesByProfessor.get(rescheduleProfessorId);
                 reschedulesByProfessor.set(
                     rescheduleProfessorId, 
-                    reschedulesByProfessor.get(rescheduleProfessorId) + reschedule.minutesViewed
+                    currentMinutes + reschedule.minutesViewed
                 );
+                
+                if (isTargetEnrollment) {
+                    console.log(`      ✅ Reschedule agregado: ${reschedule.minutesViewed} min → Profesor ${rescheduleProfessorId}`);
+                    console.log(`      📊 Total acumulado para este profesor: ${currentMinutes + reschedule.minutesViewed} min`);
+                }
             }
         }
         
-        // PARTE 6: Asignar horas al profesor correcto
-        // Si hay reschedules con profesor diferente, dividir las horas
-        const classNormalMinutes = classRecord.minutesViewed || 0;
+        // PARTE 6: Calcular minutos de la clase original
+        // Si classViewed === 3 (no show), asumir 60 minutos (1 hora completa) si minutesViewed es null o 0
+        // Las clases no show se pagan como hora completa estándar
+        // Para classViewed: 1 y 2, usar el valor de minutesViewed (si es null o 0, se convierte a 0)
+        // Para classViewed: 0, no contar minutos de la clase original, solo contar reschedules si existen
+        let classOriginalMinutes = 0;
+        
+        // Solo procesar clases originales con classViewed válido (1, 2 o 3) O si tienen reschedules asociados
+        const hasValidClassViewed = [1, 2, 3].includes(classRecord.classViewed);
+        const hasReschedules = reschedulesForThisClass.length > 0;
+        
+        if (!hasValidClassViewed && !hasReschedules) {
+            if (isTargetEnrollment) {
+                console.log(`   ⚠️ Saltando clase original ${classRecord._id} porque classViewed=${classRecord.classViewed} (no válido) y no tiene reschedules`);
+            }
+            continue;
+        }
+        
+        if (hasValidClassViewed) {
+            classOriginalMinutes = classRecord.minutesViewed;
+            if (classRecord.classViewed === 3 && (!classOriginalMinutes || classOriginalMinutes === null || classOriginalMinutes === 0)) {
+                classOriginalMinutes = 60; // 1 hora completa para clases no show
+                if (isTargetEnrollment) {
+                    console.log(`   ⚠️ classViewed = 3 y minutesViewed es null/0 → Se asume 60 minutos (1 hora completa)`);
+                }
+            } else {
+                classOriginalMinutes = classOriginalMinutes || 0;
+            }
+        } else {
+            // classViewed = 0 pero tiene reschedules, solo contar los reschedules
+            if (isTargetEnrollment) {
+                console.log(`   ℹ️ classViewed = 0, solo se contarán reschedules si existen`);
+            }
+        }
+        
+        if (isTargetEnrollment) {
+            console.log(`   📊 Minutos calculados para clase original: ${classOriginalMinutes} min`);
+        }
         
         if (reschedulesByProfessor.size > 0) {
             // Hay reschedules, asignar horas según el profesor
-            // Primero, agregar horas de la clase normal al profesor correspondiente
-            if (classNormalMinutes > 0) {
-                const classNormalHours = convertMinutesToFractionalHours(classNormalMinutes);
-                if (!hoursByProfessor.has(classNormalProfessorId)) {
-                    hoursByProfessor.set(classNormalProfessorId, {
+            // Primero, agregar horas de la clase original al profesor correspondiente (solo si tiene minutos válidos)
+            // IMPORTANTE: Solo sumar si classOriginalMinutes > 0 para evitar sumar 0 horas
+            if (classOriginalMinutes > 0) {
+                const classOriginalHours = convertMinutesToFractionalHours(classOriginalMinutes);
+                if (!hoursByProfessor.has(classOriginalProfessorId)) {
+                    hoursByProfessor.set(classOriginalProfessorId, {
                         hoursSeen: 0,
                         classCount: 0
                     });
                 }
-                const classNormalData = hoursByProfessor.get(classNormalProfessorId);
-                classNormalData.hoursSeen += classNormalHours;
-                classNormalData.classCount += 1;
+                const classOriginalData = hoursByProfessor.get(classOriginalProfessorId);
+                const hoursBefore = classOriginalData.hoursSeen;
+                classOriginalData.hoursSeen += classOriginalHours;
+                classOriginalData.classCount += 1;
+                
+                if (isTargetEnrollment) {
+                    console.log(`   ✅ Clase original agregada:`);
+                    console.log(`      - Minutos: ${classOriginalMinutes} min`);
+                    console.log(`      - Horas fraccionarias: ${classOriginalHours} horas`);
+                    console.log(`      - Profesor: ${classOriginalProfessorId}`);
+                    console.log(`      - hoursSeen antes: ${hoursBefore}`);
+                    console.log(`      - hoursSeen después: ${classOriginalData.hoursSeen}`);
+                }
+            } else {
+                if (isTargetEnrollment) {
+                    console.log(`   ⚠️ Clase original NO agregada: classOriginalMinutes = 0`);
+                }
             }
             
             // Luego, agregar horas de reschedules a cada profesor correspondiente
             for (const [rescheduleProfId, rescheduleMinutes] of reschedulesByProfessor.entries()) {
-                const rescheduleHours = convertMinutesToFractionalHours(rescheduleMinutes);
-                if (!hoursByProfessor.has(rescheduleProfId)) {
-                    hoursByProfessor.set(rescheduleProfId, {
+                if (rescheduleMinutes > 0) {
+                    const rescheduleHours = convertMinutesToFractionalHours(rescheduleMinutes);
+                    if (!hoursByProfessor.has(rescheduleProfId)) {
+                        hoursByProfessor.set(rescheduleProfId, {
+                            hoursSeen: 0,
+                            classCount: 0
+                        });
+                    }
+                    const rescheduleData = hoursByProfessor.get(rescheduleProfId);
+                    const hoursBefore = rescheduleData.hoursSeen;
+                    rescheduleData.hoursSeen += rescheduleHours;
+                    rescheduleData.classCount += 1;
+                    
+                    if (isTargetEnrollment) {
+                        console.log(`   ✅ Reschedule agregado:`);
+                        console.log(`      - Minutos totales: ${rescheduleMinutes} min`);
+                        console.log(`      - Horas fraccionarias: ${rescheduleHours} horas`);
+                        console.log(`      - Profesor: ${rescheduleProfId}`);
+                        console.log(`      - hoursSeen antes: ${hoursBefore}`);
+                        console.log(`      - hoursSeen después: ${rescheduleData.hoursSeen}`);
+                    }
+                }
+            }
+        } else {
+            // No hay reschedules, asignar todas las horas al profesor de la clase original
+            // IMPORTANTE: Solo sumar si classOriginalMinutes > 0 para evitar sumar 0 horas
+            if (classOriginalMinutes > 0) {
+                const fractionalHours = convertMinutesToFractionalHours(classOriginalMinutes);
+                
+                if (!hoursByProfessor.has(classOriginalProfessorId)) {
+                    hoursByProfessor.set(classOriginalProfessorId, {
                         hoursSeen: 0,
                         classCount: 0
                     });
                 }
-                const rescheduleData = hoursByProfessor.get(rescheduleProfId);
-                rescheduleData.hoursSeen += rescheduleHours;
-                rescheduleData.classCount += 1;
+                const professorData = hoursByProfessor.get(classOriginalProfessorId);
+                const hoursBefore = professorData.hoursSeen;
+                professorData.hoursSeen += fractionalHours;
+                professorData.classCount += 1;
+                
+                if (isTargetEnrollment) {
+                    console.log(`   ✅ Clase original agregada (sin reschedules):`);
+                    console.log(`      - Minutos: ${classOriginalMinutes} min`);
+                    console.log(`      - Horas fraccionarias: ${fractionalHours} horas`);
+                    console.log(`      - Profesor: ${classOriginalProfessorId}`);
+                    console.log(`      - hoursSeen antes: ${hoursBefore}`);
+                    console.log(`      - hoursSeen después: ${professorData.hoursSeen}`);
+                }
+            } else {
+                if (isTargetEnrollment) {
+                    console.log(`   ⚠️ Clase original NO agregada: classOriginalMinutes = 0`);
+                }
             }
-        } else {
-            // No hay reschedules, asignar todas las horas al profesor de la clase normal
-            totalMinutes = classNormalMinutes;
-            const fractionalHours = convertMinutesToFractionalHours(totalMinutes);
-            
-            if (!hoursByProfessor.has(classNormalProfessorId)) {
-                hoursByProfessor.set(classNormalProfessorId, {
-                    hoursSeen: 0,
-                    classCount: 0
-                });
-            }
-            const professorData = hoursByProfessor.get(classNormalProfessorId);
-            professorData.hoursSeen += fractionalHours;
-            professorData.classCount += 1;
         }
+    }
+    
+    if (isTargetEnrollment) {
+        console.log(`\n📊 ========== RESULTADO FINAL ==========`);
+        for (const [profId, data] of hoursByProfessor.entries()) {
+            console.log(`   Profesor ${profId}:`);
+            console.log(`      - hoursSeen: ${data.hoursSeen} horas`);
+            console.log(`      - classCount: ${data.classCount}`);
+        }
+        console.log(`==========================================\n`);
     }
 
     return hoursByProfessor;
@@ -708,10 +859,26 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             professorId: professorObjectId,
             status: 1,
             penalizationMoney: { $gt: 0 }
-        }).select('penalizationMoney').lean();
+        })
+        .select('penalizationMoney penalization_description createdAt endDate support_file')
+        .sort({ createdAt: -1 })
+        .lean();
 
         const monetaryPenalizationsCount = monetaryPenalizations.length;
         const totalPenalizationMoney = monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
+
+        // Crear detalles de penalizaciones (similar a abonosDetails)
+        const penalizationsDetails = monetaryPenalizations.map(penalization => ({
+            penalizationId: penalization._id,
+            penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+            description: penalization.penalization_description || null,
+            endDate: penalization.endDate || null,
+            support_file: penalization.support_file || null,
+            createdAt: penalization.createdAt
+        }));
+
+        // Calcular totalFinal: totalTeacher + totalBonuses - totalPenalizationMoney
+        const totalFinal = totalTeacher + totalBonuses - totalPenalizationMoney;
 
         professorsReportMap.set(professorId, {
             professorId: professorId,
@@ -728,8 +895,10 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             },
             penalizations: { // Información de penalizaciones monetarias
                 count: monetaryPenalizationsCount,
-                totalMoney: parseFloat(totalPenalizationMoney.toFixed(2))
-            }
+                totalMoney: parseFloat(totalPenalizationMoney.toFixed(2)),
+                details: penalizationsDetails // 🆕 NUEVO: Array de detalles de penalizaciones
+            },
+            totalFinal: parseFloat(totalFinal.toFixed(2)) // 🆕 NUEVO: Total después de bonos y penalizaciones
         });
     }
 
@@ -1034,16 +1203,58 @@ const generateSpecificProfessorReportLogic = async (month) => {
         }
     }
 
+    // PARTE 11: Buscar bonos del profesor especial para este mes
+    const professorBonuses = await ProfessorBonus.find({
+        professorId: professorId,
+        month: month,
+        status: 1 // Solo bonos activos
+    })
+    .populate('userId', 'name email role')
+    .sort({ bonusDate: -1, createdAt: -1 })
+    .lean();
+
+    // Calcular total de bonos (abonos) para este profesor especial
+    const totalBonuses = professorBonuses.reduce((sum, bonus) => sum + (bonus.amount || 0), 0);
+
+    // Crear detalles de bonos (abonos)
+    const abonosDetails = professorBonuses.map(bonus => ({
+        bonusId: bonus._id,
+        amount: parseFloat(bonus.amount.toFixed(2)),
+        description: bonus.description || null,
+        bonusDate: bonus.bonusDate,
+        month: bonus.month,
+        userId: bonus.userId ? bonus.userId._id : null,
+        userName: bonus.userId ? bonus.userId.name : null,
+        createdAt: bonus.createdAt
+    }));
+
     // Contar y sumar penalizaciones monetarias del profesor especial (status: 1 y penalizationMoney > 0)
     const professorObjectId = new mongoose.Types.ObjectId(professorId);
     const monetaryPenalizations = await PenalizationRegistry.find({
         professorId: professorObjectId,
         status: 1,
         penalizationMoney: { $gt: 0 }
-    }).select('penalizationMoney').lean();
+    })
+    .select('penalizationMoney penalization_description createdAt endDate support_file')
+    .sort({ createdAt: -1 })
+    .lean();
 
     const monetaryPenalizationsCount = monetaryPenalizations.length;
     const totalPenalizationMoney = monetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
+
+    // Crear detalles de penalizaciones (similar a abonosDetails)
+    const penalizationsDetails = monetaryPenalizations.map(penalization => ({
+        penalizationId: penalization._id,
+        penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+        description: penalization.penalization_description || null,
+        endDate: penalization.endDate || null,
+        support_file: penalization.support_file || null,
+        createdAt: penalization.createdAt
+    }));
+
+    // Calcular totalFinal: subtotal.total + totalBonuses - totalPenalizationMoney
+    // En el reporte especial, subtotal.total es equivalente a totalTeacher
+    const totalFinal = subtotalPayment + totalBonuses - totalPenalizationMoney;
 
     const finalReport = {
         professorId: professorId,
@@ -1055,10 +1266,16 @@ const generateSpecificProfessorReportLogic = async (month) => {
             total: parseFloat(subtotalPayment.toFixed(2)),
             balanceRemaining: parseFloat(subtotalBalanceRemaining.toFixed(2))
         },
+        abonos: { // PARTE 11: Sección de abonos (bonos)
+            total: parseFloat(totalBonuses.toFixed(2)),
+            details: abonosDetails
+        },
         penalizations: { // Información de penalizaciones monetarias
             count: monetaryPenalizationsCount,
-            totalMoney: parseFloat(totalPenalizationMoney.toFixed(2))
-        }
+            totalMoney: parseFloat(totalPenalizationMoney.toFixed(2)),
+            details: penalizationsDetails // 🆕 NUEVO: Array de detalles de penalizaciones
+        },
+        totalFinal: parseFloat(totalFinal.toFixed(2)) // 🆕 NUEVO: Total después de bonos y penalizaciones
     };
 
     return finalReport;
@@ -1978,10 +2195,12 @@ incomesCtrl.professorsPayoutReport = async (req, res) => {
         // Calcular subtotales del profesor especial
         const specialProfessorSubtotal = specialProfessorReport ? {
             total: specialProfessorReport.subtotal ? specialProfessorReport.subtotal.total : 0,
-            balanceRemaining: specialProfessorReport.subtotal ? specialProfessorReport.subtotal.balanceRemaining : 0
+            balanceRemaining: specialProfessorReport.subtotal ? specialProfessorReport.subtotal.balanceRemaining : 0,
+            totalFinal: specialProfessorReport.totalFinal || 0 // 🆕 NUEVO: Total final del profesor especial
         } : {
             total: 0,
-            balanceRemaining: 0
+            balanceRemaining: 0,
+            totalFinal: 0
         };
 
         // Calcular subtotal de excedentes
@@ -1990,6 +2209,10 @@ incomesCtrl.professorsPayoutReport = async (req, res) => {
         } : {
             totalExcedente: 0
         };
+
+        // 🆕 NUEVO: Calcular totalFinal de profesores normales (suma de totalFinal de cada profesor)
+        const totalFinalNormalProfessors = Array.isArray(report) ? 
+            report.reduce((sum, professor) => sum + (professor.totalFinal || 0), 0) : 0;
 
         // Calcular total general (suma de balanceRemaining de las tres secciones)
         const grandTotalBalanceRemaining = 
@@ -2003,11 +2226,13 @@ incomesCtrl.professorsPayoutReport = async (req, res) => {
                 normalProfessors: {
                     totalTeacher: normalProfessorsTotals.totalTeacher || 0,
                     totalBespoke: normalProfessorsTotals.totalBespoke || 0,
-                    balanceRemaining: normalProfessorsTotals.balanceRemaining || 0
+                    balanceRemaining: normalProfessorsTotals.balanceRemaining || 0,
+                    totalFinal: parseFloat(totalFinalNormalProfessors.toFixed(2)) // 🆕 NUEVO: Total final de profesores normales
                 },
                 specialProfessor: {
                     total: parseFloat(specialProfessorSubtotal.total.toFixed(2)),
-                    balanceRemaining: parseFloat(specialProfessorSubtotal.balanceRemaining.toFixed(2))
+                    balanceRemaining: parseFloat(specialProfessorSubtotal.balanceRemaining.toFixed(2)),
+                    totalFinal: parseFloat(specialProfessorSubtotal.totalFinal.toFixed(2)) // 🆕 NUEVO: Total final del profesor especial
                 },
                 excedents: {
                     totalExcedente: parseFloat(excedentsSubtotal.totalExcedente.toFixed(2))

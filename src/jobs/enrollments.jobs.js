@@ -405,9 +405,10 @@ const processAutomaticPayments = async () => {
         const now = new Date();
         now.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparaciones
 
-        // Buscar enrollments con pagos automáticos habilitados
+        // Buscar enrollments con pagos automáticos habilitados (excluir enrollments en pausa - status: 3)
         const enrollmentsWithAutoPayments = await Enrollment.find({
-            cancellationPaymentsEnabled: true
+            cancellationPaymentsEnabled: true,
+            status: { $ne: 3 } // Excluir enrollments en pausa
         })
             .populate('planId')
             .populate('studentIds.studentId')

@@ -141,6 +141,8 @@ Cuando se consulta un payout, los siguientes campos se populan automáticamente:
 }
 ```
 
+**Nota**: En el endpoint `preview`, el array `penalizationInfo` incluye información adicional del tipo y nivel de penalización (ver sección "🆕 Información del Tipo de Penalización").
+
 #### **bonusInfo[].id (Bonus)**
 ```javascript
 {
@@ -448,8 +450,14 @@ const totalBonuses = validBonuses.reduce((sum, bonus) => sum + (bonus.amount || 
 
 #### **8. Búsqueda de Penalizaciones**
 ```javascript
+// Buscar penalizaciones con populate de idPenalizacion para obtener información del tipo
 const penalizations = await PenalizationRegistry.find({
   professorId: professorId
+})
+.populate({
+  path: 'idPenalizacion',
+  select: 'name penalizationLevels',
+  model: 'Penalizacion'
 })
 .lean();
 
@@ -458,6 +466,52 @@ const validPenalizations = penalizations.filter(penalization => {
   if (!penalization.createdAt) return false;
   const penalizationDate = new Date(penalization.createdAt);
   return penalizationDate >= startDate && penalizationDate <= endDate;
+});
+
+// Crear array de penalizationInfo con información del tipo y nivel
+const penalizationInfo = validPenalizations.map(penalization => {
+  const info = {
+    id: penalization._id,
+    penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+    penalization_description: penalization.penalization_description || null,
+    createdAt: penalization.createdAt
+  };
+
+  // Información del tipo de penalización
+  if (penalization.idPenalizacion) {
+    const penalizacionType = penalization.idPenalizacion;
+    info.penalizationType = {
+      id: penalizacionType._id,
+      name: penalizacionType.name || null
+    };
+
+    // Buscar el nivel específico dentro del array penalizationLevels
+    if (penalization.idpenalizationLevel && penalizacionType.penalizationLevels) {
+      const targetLevelId = penalization.idpenalizationLevel.toString();
+      const levelInfo = penalizacionType.penalizationLevels.find(level => {
+        if (!level._id) return false;
+        const levelId = level._id.toString ? level._id.toString() : String(level._id);
+        return levelId === targetLevelId;
+      });
+      
+      if (levelInfo) {
+        info.penalizationLevel = {
+          tipo: levelInfo.tipo || null,
+          nivel: levelInfo.nivel || null,
+          description: levelInfo.description || null
+        };
+      } else {
+        info.penalizationLevel = null;
+      }
+    } else {
+      info.penalizationLevel = null;
+    }
+  } else {
+    info.penalizationType = null;
+    info.penalizationLevel = null;
+  }
+
+  return info;
 });
 
 const totalPenalizations = validPenalizations.reduce(
@@ -1348,7 +1402,16 @@ async function getPayoutPreview(professorId, month) {
       "id": "695589172f1fb5531ac0b64f",
       "penalizationMoney": 10.00,
       "penalization_description": "Penalización por vencimiento de días de pago",
-      "createdAt": "2025-12-15T10:30:00.000Z"
+      "createdAt": "2025-12-15T10:30:00.000Z",
+      "penalizationType": {
+        "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+        "name": "Vencimiento de días de pago"
+      },
+      "penalizationLevel": {
+        "tipo": "Llamado de Atención",
+        "nivel": 1,
+        "description": "Primera advertencia por retraso en pago"
+      }
     }
   ],
   "totals": {
@@ -1387,10 +1450,75 @@ async function getPayoutPreview(professorId, month) {
 | `penalizationInfo[].penalizationMoney` | Number | Monto de la penalización |
 | `penalizationInfo[].penalization_description` | String | Descripción de la penalización |
 | `penalizationInfo[].createdAt` | Date | Fecha de creación de la penalización |
+| `penalizationInfo[].penalizationType` | Object/null | 🆕 **NUEVO** - Información del tipo de penalización |
+| `penalizationInfo[].penalizationType.id` | String | ID del tipo de penalización (referencia a Penalizacion) |
+| `penalizationInfo[].penalizationType.name` | String/null | Nombre del tipo de penalización (ej: "Vencimiento de días de pago") |
+| `penalizationInfo[].penalizationLevel` | Object/null | 🆕 **NUEVO** - Información del nivel específico de penalización |
+| `penalizationInfo[].penalizationLevel.tipo` | String/null | Tipo del nivel (ej: "Llamado de Atención", "Amonestación", "Suspensión") |
+| `penalizationInfo[].penalizationLevel.nivel` | Number/null | Número del nivel (1, 2, 3, etc.) |
+| `penalizationInfo[].penalizationLevel.description` | String/null | Descripción específica para este nivel y tipo de penalización |
 | `totals.subtotalEnrollments` | Number | Suma de todos los subtotales de enrollments |
 | `totals.totalBonuses` | Number | Suma de bonos válidos del mes |
 | `totals.totalPenalizations` | Number | Suma de penalizaciones del mes |
 | `totals.grandTotal` | Number | Total general = subtotalEnrollments + totalBonuses - totalPenalizations |
+
+#### **🆕 Información del Tipo de Penalización**
+
+Cada elemento en el array `penalizationInfo` ahora incluye información detallada sobre el tipo y nivel de penalización:
+
+**Estructura de `penalizationType`:**
+```json
+{
+  "penalizationType": {
+    "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+    "name": "Vencimiento de días de pago"
+  }
+}
+```
+
+- **`id`** (string): ID del tipo de penalización (referencia a la colección `Penalizacion`)
+- **`name`** (string/null): Nombre del tipo de penalización (ej: "Vencimiento de días de pago", "Contacto privado no autorizado")
+- **Valor `null`**: Si la penalización no tiene un tipo asociado (`idPenalizacion` es `null`)
+
+**Estructura de `penalizationLevel`:**
+```json
+{
+  "penalizationLevel": {
+    "tipo": "Llamado de Atención",
+    "nivel": 1,
+    "description": "Primera advertencia por retraso en pago"
+  }
+}
+```
+
+- **`tipo`** (string/null): Tipo del nivel de penalización (ej: "Llamado de Atención", "Amonestación", "Suspensión")
+- **`nivel`** (number/null): Número del nivel (1, 2, 3, etc.)
+- **`description`** (string/null): Descripción específica para este nivel y tipo de penalización
+- **Valor `null`**: Si la penalización no tiene un nivel asociado (`idpenalizationLevel` es `null` o no se encuentra en el array `penalizationLevels`)
+
+**Ejemplo Completo:**
+```json
+{
+  "id": "695589172f1fb5531ac0b64f",
+  "penalizationMoney": 50.00,
+  "penalization_description": "Penalización por vencimiento de días de pago. Enrollment vencido el 2025-12-15",
+  "createdAt": "2025-12-15T10:30:00.000Z",
+  "penalizationType": {
+    "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+    "name": "Vencimiento de días de pago"
+  },
+  "penalizationLevel": {
+    "tipo": "Llamado de Atención",
+    "nivel": 1,
+    "description": "Primera advertencia por retraso en pago"
+  }
+}
+```
+
+**Casos Especiales:**
+- Si `penalizationType` es `null`: La penalización no tiene un tipo asociado (fue creada sin referencia a `Penalizacion`)
+- Si `penalizationLevel` es `null`: La penalización no tiene un nivel específico o el nivel no se encontró en el array `penalizationLevels`
+- Si ambos son `null`: La penalización solo tiene información básica (`penalizationMoney` y `penalization_description`)
 
 #### **Lógica de Cálculo**
 
@@ -1449,6 +1577,10 @@ grandTotal = subtotalEnrollments + totalBonuses - totalPenalizations
 - **Alias vs Nombres**: Si el enrollment tiene `alias` (no es `null`), se usa ese valor. Si no, se concatenan los nombres de los estudiantes ordenados alfabéticamente
 - **Suplentes**: Solo se consideran clases donde el `professorId` del ClassRegistry coincide con el del enrollment. Las clases dadas por suplentes no se incluyen en el cálculo del profesor principal
 - **Reschedules**: Solo se consideran reschedules que estén dentro del mes del reporte y que pertenezcan al mismo profesor
+- **🆕 Información del Tipo de Penalización**: Cada penalización en `penalizationInfo` ahora incluye:
+  - `penalizationType`: Información del tipo de penalización (nombre del catálogo de tipos)
+  - `penalizationLevel`: Información del nivel específico (tipo, nivel y descripción)
+  - Si una penalización no tiene tipo o nivel asociado, estos campos serán `null`
 
 #### **Errores Comunes**
 

@@ -408,6 +408,9 @@ enrollmentCtrl.create = async (req, res) => {
 
             // Inicializar disolve_user como null al crear
             req.body.disolve_user = null;
+            
+            // Inicializar pauseDate como null al crear
+            req.body.pauseDate = null;
 
             const newEnrollment = new Enrollment(req.body);
             const savedEnrollment = await newEnrollment.save();
@@ -484,6 +487,9 @@ enrollmentCtrl.create = async (req, res) => {
 
             // Inicializar disolve_user como null al crear
             req.body.disolve_user = null;
+            
+            // Inicializar pauseDate como null al crear
+            req.body.pauseDate = null;
 
             const newEnrollment = new Enrollment(req.body);
             const savedEnrollment = await newEnrollment.save();
@@ -715,6 +721,19 @@ enrollmentCtrl.update = async (req, res) => {
             });
         }
 
+        // Si el status cambia a 3 (en pausa), establecer pauseDate con la fecha actual
+        if (req.body.status === 3) {
+            // Obtener el enrollment actual para verificar si el status está cambiando
+            const currentEnrollment = await Enrollment.findById(req.params.id).lean();
+            if (currentEnrollment && currentEnrollment.status !== 3) {
+                // El status está cambiando a 3, establecer pauseDate
+                req.body.pauseDate = new Date();
+            } else if (currentEnrollment && currentEnrollment.status === 3 && !req.body.pauseDate) {
+                // Si ya está en pausa y no se está actualizando pauseDate, mantener el valor existente
+                req.body.pauseDate = currentEnrollment.pauseDate;
+            }
+        }
+
         const updatedEnrollment = await Enrollment.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!updatedEnrollment) {
             return res.status(404).json({ message: 'Matrícula no encontrada' });
@@ -921,7 +940,10 @@ enrollmentCtrl.pause = async (req, res) => {
     try {
         const pausedEnrollment = await Enrollment.findByIdAndUpdate(
             req.params.id,
-            { status: 3 }, // 3 = en pausa
+            { 
+                status: 3, // 3 = en pausa
+                pauseDate: new Date() // Establecer la fecha de pausa con la fecha actual
+            },
             { new: true }
         );
 

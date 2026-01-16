@@ -115,6 +115,7 @@ const headers = {
   "penalizationMoney": 0,
   "penalizationId": null,
   "penalizationCount": 0,
+  "pauseDate": null,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -195,6 +196,10 @@ const headers = {
   - Este contador se incrementa cada vez que se crea una penalización asociada al enrollment
   - Permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
   - Valor mínimo: 0 (no puede ser negativo)
+- `pauseDate` (date): Fecha en que se pausó el enrollment (por defecto: null)
+  - Se establece automáticamente cuando se ejecuta el endpoint de pausa (`PATCH /api/enrollments/:id/pause`)
+  - Si el enrollment no ha sido pausado, este campo será `null`
+  - Si el enrollment se reactiva, este campo puede mantenerse para registro histórico o ser establecido a `null` según la lógica del sistema
 - `status` (number): Estado de la matrícula
   - `1` = Activo
   - `2` = Inactivo
@@ -769,6 +774,7 @@ El cálculo depende del `planType` del plan:
     "penalizationMoney": 0,
     "penalizationId": null,
     "penalizationCount": 0,
+    "pauseDate": null,
     "status": 1,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -778,6 +784,8 @@ El cálculo depende del `planType` del plan:
 ```
 
 **Nota:** El campo `classesCreated` indica cuántos registros se generaron automáticamente en `class-registry` para este enrollment.
+
+**Nota sobre `pauseDate`:** El campo `pauseDate` se inicializa automáticamente como `null` al crear un enrollment. Este campo se establecerá automáticamente con la fecha actual cuando el enrollment se pausa (status cambia a 3).
 
 ---
 
@@ -854,6 +862,7 @@ GET /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
   "startDate": "2024-01-22T00:00:00.000Z",
   "endDate": "2024-02-21T23:59:59.999Z",
   "penalizationCount": 2,
+  "pauseDate": null,
   "status": 1,
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z",
@@ -868,9 +877,12 @@ GET /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0
       "count": 1
     },
     "totalPenalizationMoney": 50.00
-  }
+  },
+  "conversationalAttendances": [ ... ]
 }
 ```
+
+**Nota sobre `pauseDate`:** El campo `pauseDate` se incluye en la respuesta. Si el enrollment nunca ha sido pausado, será `null`. Si el enrollment está o ha estado en pausa, contendrá la fecha y hora en que se pausó por primera vez (o la última vez que se estableció al cambiar el status a 3).
 
 #### **Información de Penalizaciones (`penalizationInfo`)**
 
@@ -1345,6 +1357,11 @@ Puedes enviar cualquier campo del modelo Enrollment que desees actualizar. Todos
 }
 ```
 
+**⚠️ Comportamiento Especial de `pauseDate` y `status`:**
+- Si actualizas el `status` a `3` (en pausa) y el enrollment no estaba previamente en pausa, el sistema establecerá automáticamente `pauseDate` con la fecha y hora actual.
+- Si el enrollment ya estaba en pausa (`status: 3`) y no proporcionas `pauseDate` en el request, se mantendrá el valor existente.
+- Si actualizas `pauseDate` manualmente, se respetará el valor proporcionado.
+
 #### **Response (200 - OK)**
 ```json
 {
@@ -1603,14 +1620,16 @@ No requiere body.
   "enrollment": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
     "status": 3,
+    "pauseDate": "2024-02-15T10:30:00.000Z",
     ...
   }
 }
 ```
 
 #### **Campos Actualizados**
-Cuando se ejecuta el endpoint de pausa, se actualiza el siguiente campo:
+Cuando se ejecuta el endpoint de pausa, se actualizan los siguientes campos:
 - `status`: Se establece a `3` (en pausa)
+- `pauseDate`: Se establece automáticamente con la fecha y hora actual en que se ejecuta la pausa
 
 #### **Errores Posibles**
 - `400`: ID de matrícula inválido
@@ -1772,6 +1791,7 @@ Cuando se ejecuta el endpoint de reactivación, se actualizan los siguientes cam
 - `endDate`: Se recalcula según el número de clases restantes y el `planType` del plan
 - `monthlyClasses`: Se actualiza según las clases reagendadas
 - `status`: Se establece a `1` (activo)
+- `pauseDate`: Se mantiene para registro histórico (no se elimina al reactivar)
 
 **En las Clases (ClassRegistry):**
 - `classDate`: Se actualiza para todas las clases pendientes (`classViewed: 0`) y clases en reschedule (`reschedule: 1`)

@@ -272,6 +272,11 @@ const EnrollmentSchema = new mongoose.Schema({
         // Este contador se incrementa cada vez que se crea una penalización asociada al enrollment
         // Permite llevar un registro del historial de penalizaciones sin necesidad de consultar la colección de penalizaciones
     },
+    pauseDate: {
+        type: Date,
+        default: null
+        // fecha en que se pausó el enrollment
+    },
     status: {
         type: Number,
         enum: [1, 0, 2, 3], // 1 = activo, 2 = inactivo, 0 = disolve, 3 = en pausa

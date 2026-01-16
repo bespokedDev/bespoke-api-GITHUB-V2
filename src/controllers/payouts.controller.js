@@ -5,6 +5,7 @@ const Enrollment = require('../models/Enrollment');
 const ClassRegistry = require('../models/ClassRegistry');
 const Bonus = require('../models/Bonus');
 const PenalizationRegistry = require('../models/PenalizationRegistry');
+const Penalizacion = require('../models/Penalizacion');
 const moment = require('moment');
 const ProfessorType = require('../models/ProfessorType');
 // IMPORTANTE: No importamos PaymentMethod aquí porque no estamos referenciando una colección PaymentMethod
@@ -82,7 +83,9 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
     const monthStartStr = moment.utc(monthStartDate).format('YYYY-MM-DD');
     const monthEndStr = moment.utc(monthEndDate).format('YYYY-MM-DD');
 
-    // Buscar todas las clases dentro del mes con classViewed = 1, 2 o 3
+    // Buscar todas las clases originales (padre) dentro del mes
+    // Las clases originales pueden tener reschedule: 0 (normales) o reschedule: 1 (con reschedule asociado)
+    // La diferencia es que las clases originales tienen originalClassId: null (son clases padre)
     // Solo clases donde professorId del ClassRegistry coincida con el enrollment.professorId
     // Si professorId es null, se considera como del profesor del enrollment
     const classRegistriesInMonth = await ClassRegistry.find({
@@ -91,97 +94,139 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
             $gte: monthStartStr,
             $lte: monthEndStr
         },
-        classViewed: { $in: [1, 2, 3] }, // Solo clases vistas (1), parcialmente vistas (2) o no show (3)
+        reschedule: { $in: [0, 1] }, // Clases originales: normales (0) o con reschedule (1)
+        originalClassId: null, // Solo clases padre (originales), no clases hijas (reschedules)
         $or: [
             { professorId: new mongoose.Types.ObjectId(enrollmentProfessorId) }, // Clases del profesor del enrollment
             { professorId: null } // Clases sin profesor asignado (se consideran del profesor del enrollment)
         ]
     })
-    .populate('originalClassId', 'minutesViewed minutesClassDefault')
+    .populate('professorId', 'name ciNumber typeId')
+    .populate('userId', 'name email role')
     .lean();
 
     console.log(`[processClassRegistryForPayoutPreview] Enrollment: ${enrollment._id}, Profesor: ${enrollmentProfessorId}`);
     console.log(`[processClassRegistryForPayoutPreview] Rango de fechas: ${monthStartStr} a ${monthEndStr}`);
-    console.log(`[processClassRegistryForPayoutPreview] Clases encontradas: ${classRegistriesInMonth.length}`);
+    console.log(`[processClassRegistryForPayoutPreview] Clases originales encontradas: ${classRegistriesInMonth.length}`);
     classRegistriesInMonth.forEach((cr, idx) => {
-        console.log(`[processClassRegistryForPayoutPreview] Clase ${idx + 1}: ID=${cr._id}, classDate=${cr.classDate}, classViewed=${cr.classViewed}, reschedule=${cr.reschedule}, minutesViewed=${cr.minutesViewed}, minutesClassDefault=${cr.minutesClassDefault}, originalClassId=${cr.originalClassId ? cr.originalClassId._id : 'null'}`);
+        console.log(`[processClassRegistryForPayoutPreview] Clase original ${idx + 1}: ID=${cr._id}, classDate=${cr.classDate}, classViewed=${cr.classViewed}, reschedule=${cr.reschedule}, minutesViewed=${cr.minutesViewed}, minutesClassDefault=${cr.minutesClassDefault}, originalClassId=${cr.originalClassId || 'null'}`);
     });
 
     let totalHours = 0;
     let totalMinutes = 0;
 
-    // Buscar reschedules dentro del mes para las clases normales encontradas
-    const normalClassIds = classRegistriesInMonth
-        .filter(cr => cr.reschedule === 0)
-        .map(cr => cr._id);
+    // Buscar reschedules (clases hijas) dentro del mes para las clases originales encontradas
+    const originalClassIds = classRegistriesInMonth.map(cr => cr._id);
     
-    const reschedulesInMonth = normalClassIds.length > 0 ? await ClassRegistry.find({
+    const reschedulesInMonth = originalClassIds.length > 0 ? await ClassRegistry.find({
         enrollmentId: enrollment._id,
         classDate: {
             $gte: monthStartStr,
             $lte: monthEndStr
         },
-        originalClassId: { $in: normalClassIds },
-        reschedule: { $in: [1, 2] }, // Clases en reschedule
+        originalClassId: { $in: originalClassIds }, // Reschedules que apuntan a las clases originales encontradas
+        reschedule: { $in: [1, 2] }, // Clases hijas en reschedule (1 = en reschedule, 2 = reschedule visto)
         $or: [
             { professorId: new mongoose.Types.ObjectId(enrollmentProfessorId) }, // Reschedules del profesor del enrollment
             { professorId: null } // Reschedules sin profesor asignado (se consideran del profesor del enrollment)
         ]
     })
-    .populate('originalClassId', '_id')
+    .populate('professorId', 'name ciNumber typeId')
+    .populate('userId', 'name email role')
     .lean() : [];
+
+    console.log(`[processClassRegistryForPayoutPreview] Reschedules (hijos) encontrados: ${reschedulesInMonth.length}`);
+    console.log(`[processClassRegistryForPayoutPreview] IDs de clases originales buscadas: ${originalClassIds.map(id => id.toString()).join(', ')}`);
+    reschedulesInMonth.forEach((rs, idx) => {
+        const origIdStr = rs.originalClassId ? (rs.originalClassId._id ? rs.originalClassId._id.toString() : rs.originalClassId.toString()) : 'null';
+        console.log(`[processClassRegistryForPayoutPreview] Reschedule ${idx + 1}: ID=${rs._id}, classDate=${rs.classDate}, reschedule=${rs.reschedule}, minutesViewed=${rs.minutesViewed}, originalClassId=${origIdStr}`);
+    });
 
     // Crear un mapa de reschedules por originalClassId para acceso rápido
     const reschedulesMap = new Map();
     for (const reschedule of reschedulesInMonth) {
-        const originalId = reschedule.originalClassId ? reschedule.originalClassId._id.toString() : null;
+        // originalClassId puede ser un ObjectId directo (no populado) o un objeto populado
+        let originalId = null;
+        if (reschedule.originalClassId) {
+            if (reschedule.originalClassId._id) {
+                // Está populado
+                originalId = reschedule.originalClassId._id.toString();
+            } else {
+                // Es un ObjectId directo
+                originalId = reschedule.originalClassId.toString();
+            }
+        }
+        
         if (originalId) {
             if (!reschedulesMap.has(originalId)) {
                 reschedulesMap.set(originalId, []);
             }
             reschedulesMap.get(originalId).push(reschedule);
+            console.log(`[processClassRegistryForPayoutPreview] Reschedule ${reschedule._id} mapeado a clase original ${originalId}`);
+        } else {
+            console.log(`[processClassRegistryForPayoutPreview] ⚠️ Reschedule ${reschedule._id} no tiene originalClassId válido`);
         }
     }
 
-    // Procesar cada clase normal
+    // Procesar cada clase original
     for (const classRecord of classRegistriesInMonth) {
-        // Solo procesar clases normales (reschedule = 0)
-        if (classRecord.reschedule !== 0) {
-            console.log(`[processClassRegistryForPayoutPreview] ⚠️ Saltando clase ${classRecord._id} porque reschedule=${classRecord.reschedule} (no es clase normal)`);
+        // Buscar reschedules (hijos) de esta clase original dentro del mes
+        const classRecordId = classRecord._id.toString();
+        const reschedulesForThisClass = reschedulesMap.get(classRecordId) || [];
+        console.log(`[processClassRegistryForPayoutPreview] Procesando clase original ${classRecord._id}: encontró ${reschedulesForThisClass.length} reschedules (hijos) asociados`);
+
+        // Calcular minutos de la clase original
+        // Si classViewed === 3 (no show), usar minutesClassDefault (60 minutos) si minutesViewed es null o 0
+        // Las clases no show se pagan como hora completa estándar
+        // Para classViewed: 0, 1 y 2, usar el valor de minutesViewed (si es null o 0, se convierte a 0)
+        let classOriginalMinutes = classRecord.minutesViewed;
+        if (classRecord.classViewed === 3 && (!classOriginalMinutes || classOriginalMinutes === null || classOriginalMinutes === 0)) {
+            classOriginalMinutes = classRecord.minutesClassDefault || 60; // 1 hora completa para clases no show
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: classViewed=3 y minutesViewed es null/0 → usando minutesClassDefault=${classOriginalMinutes}`);
+        } else {
+            classOriginalMinutes = classOriginalMinutes || 0;
+        }
+
+        // Solo procesar clases originales con classViewed válido (1, 2 o 3) O si tienen reschedules asociados
+        // Si classViewed = 0 pero tiene reschedules, también se procesa para sumar los minutos del reschedule
+        const hasValidClassViewed = [1, 2, 3].includes(classRecord.classViewed);
+        const hasReschedules = reschedulesForThisClass.length > 0;
+        
+        if (!hasValidClassViewed && !hasReschedules) {
+            console.log(`[processClassRegistryForPayoutPreview] ⚠️ Saltando clase original ${classRecord._id} porque classViewed=${classRecord.classViewed} (no válido) y no tiene reschedules`);
             continue;
         }
 
+        // Si la clase original no tiene classViewed válido pero tiene reschedules, solo contar los reschedules
         let minutesToUse = 0;
-
-        // Determinar minutos según classViewed
-        if (classRecord.classViewed === 3) {
-            // classViewed = 3: usar minutesClassDefault (60 minutos) = 1 hora completa
-            minutesToUse = classRecord.minutesClassDefault || 60;
-            console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: classViewed=3, usando minutesClassDefault=${minutesToUse}`);
+        if (hasValidClassViewed && classOriginalMinutes > 0) {
+            minutesToUse = classOriginalMinutes;
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: classViewed=${classRecord.classViewed}, minutos de clase original=${minutesToUse}`);
+        } else if (hasValidClassViewed) {
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: classViewed=${classRecord.classViewed} pero minutesViewed=0, no se suma`);
         } else {
-            // classViewed = 1 o 2: usar minutesViewed
-            minutesToUse = classRecord.minutesViewed || 0;
-            console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: classViewed=${classRecord.classViewed}, usando minutesViewed=${minutesToUse}`);
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: classViewed=${classRecord.classViewed} (no válido), solo se contarán reschedules si existen`);
         }
-
-        // Buscar reschedules de esta clase normal dentro del mes
-        const classRecordId = classRecord._id.toString();
-        const reschedulesForThisClass = reschedulesMap.get(classRecordId) || [];
-        console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: encontró ${reschedulesForThisClass.length} reschedules asociados`);
 
         // Si hay reschedules, sumar sus minutos
         for (const reschedule of reschedulesForThisClass) {
             if (reschedule.minutesViewed) {
-                console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: sumando ${reschedule.minutesViewed} minutos del reschedule ${reschedule._id}`);
+                console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: sumando ${reschedule.minutesViewed} minutos del reschedule (hijo) ${reschedule._id}`);
                 minutesToUse += reschedule.minutesViewed;
+            } else {
+                console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: reschedule (hijo) ${reschedule._id} tiene minutesViewed=null/0, se ignora`);
             }
         }
 
-        // Convertir minutos a horas fraccionales y acumular
-        const fractionalHours = convertMinutesToFractionalHours(minutesToUse);
-        console.log(`[processClassRegistryForPayoutPreview] Clase ${classRecord._id}: minutos totales=${minutesToUse}, horas fraccionales=${fractionalHours}`);
-        totalHours += fractionalHours;
-        totalMinutes += minutesToUse;
+        // Solo convertir y acumular si hay minutos válidos
+        if (minutesToUse > 0) {
+            const fractionalHours = convertMinutesToFractionalHours(minutesToUse);
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: minutos totales=${minutesToUse}, horas fraccionales=${fractionalHours}`);
+            totalHours += fractionalHours;
+            totalMinutes += minutesToUse;
+        } else {
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: minutos totales=0, no se acumula`);
+        }
     }
 
     console.log(`[processClassRegistryForPayoutPreview] Total final: ${totalHours} horas, ${totalMinutes} minutos`);
@@ -1018,8 +1063,14 @@ payoutCtrl.preview = async (req, res) => {
         const totalBonuses = validBonuses.reduce((sum, bonus) => sum + (bonus.amount || 0), 0);
 
         // Buscar penalizaciones del profesor dentro del rango del mes
+        // Hacer populate de idPenalizacion para obtener información del tipo de penalización
         const penalizations = await PenalizationRegistry.find({
             professorId: professorId
+        })
+        .populate({
+            path: 'idPenalizacion',
+            select: 'name penalizationLevels',
+            model: 'Penalizacion'
         })
         .lean();
 
@@ -1030,13 +1081,55 @@ payoutCtrl.preview = async (req, res) => {
             return penalizationDate >= startDate && penalizationDate <= endDate;
         });
 
-        // Crear array de penalizationInfo con detalles completos
-        const penalizationInfo = validPenalizations.map(penalization => ({
-            id: penalization._id,
-            penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
-            penalization_description: penalization.penalization_description || null,
-            createdAt: penalization.createdAt
-        }));
+        // Crear array de penalizationInfo con detalles completos incluyendo información del tipo
+        const penalizationInfo = validPenalizations.map(penalization => {
+            // Información básica de la penalización
+            const info = {
+                id: penalization._id,
+                penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+                penalization_description: penalization.penalization_description || null,
+                createdAt: penalization.createdAt
+            };
+
+            // Información del tipo de penalización (idPenalizacion)
+            if (penalization.idPenalizacion) {
+                const penalizacionType = penalization.idPenalizacion;
+                info.penalizationType = {
+                    id: penalizacionType._id,
+                    name: penalizacionType.name || null
+                };
+
+                // Buscar el nivel específico dentro del array penalizationLevels
+                if (penalization.idpenalizationLevel && penalizacionType.penalizationLevels) {
+                    // Convertir idpenalizationLevel a string para comparación
+                    const targetLevelId = penalization.idpenalizationLevel.toString();
+                    
+                    const levelInfo = penalizacionType.penalizationLevels.find(level => {
+                        if (!level._id) return false;
+                        // Manejar tanto ObjectId como string
+                        const levelId = level._id.toString ? level._id.toString() : String(level._id);
+                        return levelId === targetLevelId;
+                    });
+                    
+                    if (levelInfo) {
+                        info.penalizationLevel = {
+                            tipo: levelInfo.tipo || null,
+                            nivel: levelInfo.nivel || null,
+                            description: levelInfo.description || null
+                        };
+                    } else {
+                        info.penalizationLevel = null;
+                    }
+                } else {
+                    info.penalizationLevel = null;
+                }
+            } else {
+                info.penalizationType = null;
+                info.penalizationLevel = null;
+            }
+
+            return info;
+        });
 
         const totalPenalizations = validPenalizations.reduce((sum, penalization) => sum + (penalization.penalizationMoney || 0), 0);
 
