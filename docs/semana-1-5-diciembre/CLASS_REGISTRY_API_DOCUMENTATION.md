@@ -1223,6 +1223,393 @@ createRescheduleClass('64f8a1b2c3d4e5f6a7b8c9d0', {
 
 ---
 
+### **5. Actualizar datos de un registro de clase**
+
+#### **PUT** `/api/class-registry/:id`
+
+Actualiza los datos de un registro de clase. Solo se pueden actualizar los campos permitidos. Este endpoint también actualiza automáticamente el `balance_per_class` del enrollment asociado cuando se marca una clase como vista (`classViewed: 1, 2 o 3`).
+
+**Roles permitidos:** `admin`, `professor`
+
+#### **Headers**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **URL Parameters**
+- `id` (String, requerido): ID del registro de clase (ObjectId de MongoDB)
+
+#### **Request Body**
+```json
+{
+  "classTime": "14:30",
+  "hoursViewed": 1,
+  "minutesViewed": 30,
+  "classType": ["64f8a1b2c3d4e5f6a7b8c9d1"],
+  "contentType": ["64f8a1b2c3d4e5f6a7b8c9d2"],
+  "studentMood": "Motivado",
+  "note": {
+    "content": "Clase muy productiva",
+    "visible": {
+      "admin": 1,
+      "student": 0,
+      "professor": 1
+    }
+  },
+  "homework": "Ejercicios de gramática",
+  "token": "abc123xyz",
+  "classViewed": 1,
+  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please"
+}
+```
+
+**Campos Actualizables (todos opcionales):**
+- `classTime` (String/null): Hora de la clase en formato `HH:mm` (ej: "14:30"). Puede ser `null` o string vacío
+- `hoursViewed` (Number/null): Tiempo visto en horas (puede ser `null`)
+- `minutesViewed` (Number/null): Tiempo visto en minutos (puede ser `null`). **Requerido cuando `classViewed` es `2` (clase parcialmente vista)**
+- `classType` (Array[String]): Array de IDs de tipos de clase (ObjectIds válidos)
+- `contentType` (Array[String]): Array de IDs de tipos de contenido (ObjectIds válidos)
+- `studentMood` (String/null): Estado de ánimo del estudiante (puede ser `null` o string vacío)
+- `note` (Object/null): Nota sobre la clase. Puede ser `null` o un objeto con:
+  - `content` (String/null): Contenido de la nota (puede ser `null` o string vacío)
+  - `visible` (Object, opcional): Control de visibilidad por rol. Si no se proporciona, se mantienen los valores actuales o se usan los valores por defecto
+    - `admin` (Number): `1` = visible para admin, `0` = no visible
+    - `student` (Number): `1` = visible para estudiante, `0` = no visible
+    - `professor` (Number): `1` = visible para profesor, `0` = no visible
+- `homework` (String/null): Tarea asignada (puede ser `null` o string vacío)
+- `token` (String/null): Token de la clase (puede ser `null` o string vacío)
+- `classViewed` (Number): Estado de visualización. Valores permitidos:
+  - `0`: No vista
+  - `1`: Vista completa
+  - `2`: Parcialmente vista (requiere `minutesViewed` >= 15)
+  - `3`: No show (no asistió)
+  - `4`: Otro estado
+- `vocabularyContent` (String/null): Contenido de vocabulario de la clase (puede ser `null` o string vacío)
+
+**⚠️ Nota:** El campo `reschedule` se maneja de forma especial mediante el endpoint de reschedule y no se puede actualizar directamente.
+
+#### **Lógica de Actualización de Balance (`balance_per_class`)**
+
+Cuando se actualiza `classViewed` a `1`, `2` o `3` (y el valor anterior no era `1`, `2` o `3`), el sistema automáticamente:
+
+1. **Calcula el valor por clase:**
+   - `valorPorClase = enrollment.totalAmount / totalClasesOriginales`
+   - Donde `totalClasesOriginales` es el conteo de clases con `reschedule: 0` del enrollment
+
+2. **Calcula el valor a restar según el tipo de `classViewed`:**
+   - **`classViewed: 1` (Vista completa)** o **`classViewed: 3` (No show)**: Resta el valor completo (`valorARestar = valorPorClase`)
+   - **`classViewed: 2` (Parcialmente vista)**: Calcula proporción según `minutesViewed`:
+     - `0-15 minutos`: Multiplicador `0.25` (25% del valor)
+     - `16-30 minutos`: Multiplicador `0.5` (50% del valor)
+     - `31-45 minutos`: Multiplicador `0.75` (75% del valor)
+     - `46-60 minutos`: Multiplicador `1.0` (100% del valor)
+     - `>60 minutos`: Multiplicador `1.0` (100% del valor)
+     - `valorARestar = valorPorClase * multiplicador`
+
+3. **Valida y actualiza:**
+   - Verifica que `balance_per_class` no quede negativo después de la resta
+   - Si el balance quedaría negativo, retorna error 400
+   - Si es válido, actualiza `enrollment.balance_per_class = balance_per_class - valorARestar`
+
+**⚠️ Importante:**
+- Esta lógica solo se aplica cuando `classViewed` cambia de un valor que NO es `1`, `2` o `3` a un valor que SÍ es `1`, `2` o `3`
+- Si la clase ya tenía `classViewed: 1, 2 o 3`, no se vuelve a restar del balance
+- Para `classViewed: 2`, el campo `minutesViewed` es **obligatorio** y debe ser >= 15
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Registro de clase actualizado exitosamente",
+  "class": {
+    "_id": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "enrollmentId": {
+      "_id": "692a1f4a5fa3f53b825ee53f",
+      "alias": "Clases de Inglés - Juan",
+      "language": "English",
+      "enrollmentType": "single"
+    },
+    "classDate": "2024-01-22",
+    "classTime": "14:30",
+    "hoursViewed": 1,
+    "minutesViewed": 30,
+    "classType": [
+      {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "name": "Individual"
+      }
+    ],
+    "contentType": [
+      {
+        "_id": "64f8a1b2c3d4e5f6a7b8c9d2",
+        "name": "Conversación"
+      }
+    ],
+    "studentMood": "Motivado",
+    "note": {
+      "content": "Clase muy productiva",
+      "visible": {
+        "admin": 1,
+        "student": 0,
+        "professor": 1
+      }
+    },
+    "homework": "Ejercicios de gramática",
+    "token": "abc123xyz",
+    "reschedule": 0,
+    "classViewed": 1,
+    "minutesClassDefault": 60,
+    "originalClassId": null,
+    "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+    "professorId": null,
+    "userId": null,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-22T16:00:00.000Z"
+  }
+}
+```
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+```json
+{
+  "message": "ID de registro de clase inválido."
+}
+```
+- **Causa**: El ID proporcionado no es un ObjectId válido
+
+```json
+{
+  "message": "Registro de clase no encontrado."
+}
+```
+- **Causa**: El ID proporcionado no existe en la base de datos
+
+```json
+{
+  "message": "El campo hoursViewed debe ser un número positivo o null."
+}
+```
+- **Causa**: `hoursViewed` no es un número positivo o `null`
+
+```json
+{
+  "message": "El campo minutesViewed debe ser un número positivo o null."
+}
+```
+- **Causa**: `minutesViewed` no es un número positivo o `null`
+
+```json
+{
+  "message": "El campo classType debe ser un array."
+}
+```
+- **Causa**: `classType` no es un array
+
+```json
+{
+  "message": "ID de classType inválido: <id>."
+}
+```
+- **Causa**: Uno de los IDs en `classType` no es un ObjectId válido
+
+```json
+{
+  "message": "ID de contentType inválido: <id>."
+}
+```
+- **Causa**: Uno de los IDs en `contentType` no es un ObjectId válido
+
+```json
+{
+  "message": "El campo classTime debe tener el formato HH:mm (ej: 14:30) o ser null."
+}
+```
+- **Causa**: `classTime` no tiene el formato `HH:mm` válido
+
+```json
+{
+  "message": "El campo classViewed debe ser 0, 1, 2, 3 o 4."
+}
+```
+- **Causa**: `classViewed` no es uno de los valores permitidos
+
+```json
+{
+  "message": "El campo note debe ser un objeto con content y visible, o null."
+}
+```
+- **Causa**: `note` no es un objeto válido o `null`
+
+```json
+{
+  "message": "El campo note.visible.admin debe ser 0 o 1."
+}
+```
+- **Causa**: `note.visible.admin` no es `0` o `1`
+
+```json
+{
+  "message": "El campo minutesViewed es requerido cuando classViewed es 2 (clase parcialmente vista)."
+}
+```
+- **Causa**: Se intentó marcar una clase como parcialmente vista (`classViewed: 2`) sin proporcionar `minutesViewed`
+
+```json
+{
+  "message": "El campo minutesViewed debe ser mayor o igual a 15 cuando classViewed es 2."
+}
+```
+- **Causa**: `minutesViewed` es menor a 15 cuando `classViewed` es `2`
+
+```json
+{
+  "message": "Enrollment no encontrado para esta clase."
+}
+```
+- **Causa**: El enrollment asociado a la clase no existe
+
+```json
+{
+  "message": "No se pueden calcular costos: el enrollment no tiene clases originales registradas."
+}
+```
+- **Causa**: El enrollment no tiene clases con `reschedule: 0` para calcular el valor por clase
+
+```json
+{
+  "message": "No se puede actualizar la clase: el balance_per_class quedaría negativo (<balance>). Balance actual: <actual>, Valor a restar: <valor>."
+}
+```
+- **Causa**: Al restar el valor de la clase del `balance_per_class`, el balance quedaría negativo
+
+**404 Not Found**
+```json
+{
+  "message": "Registro de clase no encontrado."
+}
+```
+- **Causa**: El ID proporcionado no existe en la base de datos
+
+**500 Internal Server Error**
+```json
+{
+  "message": "Error interno al actualizar registro de clase",
+  "error": "Detalles técnicos del error"
+}
+```
+- **Causa**: Error inesperado del servidor
+
+#### **Ejemplo con cURL**
+```bash
+# Actualizar hora y estado de visualización
+curl -X PUT http://localhost:3000/api/class-registry/64f8a1b2c3d4e5f6a7b8c9d0 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "classTime": "14:30",
+    "hoursViewed": 1,
+    "minutesViewed": 30,
+    "classType": ["64f8a1b2c3d4e5f6a7b8c9d1"],
+    "contentType": ["64f8a1b2c3d4e5f6a7b8c9d2"],
+    "studentMood": "Motivado",
+    "note": {
+      "content": "Clase muy productiva",
+      "visible": {
+        "admin": 1,
+        "student": 0,
+        "professor": 1
+      }
+    },
+    "classViewed": 1,
+    "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please"
+  }'
+
+# Actualizar clase como parcialmente vista (requiere minutesViewed)
+curl -X PUT http://localhost:3000/api/class-registry/64f8a1b2c3d4e5f6a7b8c9d0 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "classViewed": 2,
+    "minutesViewed": 25
+  }'
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const updateClassRegistry = async (classId, updateData) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/class-registry/${classId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(updateData)
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Clase actualizada:', data.class);
+      return data.class;
+    } else {
+      console.error('Error:', data.message);
+      throw new Error(data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+    throw error;
+  }
+};
+
+// Ejemplo 1: Actualizar hora y marcar como vista completa
+await updateClassRegistry('64f8a1b2c3d4e5f6a7b8c9d0', {
+  classTime: "14:30",
+  hoursViewed: 1,
+  minutesViewed: 60,
+  classViewed: 1,
+  studentMood: "Motivado",
+  vocabularyContent: "Palabras nuevas: hello, goodbye, thank you, please"
+});
+
+// Ejemplo 2: Marcar como parcialmente vista (actualiza balance_per_class)
+await updateClassRegistry('64f8a1b2c3d4e5f6a7b8c9d0', {
+  classViewed: 2,
+  minutesViewed: 30  // Requerido para classViewed: 2
+});
+
+// Ejemplo 3: Marcar como no show (actualiza balance_per_class)
+await updateClassRegistry('64f8a1b2c3d4e5f6a7b8c9d0', {
+  classViewed: 3
+});
+
+// Ejemplo 4: Actualizar solo la nota
+await updateClassRegistry('64f8a1b2c3d4e5f6a7b8c9d0', {
+  note: {
+    content: "Clase muy productiva, el estudiante mostró gran interés",
+    visible: {
+      admin: 1,
+      student: 1,  // Ahora visible para el estudiante
+      professor: 1
+    }
+  }
+});
+```
+
+#### **Notas Importantes**
+- Todos los campos son opcionales; solo se actualizan los campos que se envían en el request
+- El campo `note` permite actualización parcial: puedes enviar solo `content` o solo `visible`, y se mantendrán los valores actuales para los campos no enviados
+- Cuando se actualiza `classViewed` a `1`, `2` o `3` por primera vez, se actualiza automáticamente el `balance_per_class` del enrollment
+- Si una clase ya tiene `classViewed: 1, 2 o 3` y se vuelve a actualizar a otro valor de `1, 2 o 3`, **NO** se vuelve a restar del balance
+- Para `classViewed: 2`, el campo `minutesViewed` es obligatorio y debe ser >= 15
+- El sistema valida que el `balance_per_class` no quede negativo antes de aplicar la actualización
+
+---
+
 ## 🔄 **Manejo de Errores**
 
 ### **Códigos de Estado HTTP**
@@ -1270,8 +1657,9 @@ En algunos casos, también puede incluir:
 - `enrollmentId`: Debe ser un ObjectId válido y el enrollment debe existir
 - `classType` y `contentType`: Deben ser arrays de ObjectIds válidos
 - `hoursViewed` y `minutesViewed`: Deben ser números positivos o null
-- `classViewed`: Solo acepta valores `0`, `1` o `2`
+- `classViewed`: Solo acepta valores `0` (no vista), `1` (vista completa), `2` (parcialmente vista), `3` (no show), `4` (otro estado)
 - `classDate`: Debe ser una fecha válida en formato `YYYY-MM-DD` (puede enviarse como Date object o string, se normaliza a YYYY-MM-DD)
+- `minutesViewed`: Es obligatorio cuando `classViewed` es `2` (parcialmente vista) y debe ser >= 15
 
 ### **Campos No Actualizables**
 
