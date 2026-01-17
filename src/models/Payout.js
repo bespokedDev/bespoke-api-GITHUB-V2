@@ -73,9 +73,9 @@ const PenalizationInfoSchema = new mongoose.Schema({
 const BonusInfoSchema = new mongoose.Schema({
     id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Bonus',
+        ref: 'ProfessorBonus',
         required: true
-        // ID del bono
+        // ID del bono (referencia a ProfessorBonus)
     },
     amount: {
         type: Number,

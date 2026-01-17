@@ -31,6 +31,8 @@ const headers = {
 | `PUT` | `/api/notifications/:id` | Actualizar notificación | Solo admin |
 | `PATCH` | `/api/notifications/:id/anular` | Anular notificación | Solo admin |
 | `PATCH` | `/api/notifications/:id/activate` | Activar notificación | Solo admin |
+| `PATCH` | `/api/notifications/batch/activate` | Activar múltiples notificaciones en lote | Solo admin |
+| `PATCH` | `/api/notifications/batch/anular` | Anular múltiples notificaciones en lote | Solo admin |
 
 ---
 
@@ -666,6 +668,270 @@ Activa una notificación estableciendo `isActive` a `true`.
 
 ---
 
+### **7. Activar Múltiples Notificaciones en Lote**
+
+#### **PATCH** `/api/notifications/batch/activate`
+
+Activa múltiples notificaciones en lote estableciendo `isActive` a `true`. Solo actualiza las notificaciones que están actualmente inactivas (`isActive: false`).
+
+#### **Headers**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Request Body**
+```json
+{
+  "ids": [
+    "64f8a1b2c3d4e5f6a7b8c9d0",
+    "64f8a1b2c3d4e5f6a7b8c9d1",
+    "64f8a1b2c3d4e5f6a7b8c9d2"
+  ]
+}
+```
+
+#### **Campos del Request Body**
+
+**Requeridos:**
+- `ids` (Array[String], requerido): Array de IDs de notificaciones a activar. Debe contener al menos un ID válido.
+
+**Validaciones:**
+- `ids` debe ser un array
+- El array no puede estar vacío
+- Todos los IDs deben ser ObjectIds válidos de MongoDB
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Operación de activación en lote completada",
+  "totalRequested": 3,
+  "totalUpdated": 2,
+  "totalFound": 2,
+  "totalNotFound": 1,
+  "notFoundIds": ["64f8a1b2c3d4e5f6a7b8c9d2"],
+  "alreadyActive": 0
+}
+```
+
+#### **Campos de la Response**
+- `totalRequested` (Number): Cantidad total de IDs solicitados para activar
+- `totalUpdated` (Number): Cantidad de notificaciones actualizadas exitosamente
+- `totalFound` (Number): Cantidad de notificaciones encontradas que estaban inactivas
+- `totalNotFound` (Number): Cantidad de IDs que no se encontraron en la base de datos
+- `notFoundIds` (Array[String], opcional): Array de IDs que no se encontraron (solo se incluye si hay IDs no encontrados)
+- `alreadyActive` (Number): Cantidad de notificaciones que ya estaban activas (no se actualizaron)
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+```json
+{
+  "message": "El campo \"ids\" debe ser un array"
+}
+```
+- **Causa**: El campo `ids` no es un array
+
+```json
+{
+  "message": "El array \"ids\" no puede estar vacío"
+}
+```
+- **Causa**: El array `ids` está vacío
+
+```json
+{
+  "message": "IDs inválidos: 64f8a1b2c3d4e5f6a7b8c9dX, 64f8a1b2c3d4e5f6a7b8c9dY",
+  "invalidIds": ["64f8a1b2c3d4e5f6a7b8c9dX", "64f8a1b2c3d4e5f6a7b8c9dY"]
+}
+```
+- **Causa**: Uno o más IDs no son ObjectIds válidos
+
+**500 Internal Server Error**
+```json
+{
+  "message": "Error interno al activar notificaciones en lote",
+  "error": "Mensaje de error detallado"
+}
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const activateNotificationsBatch = async (notificationIds) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/notifications/batch/activate', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        ids: notificationIds
+      })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log(`Activadas ${data.totalUpdated} de ${data.totalRequested} notificaciones`);
+      if (data.notFoundIds) {
+        console.warn('IDs no encontrados:', data.notFoundIds);
+      }
+      if (data.alreadyActive > 0) {
+        console.log(`${data.alreadyActive} notificaciones ya estaban activas`);
+      }
+    } else {
+      console.error('Error:', data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso
+activateNotificationsBatch([
+  '64f8a1b2c3d4e5f6a7b8c9d0',
+  '64f8a1b2c3d4e5f6a7b8c9d1',
+  '64f8a1b2c3d4e5f6a7b8c9d2'
+]);
+```
+
+---
+
+### **8. Anular Múltiples Notificaciones en Lote**
+
+#### **PATCH** `/api/notifications/batch/anular`
+
+Anula múltiples notificaciones en lote estableciendo `isActive` a `false`. Solo actualiza las notificaciones que están actualmente activas (`isActive: true`).
+
+#### **Headers**
+```javascript
+{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer <token>"
+}
+```
+
+#### **Request Body**
+```json
+{
+  "ids": [
+    "64f8a1b2c3d4e5f6a7b8c9d0",
+    "64f8a1b2c3d4e5f6a7b8c9d1",
+    "64f8a1b2c3d4e5f6a7b8c9d2"
+  ]
+}
+```
+
+#### **Campos del Request Body**
+
+**Requeridos:**
+- `ids` (Array[String], requerido): Array de IDs de notificaciones a anular. Debe contener al menos un ID válido.
+
+**Validaciones:**
+- `ids` debe ser un array
+- El array no puede estar vacío
+- Todos los IDs deben ser ObjectIds válidos de MongoDB
+
+#### **Response Exitosa (200 OK)**
+```json
+{
+  "message": "Operación de anulación en lote completada",
+  "totalRequested": 3,
+  "totalUpdated": 2,
+  "totalFound": 2,
+  "totalNotFound": 1,
+  "notFoundIds": ["64f8a1b2c3d4e5f6a7b8c9d2"],
+  "alreadyInactive": 0
+}
+```
+
+#### **Campos de la Response**
+- `totalRequested` (Number): Cantidad total de IDs solicitados para anular
+- `totalUpdated` (Number): Cantidad de notificaciones actualizadas exitosamente
+- `totalFound` (Number): Cantidad de notificaciones encontradas que estaban activas
+- `totalNotFound` (Number): Cantidad de IDs que no se encontraron en la base de datos
+- `notFoundIds` (Array[String], opcional): Array de IDs que no se encontraron (solo se incluye si hay IDs no encontrados)
+- `alreadyInactive` (Number): Cantidad de notificaciones que ya estaban inactivas (no se actualizaron)
+
+#### **Errores Posibles**
+
+**400 Bad Request**
+```json
+{
+  "message": "El campo \"ids\" debe ser un array"
+}
+```
+- **Causa**: El campo `ids` no es un array
+
+```json
+{
+  "message": "El array \"ids\" no puede estar vacío"
+}
+```
+- **Causa**: El array `ids` está vacío
+
+```json
+{
+  "message": "IDs inválidos: 64f8a1b2c3d4e5f6a7b8c9dX, 64f8a1b2c3d4e5f6a7b8c9dY",
+  "invalidIds": ["64f8a1b2c3d4e5f6a7b8c9dX", "64f8a1b2c3d4e5f6a7b8c9dY"]
+}
+```
+- **Causa**: Uno o más IDs no son ObjectIds válidos
+
+**500 Internal Server Error**
+```json
+{
+  "message": "Error interno al anular notificaciones en lote",
+  "error": "Mensaje de error detallado"
+}
+```
+
+#### **Ejemplo con JavaScript (Fetch)**
+```javascript
+const anularNotificationsBatch = async (notificationIds) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/notifications/batch/anular', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        ids: notificationIds
+      })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log(`Anuladas ${data.totalUpdated} de ${data.totalRequested} notificaciones`);
+      if (data.notFoundIds) {
+        console.warn('IDs no encontrados:', data.notFoundIds);
+      }
+      if (data.alreadyInactive > 0) {
+        console.log(`${data.alreadyInactive} notificaciones ya estaban inactivas`);
+      }
+    } else {
+      console.error('Error:', data.message);
+    }
+  } catch (error) {
+    console.error('Error de red:', error);
+  }
+};
+
+// Uso
+anularNotificationsBatch([
+  '64f8a1b2c3d4e5f6a7b8c9d0',
+  '64f8a1b2c3d4e5f6a7b8c9d1',
+  '64f8a1b2c3d4e5f6a7b8c9d2'
+]);
+```
+
+---
+
 ## 📌 **Notas Importantes**
 
 ### **Control de Acceso**
@@ -737,6 +1003,19 @@ await anularNotification(newNotification.notification._id);
 
 // 7. Activar notificación nuevamente
 await activateNotification(newNotification.notification._id);
+
+// 8. Activar múltiples notificaciones en lote
+await activateNotificationsBatch([
+  "64f8a1b2c3d4e5f6a7b8c9d0",
+  "64f8a1b2c3d4e5f6a7b8c9d1",
+  "64f8a1b2c3d4e5f6a7b8c9d2"
+]);
+
+// 9. Anular múltiples notificaciones en lote
+await anularNotificationsBatch([
+  "64f8a1b2c3d4e5f6a7b8c9d0",
+  "64f8a1b2c3d4e5f6a7b8c9d1"
+]);
 ```
 
 ---
@@ -757,5 +1036,5 @@ await activateNotification(newNotification.notification._id);
 
 ---
 
-**Última actualización:** Enero 2024
+**Última actualización:** Enero 2025
 

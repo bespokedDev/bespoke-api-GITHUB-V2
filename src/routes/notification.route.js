@@ -19,6 +19,14 @@ router.get('/', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.l
 // Acceso: Cualquier usuario autenticado (student, professor, admin)
 router.get('/user/my-notifications', verifyToken, notificationCtrl.getMyNotifications);
 
+// PATCH /api/notifications/batch/activate - Activa múltiples notificaciones en lote
+// Acceso: Solo admin
+router.patch('/batch/activate', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.activateBatch);
+
+// PATCH /api/notifications/batch/anular - Anula múltiples notificaciones en lote
+// Acceso: Solo admin
+router.patch('/batch/anular', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.anularBatch);
+
 // GET /api/notifications/:id - Obtiene una notificación por su ID
 // Acceso: Solo admin
 router.get('/:id', verifyToken, verifyRole('admin', 'admin-jr'), notificationCtrl.getById);

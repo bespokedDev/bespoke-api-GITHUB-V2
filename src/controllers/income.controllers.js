@@ -1657,17 +1657,65 @@ const generateExcedenteReportLogic = async (month) => {
             $lte: endDate
         }
     })
-    .select('penalizationMoney')
+    .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel professorId')
+    .populate({
+        path: 'idPenalizacion',
+        select: 'name penalizationLevels',
+        model: 'Penalizacion'
+    })
+    .populate({
+        path: 'professorId',
+        select: 'name ciNumber',
+        model: 'Professor'
+    })
+    .sort({ createdAt: -1 })
     .lean();
 
     // Calcular total de excedente por penalizaciones (suma de todas las penalizaciones monetarias)
     const totalExcedentePenalizations = allMonetaryPenalizations.reduce((sum, p) => sum + (p.penalizationMoney || 0), 0);
 
+    // Crear array de detalles de penalizaciones (similar a bonusDetails)
+    const penalizationDetails = allMonetaryPenalizations.map(penalization => {
+        // Buscar el nivel de penalización dentro del array penalizationLevels
+        let penalizationLevel = null;
+        if (penalization.idPenalizacion && penalization.idpenalizationLevel) {
+            const levelId = penalization.idpenalizationLevel.toString();
+            const foundLevel = penalization.idPenalizacion.penalizationLevels?.find(
+                level => level._id.toString() === levelId
+            );
+            if (foundLevel) {
+                penalizationLevel = {
+                    id: foundLevel._id.toString(),
+                    tipo: foundLevel.tipo || null,
+                    nivel: foundLevel.nivel || null,
+                    description: foundLevel.description || null
+                };
+            }
+        }
+
+        return {
+            penalizationId: penalization._id,
+            professorId: penalization.professorId ? penalization.professorId._id : null,
+            professorName: penalization.professorId ? penalization.professorId.name : 'Profesor Desconocido',
+            professorCiNumber: penalization.professorId ? penalization.professorId.ciNumber : null,
+            penalizationMoney: parseFloat((penalization.penalizationMoney || 0).toFixed(2)),
+            description: penalization.penalization_description || null,
+            endDate: penalization.endDate || null,
+            support_file: penalization.support_file || null,
+            createdAt: penalization.createdAt,
+            penalizationType: penalization.idPenalizacion ? {
+                id: penalization.idPenalizacion._id.toString(),
+                name: penalization.idPenalizacion.name || null
+            } : null,
+            penalizationLevel: penalizationLevel
+        };
+    });
+
     // Calcular total general de excedentes (ingresos + clases no vistas + enrollments prepagados - bonos + penalizaciones)
     // Los bonos se restan porque aparecen con valor negativo
     // Las penalizaciones se suman porque representan dinero que se debe pagar (excedente)
     const totalExcedente = updatedTotalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations;
-
+    console.log("Total de excedentes: ", totalExcedente, updatedTotalExcedenteIncomes, totalExcedenteClasses, totalPrepaidEnrollments, totalBonuses, totalExcedentePenalizations);
     // Si no hay excedentes de ningún tipo, retornar null
     if (excedenteIncomes.length === 0 && classNotViewedDetails.length === 0 && professorBonuses.length === 0 && prepaidEnrollmentsDetails.length === 0 && totalExcedentePenalizations === 0) {
         return null;
@@ -1687,7 +1735,8 @@ const generateExcedenteReportLogic = async (month) => {
         incomeDetails: incomeDetails, // Array de ingresos excedentes (incluye enrollments prepagados)
         classNotViewedDetails: classNotViewedDetails, // PARTE 9: Array de clases no vistas con su excedente calculado
         prepaidEnrollmentsDetails: prepaidEnrollmentsDetails, // 🆕 Array de enrollments prepagados
-        bonusDetails: bonusDetails // PARTE 11: Array de bonos de profesores (con valor negativo para excedentes)
+        bonusDetails: bonusDetails, // PARTE 11: Array de bonos de profesores (con valor negativo para excedentes)
+        penalizationDetails: penalizationDetails // 🆕 Array de penalizaciones monetarias que son ganancia para la empresa
     };
 };
 
