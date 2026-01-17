@@ -344,11 +344,12 @@ studentCtrl.studentInfo = async (req, res) => {
 
                 // Agregar información detallada del enrollment
                 // amount ahora es el balance_per_class del enrollment (no el amount del studentInfo)
+                // rescheduleHours se calculará después de cargar las clases
                 enrollmentDetails.push({
                     enrollmentId: enrollment._id,
                     planName: enrollment.planId ? enrollment.planId.name : null,
                     amount: enrollment.balance_per_class || 0, // Usar balance_per_class en lugar de studentInfo.amount
-                    rescheduleHours: enrollment.rescheduleHours || 0,
+                    rescheduleHours: 0, // Se calculará después de cargar las clases
                     enrollmentType: enrollment.enrollmentType,
                     startDate: enrollment.startDate,
                     endDate: enrollment.endDate,
@@ -372,40 +373,60 @@ studentCtrl.studentInfo = async (req, res) => {
             enrollmentId: { $in: enrollmentIds }
         })
         .populate('enrollmentId', 'endDate planId')
+        .populate('originalClassId', 'minutesClassDefault minutesViewed')
         .lean();
         
         console.log('✅ Total de clases encontradas:', allClasses.length);
 
-        // 1. Calcular tiempo disponible de reschedules (solo clases con reschedule = 1 Y classViewed = 0)
+        // 1. Calcular tiempo disponible de reschedules (solo clases reschedule hijas no vistas con tiempo disponible)
         console.log('🔎 Calculando tiempo disponible de reschedules...');
         const rescheduleClassesNotViewed = allClasses.filter(classRecord => 
-            classRecord.reschedule === 1 && classRecord.classViewed === 0
+            classRecord.originalClassId !== null && // Solo clases reschedule hijas
+            (classRecord.reschedule === 1 || classRecord.reschedule === 2) && // En reschedule (pendiente o vista)
+            classRecord.classViewed === 0 // No vistas
         );
-        console.log('✅ Clases en reschedule no vistas encontradas:', rescheduleClassesNotViewed.length);
+        console.log('✅ Clases reschedule hijas no vistas encontradas:', rescheduleClassesNotViewed.length);
 
         // Calcular el tiempo disponible para cada clase y el total
         let totalRescheduleMinutes = 0;
         const rescheduleDetails = [];
 
         rescheduleClassesNotViewed.forEach(classRecord => {
-            // Calcular tiempo disponible: minutesClassDefault - minutesViewed
-            const minutesClassDefault = classRecord.minutesClassDefault || 60; // Por defecto 60 minutos
-            const minutesViewed = classRecord.minutesViewed || 0; // Si no tiene, es 0
-            const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed); // No permitir valores negativos
+            // Obtener la clase original (padre) para calcular el tiempo disponible
+            const originalClass = classRecord.originalClassId;
+            
+            if (!originalClass) {
+                // Si no hay clase original, saltar esta clase
+                return;
+            }
+            
+            // Calcular tiempo disponible basándose en la clase original
+            const originalMinutesClassDefault = originalClass.minutesClassDefault || 60;
+            const originalMinutesViewed = originalClass.minutesViewed || 0;
+            const originalAvailableMinutes = Math.max(0, originalMinutesClassDefault - originalMinutesViewed);
+            
+            // Restar los minutos ya vistos en la clase reschedule hija (si los tiene)
+            const rescheduleMinutesViewed = classRecord.minutesViewed || 0;
+            const availableMinutes = Math.max(0, originalAvailableMinutes - rescheduleMinutesViewed);
 
-            totalRescheduleMinutes += availableMinutes;
+            // Solo agregar si hay tiempo disponible (availableMinutes > 0)
+            if (availableMinutes > 0) {
+                totalRescheduleMinutes += availableMinutes;
 
-            // Agregar información detallada de la clase
-            rescheduleDetails.push({
-                classRegistryId: classRecord._id,
-                enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
-                classDate: classRecord.classDate,
-                classTime: classRecord.classTime,
-                minutesClassDefault: minutesClassDefault,
-                minutesViewed: minutesViewed,
-                availableMinutes: availableMinutes,
-                availableHours: (availableMinutes / 60).toFixed(2) // Convertir a horas con 2 decimales
-            });
+                // Agregar información detallada de la clase
+                rescheduleDetails.push({
+                    classRegistryId: classRecord._id,
+                    enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime,
+                    originalClassDate: originalClass.classDate || null,
+                    originalMinutesClassDefault: originalMinutesClassDefault,
+                    originalMinutesViewed: originalMinutesViewed,
+                    rescheduleMinutesViewed: rescheduleMinutesViewed,
+                    availableMinutes: availableMinutes,
+                    availableHours: (availableMinutes / 60).toFixed(2) // Convertir a horas con 2 decimales
+                });
+            }
         });
 
         // Convertir minutos totales a horas (con 2 decimales)
@@ -414,17 +435,70 @@ studentCtrl.studentInfo = async (req, res) => {
         console.log('⏱️ Tiempo total disponible de reschedules:', totalRescheduleMinutes, 'minutos (', totalRescheduleHours, 'horas)');
         console.log('📋 Detalles de reschedules:', rescheduleDetails.length);
 
-        // 1. Contar clases reschedule que están por verse (reschedule = 1 Y classViewed = 0)
-        console.log('🔎 Contando clases reschedule por verse (reschedule=1 Y classViewed=0)...');
+        // Calcular rescheduleHours para cada enrollment en enrollmentDetails
+        console.log('🔎 Calculando rescheduleHours por enrollment...');
+        enrollmentDetails.forEach(enrollmentDetail => {
+            const enrollmentIdStr = enrollmentDetail.enrollmentId.toString();
+            
+            // Filtrar clases de este enrollment específico
+            const enrollmentClasses = allClasses.filter(
+                classRecord => classRecord.enrollmentId && 
+                classRecord.enrollmentId._id.toString() === enrollmentIdStr
+            );
+            
+            // Calcular reschedule time para este enrollment (solo clases reschedule hijas no vistas con tiempo disponible)
+            const enrollmentRescheduleClassesNotViewed = enrollmentClasses.filter(
+                classRecord => 
+                    classRecord.originalClassId !== null && // Solo clases reschedule hijas
+                    (classRecord.reschedule === 1 || classRecord.reschedule === 2) && // En reschedule (pendiente o vista)
+                    classRecord.classViewed === 0 // No vistas
+            );
+            
+            let enrollmentRescheduleMinutes = 0;
+            
+            enrollmentRescheduleClassesNotViewed.forEach(classRecord => {
+                // Obtener la clase original (padre) para calcular el tiempo disponible
+                const originalClass = classRecord.originalClassId;
+                
+                if (!originalClass) {
+                    // Si no hay clase original, saltar esta clase
+                    return;
+                }
+                
+                // Calcular tiempo disponible basándose en la clase original
+                const originalMinutesClassDefault = originalClass.minutesClassDefault || 60;
+                const originalMinutesViewed = originalClass.minutesViewed || 0;
+                const originalAvailableMinutes = Math.max(0, originalMinutesClassDefault - originalMinutesViewed);
+                
+                // Restar los minutos ya vistos en la clase reschedule hija (si los tiene)
+                const rescheduleMinutesViewed = classRecord.minutesViewed || 0;
+                const availableMinutes = Math.max(0, originalAvailableMinutes - rescheduleMinutesViewed);
+                
+                // Solo agregar si hay tiempo disponible (availableMinutes > 0)
+                if (availableMinutes > 0) {
+                    enrollmentRescheduleMinutes += availableMinutes;
+                }
+            });
+            
+            // Convertir minutos a horas y actualizar enrollmentDetail
+            enrollmentDetail.rescheduleHours = parseFloat((enrollmentRescheduleMinutes / 60).toFixed(2));
+        });
+        
+        console.log('✅ rescheduleHours calculado para todos los enrollments');
+
+        // 1. Contar todas las clases reschedule hijas (independientemente de si ya se vieron o no)
+        console.log('🔎 Contando todas las clases reschedule hijas...');
         const classesWithReschedule = allClasses.filter(classRecord => 
-            classRecord.reschedule === 1 && classRecord.classViewed === 0
+            classRecord.originalClassId !== null && // Solo clases reschedule hijas
+            (classRecord.reschedule === 1 || classRecord.reschedule === 2) // En reschedule (pendiente o vista)
         );
         const rescheduleCountDetails = classesWithReschedule.map(classRecord => ({
             classRegistryId: classRecord._id,
             enrollmentId: classRecord.enrollmentId ? classRecord.enrollmentId._id : null,
             classDate: classRecord.classDate,
             classTime: classRecord.classTime,
-            reschedule: classRecord.reschedule
+            reschedule: classRecord.reschedule,
+            classViewed: classRecord.classViewed // Incluir estado de visualización para control
         }));
 
         // 2. Contar clases vistas (classViewed = 1)
@@ -636,28 +710,50 @@ studentCtrl.studentInfo = async (req, res) => {
                 classRecord.enrollmentId._id.toString() === enrollmentIdStr
             );
 
-            // Calcular reschedule time para este enrollment (solo clases reschedule con classViewed=0)
+            // Calcular reschedule time para este enrollment (solo clases reschedule hijas no vistas con tiempo disponible)
             const enrollmentRescheduleClassesNotViewed = enrollmentClasses.filter(
-                classRecord => classRecord.reschedule === 1 && classRecord.classViewed === 0
+                classRecord => 
+                    classRecord.originalClassId !== null && // Solo clases reschedule hijas
+                    (classRecord.reschedule === 1 || classRecord.reschedule === 2) && // En reschedule (pendiente o vista)
+                    classRecord.classViewed === 0 // No vistas
             );
             let enrollmentRescheduleMinutes = 0;
             const enrollmentRescheduleDetails = [];
 
             enrollmentRescheduleClassesNotViewed.forEach(classRecord => {
-                const minutesClassDefault = classRecord.minutesClassDefault || 60;
-                const minutesViewed = classRecord.minutesViewed || 0;
-                const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed);
-                enrollmentRescheduleMinutes += availableMinutes;
+                // Obtener la clase original (padre) para calcular el tiempo disponible
+                const originalClass = classRecord.originalClassId;
+                
+                if (!originalClass) {
+                    // Si no hay clase original, saltar esta clase
+                    return;
+                }
+                
+                // Calcular tiempo disponible basándose en la clase original
+                const originalMinutesClassDefault = originalClass.minutesClassDefault || 60;
+                const originalMinutesViewed = originalClass.minutesViewed || 0;
+                const originalAvailableMinutes = Math.max(0, originalMinutesClassDefault - originalMinutesViewed);
+                
+                // Restar los minutos ya vistos en la clase reschedule hija (si los tiene)
+                const rescheduleMinutesViewed = classRecord.minutesViewed || 0;
+                const availableMinutes = Math.max(0, originalAvailableMinutes - rescheduleMinutesViewed);
+                
+                // Solo agregar si hay tiempo disponible (availableMinutes > 0)
+                if (availableMinutes > 0) {
+                    enrollmentRescheduleMinutes += availableMinutes;
 
-                enrollmentRescheduleDetails.push({
-                    classRegistryId: classRecord._id,
-                    classDate: classRecord.classDate,
-                    classTime: classRecord.classTime,
-                    minutesClassDefault: minutesClassDefault,
-                    minutesViewed: minutesViewed,
-                    availableMinutes: availableMinutes,
-                    availableHours: (availableMinutes / 60).toFixed(2)
-                });
+                    enrollmentRescheduleDetails.push({
+                        classRegistryId: classRecord._id,
+                        classDate: classRecord.classDate,
+                        classTime: classRecord.classTime,
+                        originalClassDate: originalClass.classDate || null,
+                        originalMinutesClassDefault: originalMinutesClassDefault,
+                        originalMinutesViewed: originalMinutesViewed,
+                        rescheduleMinutesViewed: rescheduleMinutesViewed,
+                        availableMinutes: availableMinutes,
+                        availableHours: (availableMinutes / 60).toFixed(2)
+                    });
+                }
             });
 
             const enrollmentRescheduleHours = (enrollmentRescheduleMinutes / 60).toFixed(2);
@@ -876,7 +972,7 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
         .populate('enrollmentId', 'endDate planId')
         .populate('classType', 'name')
         .populate('contentType', 'name')
-        .populate('originalClassId', 'classDate enrollmentId')
+        .populate('originalClassId', 'classDate enrollmentId minutesClassDefault minutesViewed')
         .populate('evaluations')
         .sort({ classDate: 1, classTime: 1 }) // Ordenar por fecha y hora
         .lean();
@@ -884,28 +980,49 @@ studentCtrl.getEnrollmentDetails = async (req, res) => {
         console.log('✅ Clases encontradas:', classes.length);
 
         // Calcular estadísticas del enrollment
-        // 1. Reschedule time - solo clases reschedule que aún no se han visto (reschedule=1 Y classViewed=0)
+        // 1. Reschedule time - solo clases reschedule hijas no vistas con tiempo disponible
         const rescheduleClassesNotViewed = classes.filter(classRecord => 
-            classRecord.reschedule === 1 && classRecord.classViewed === 0
+            classRecord.originalClassId !== null && // Solo clases reschedule hijas
+            (classRecord.reschedule === 1 || classRecord.reschedule === 2) && // En reschedule (pendiente o vista)
+            classRecord.classViewed === 0 // No vistas
         );
         let totalRescheduleMinutes = 0;
         const rescheduleDetails = [];
 
         rescheduleClassesNotViewed.forEach(classRecord => {
-            const minutesClassDefault = classRecord.minutesClassDefault || 60;
-            const minutesViewed = classRecord.minutesViewed || 0;
-            const availableMinutes = Math.max(0, minutesClassDefault - minutesViewed);
-            totalRescheduleMinutes += availableMinutes;
+            // Obtener la clase original (padre) para calcular el tiempo disponible
+            const originalClass = classRecord.originalClassId;
+            
+            if (!originalClass) {
+                // Si no hay clase original, saltar esta clase
+                return;
+            }
+            
+            // Calcular tiempo disponible basándose en la clase original
+            const originalMinutesClassDefault = originalClass.minutesClassDefault || 60;
+            const originalMinutesViewed = originalClass.minutesViewed || 0;
+            const originalAvailableMinutes = Math.max(0, originalMinutesClassDefault - originalMinutesViewed);
+            
+            // Restar los minutos ya vistos en la clase reschedule hija (si los tiene)
+            const rescheduleMinutesViewed = classRecord.minutesViewed || 0;
+            const availableMinutes = Math.max(0, originalAvailableMinutes - rescheduleMinutesViewed);
+            
+            // Solo agregar si hay tiempo disponible (availableMinutes > 0)
+            if (availableMinutes > 0) {
+                totalRescheduleMinutes += availableMinutes;
 
-            rescheduleDetails.push({
-                classRegistryId: classRecord._id,
-                classDate: classRecord.classDate,
-                classTime: classRecord.classTime,
-                minutesClassDefault: minutesClassDefault,
-                minutesViewed: minutesViewed,
-                availableMinutes: availableMinutes,
-                availableHours: (availableMinutes / 60).toFixed(2)
-            });
+                rescheduleDetails.push({
+                    classRegistryId: classRecord._id,
+                    classDate: classRecord.classDate,
+                    classTime: classRecord.classTime,
+                    originalClassDate: originalClass.classDate || null,
+                    originalMinutesClassDefault: originalMinutesClassDefault,
+                    originalMinutesViewed: originalMinutesViewed,
+                    rescheduleMinutesViewed: rescheduleMinutesViewed,
+                    availableMinutes: availableMinutes,
+                    availableHours: (availableMinutes / 60).toFixed(2)
+                });
+            }
         });
 
         const totalRescheduleHours = (totalRescheduleMinutes / 60).toFixed(2);

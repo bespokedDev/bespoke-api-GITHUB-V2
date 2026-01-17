@@ -90,6 +90,7 @@ const dateOnly = "2024-01-15";
   "message": "Ingreso creado exitosamente",
   "income": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+    "income_date": "2024-01-15T10:30:00.000Z",
     "deposit_name": "Pago clase de piano",
     "amount": 50.00,
     "amountInDollars": 50.00,
@@ -117,8 +118,11 @@ const dateOnly = "2024-01-15";
       "studentIds": [
         {
           "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
-          "name": "María García",
-          "studentCode": "BES-0001"
+          "studentId": {
+            "_id": "64f8a1b2c3d4e5f6a7b8c9d7",
+            "name": "María García",
+            "studentCode": "BES-0001"
+          }
         }
       ],
       "professorId": {
@@ -130,8 +134,10 @@ const dateOnly = "2024-01-15";
       "purchaseDate": "2024-01-15T00:00:00.000Z",
       "pricePerStudent": 50.00,
       "totalAmount": 50.00,
-      "status": "active"
+      "status": 1,
+      "alias": null
     },
+    "idPenalization": null,
     "note": "Pago por clase individual de piano",
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -532,6 +538,7 @@ GET /api/incomes
 [
   {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+    "income_date": "2024-01-15T10:30:00.000Z",
     "deposit_name": "Pago clase de piano",
     "amount": 50.00,
     "amountInDollars": 50.00,
@@ -559,8 +566,11 @@ GET /api/incomes
       "studentIds": [
         {
           "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
-          "name": "María García",
-          "studentCode": "BES-0001"
+          "studentId": {
+            "_id": "64f8a1b2c3d4e5f6a7b8c9d7",
+            "name": "María García",
+            "studentCode": "BES-0001"
+          }
         }
       ],
       "professorId": {
@@ -572,8 +582,10 @@ GET /api/incomes
       "purchaseDate": "2024-01-15T00:00:00.000Z",
       "pricePerStudent": 50.00,
       "totalAmount": 50.00,
-      "status": "active"
+      "status": 1,
+      "alias": null
     },
+    "idPenalization": null,
     "note": "Pago por clase individual de piano",
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -600,6 +612,7 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
 ```json
 {
   "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+  "income_date": "2024-01-15T10:30:00.000Z",
   "deposit_name": "Pago clase de piano",
   "amount": 50.00,
   "amountInDollars": 50.00,
@@ -627,8 +640,11 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
     "studentIds": [
       {
         "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
-        "name": "María García",
-        "studentCode": "BES-0001"
+        "studentId": {
+          "_id": "64f8a1b2c3d4e5f6a7b8c9d7",
+          "name": "María García",
+          "studentCode": "BES-0001"
+        }
       }
     ],
     "professorId": {
@@ -640,8 +656,10 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
     "purchaseDate": "2024-01-15T00:00:00.000Z",
     "pricePerStudent": 50.00,
     "totalAmount": 50.00,
-    "status": "active"
+    "status": 1,
+    "alias": null
   },
+  "idPenalization": null,
   "note": "Pago por clase individual de piano",
   "createdAt": "2024-01-15T10:30:00.000Z",
   "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -683,6 +701,7 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
   "message": "Ingreso actualizado",
   "income": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+    "income_date": "2024-01-15T10:30:00.000Z",
     "deposit_name": "Pago clase de piano actualizado",
     "amount": 60.00,
     "amountInDollars": 50.00,
@@ -710,8 +729,11 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
       "studentIds": [
         {
           "_id": "64f8a1b2c3d4e5f6a7b8c9d6",
-          "name": "María García",
-          "studentCode": "BES-0001"
+          "studentId": {
+            "_id": "64f8a1b2c3d4e5f6a7b8c9d7",
+            "name": "María García",
+            "studentCode": "BES-0001"
+          }
         }
       ],
       "professorId": {
@@ -723,8 +745,10 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
       "purchaseDate": "2024-01-15T00:00:00.000Z",
       "pricePerStudent": 50.00,
       "totalAmount": 50.00,
-      "status": "active"
+      "status": 1,
+      "alias": null
     },
+    "idPenalization": null,
     "note": "Nota actualizada",
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T12:00:00.000Z"
@@ -754,8 +778,16 @@ GET /api/incomes/64f8a1b2c3d4e5f6a7b8c9d4
   "message": "Ingreso eliminado exitosamente",
   "income": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d4",
+    "income_date": "2024-01-15T10:30:00.000Z",
     "deposit_name": "Pago clase de piano actualizado",
     "amount": 60.00,
+    "amountInDollars": 50.00,
+    "tasa": 1.0,
+    "idDivisa": "64f8a1b2c3d4e5f6a7b8c9d0",
+    "idProfessor": "64f8a1b2c3d4e5f6a7b8c9d1",
+    "idPaymentMethod": "64f8a1b2c3d4e5f6a7b8c9d2",
+    "idEnrollment": "64f8a1b2c3d4e5f6a7b8c9d3",
+    "idPenalization": null,
     "note": "Nota actualizada",
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T12:00:00.000Z"
@@ -881,7 +913,45 @@ GET /api/incomes/professors-payout-report?month=2025-01
       },
       "penalizations": {
         "count": 3,
-        "totalMoney": 150.00
+        "totalMoney": 150.00,
+        "details": [
+          {
+            "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+            "penalizationMoney": 50.00,
+            "description": "Falta de puntualidad",
+            "endDate": "2025-02-15T23:59:59.999Z",
+            "support_file": null,
+            "createdAt": "2025-01-10T10:30:00.000Z",
+            "penalizationType": {
+              "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+              "name": "Falta de Puntualidad"
+            },
+            "penalizationLevel": {
+              "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+              "tipo": "Monetaria",
+              "nivel": 1,
+              "description": "Primera falta de puntualidad"
+            }
+          },
+          {
+            "penalizationId": "64f8a1b2c3d4e5f6a7b8c9da",
+            "penalizationMoney": 100.00,
+            "description": "Ausencia sin aviso",
+            "endDate": null,
+            "support_file": "https://example.com/file.pdf",
+            "createdAt": "2025-01-15T14:20:00.000Z",
+            "penalizationType": {
+              "id": "64f8a1b2c3d4e5f6a7b8c9db",
+              "name": "Ausencia sin Aviso"
+            },
+            "penalizationLevel": {
+              "id": "64f8a1b2c3d4e5f6a7b8c9dc",
+              "tipo": "Monetaria",
+              "nivel": 2,
+              "description": "Segunda ausencia sin aviso"
+            }
+          }
+        ]
       }
     }
   ],
@@ -931,18 +1001,59 @@ GET /api/incomes/professors-payout-report?month=2025-01
     },
     "penalizations": {
       "count": 2,
-      "totalMoney": 75.00
+      "totalMoney": 75.00,
+      "details": [
+        {
+          "penalizationId": "64f8a1b2c3d4e5f6a7b8c9dd",
+          "penalizationMoney": 50.00,
+          "description": "Falta de puntualidad",
+          "endDate": "2025-02-20T23:59:59.999Z",
+          "support_file": null,
+          "createdAt": "2025-01-12T10:30:00.000Z",
+          "penalizationType": {
+            "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+            "name": "Falta de Puntualidad"
+          },
+          "penalizationLevel": {
+            "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+            "tipo": "Monetaria",
+            "nivel": 1,
+            "description": "Primera falta de puntualidad"
+          }
+        },
+        {
+          "penalizationId": "64f8a1b2c3d4e5f6a7b8c9de",
+          "penalizationMoney": 25.00,
+          "description": "Retraso en entrega de reportes",
+          "endDate": null,
+          "support_file": null,
+          "createdAt": "2025-01-18T09:15:00.000Z",
+          "penalizationType": {
+            "id": "64f8a1b2c3d4e5f6a7b8c9df",
+            "name": "Retraso en Reportes"
+          },
+          "penalizationLevel": {
+            "id": "64f8a1b2c3d4e5f6a7b8c9e0",
+            "tipo": "Monetaria",
+            "nivel": 1,
+            "description": "Primer retraso"
+          }
+        }
+      ]
     }
   },
   "excedente": {
     "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
-    "totalExcedente": 1300.00,
+    "totalExcedente": 1500.00,
     "totalExcedenteIncomes": 500.00,
     "totalExcedenteClasses": 1000.00,
+    "totalPrepaidEnrollments": 0.00,
     "totalBonuses": 200.00,
+    "totalExcedentePenalizations": 200.00,
     "numberOfIncomes": 3,
     "numberOfClassesNotViewed": 20,
     "numberOfBonuses": 2,
+    "numberOfPenalizations": 2,
     "incomeDetails": [
       {
         "incomeId": "64f8a1b2c3d4e5f6a7b8c9d9",
@@ -996,14 +1107,58 @@ GET /api/incomes/professors-payout-report?month=2025-01
         "userName": "Admin User",
         "createdAt": "2025-01-15T10:30:00.000Z"
       }
+    ],
+    "penalizationDetails": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9e4",
+        "professorId": "64f8a1b2c3d4e5f6a7b8c9d1",
+        "professorName": "Juan Pérez",
+        "professorCiNumber": "12345678",
+        "penalizationMoney": 100.00,
+        "description": "Falta de puntualidad",
+        "endDate": "2025-02-15T23:59:59.999Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+          "name": "Falta de Puntualidad"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+          "tipo": "Monetaria",
+          "nivel": 1,
+          "description": "Primera falta de puntualidad"
+        }
+      },
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9e5",
+        "professorId": "64f8a1b2c3d4e5f6a7b8c9d2",
+        "professorName": "María García",
+        "professorCiNumber": "87654321",
+        "penalizationMoney": 100.00,
+        "description": "Ausencia sin aviso",
+        "endDate": null,
+        "support_file": "https://example.com/file.pdf",
+        "createdAt": "2025-01-15T14:20:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9db",
+          "name": "Ausencia sin Aviso"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9dc",
+          "tipo": "Monetaria",
+          "nivel": 2,
+          "description": "Segunda ausencia sin aviso"
+        }
+      }
     ]
   }
 }
 ```
 
-#### **🆕 Nueva Funcionalidad - Excedente (Actualizada con Partes 9 y 11)**
+#### **🆕 Nueva Funcionalidad - Excedente (Actualizada con Partes 9, 11 y 13)**
 
-El reporte de excedentes ahora incluye tres componentes:
+El reporte de excedentes ahora incluye cuatro componentes:
 
 1. **Ingresos Excedentes**:
    - Ingresos que no tienen enrollment ni profesor asociado
@@ -1018,6 +1173,12 @@ El reporte de excedentes ahora incluye tres componentes:
    - Bonos creados desde el perfil del profesor
    - Aparecen con **valor negativo** en el reporte de excedentes
    - Se restan del total de excedentes
+
+4. **Penalizaciones Monetarias** (Parte 13):
+   - Penalizaciones con `status: 1` (activas) y `penalizationMoney > 0` (monetarias)
+   - Filtradas por `createdAt` dentro del mes del reporte
+   - Representan ganancia para la empresa ya que se descuentan del pago al profesor
+   - Se suman al total de excedentes
 
 #### **🆕 Mejoras de Ordenamiento y Visualización**
 - **Ordenamiento de Planes**: Los enrollments se ordenan alfabéticamente por nombre del plan (A-Z)
@@ -1134,7 +1295,27 @@ El reporte de excedentes ahora incluye tres componentes:
   },
   "penalizations": {
     "count": 3,
-    "totalMoney": 150.00
+    "totalMoney": 150.00,
+    "details": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9e1",
+        "penalizationMoney": 50.00,
+        "description": "Falta de puntualidad",
+        "endDate": "2025-02-15T23:59:59.999Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+          "name": "Falta de Puntualidad"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+          "tipo": "Monetaria",
+          "nivel": 1,
+          "description": "Primera falta de puntualidad"
+        }
+      }
+    ]
   }
 }
 ```
@@ -1199,7 +1380,45 @@ El reporte de excedentes ahora incluye tres componentes:
   },
   "penalizations": {
     "count": 2,
-    "totalMoney": 75.00
+    "totalMoney": 75.00,
+    "details": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9e2",
+        "penalizationMoney": 50.00,
+        "description": "Falta de puntualidad",
+        "endDate": "2025-02-20T23:59:59.999Z",
+        "support_file": null,
+        "createdAt": "2025-01-12T10:30:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+          "name": "Falta de Puntualidad"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+          "tipo": "Monetaria",
+          "nivel": 1,
+          "description": "Primera falta de puntualidad"
+        }
+      },
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9e3",
+        "penalizationMoney": 25.00,
+        "description": "Retraso en entrega de reportes",
+        "endDate": null,
+        "support_file": null,
+        "createdAt": "2025-01-18T09:15:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9df",
+          "name": "Retraso en Reportes"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9e0",
+          "tipo": "Monetaria",
+          "nivel": 1,
+          "description": "Primer retraso"
+        }
+      }
+    ]
   }
 }
 ```
@@ -1211,26 +1430,32 @@ El reporte de excedentes ahora incluye tres tipos de excedentes:
 1. **Ingresos excedentes**: Ingresos sin enrollment ni profesor
 2. **Clases no vistas**: Clases con `classViewed = 0` o `3` (Parte 9)
 3. **Bonos de profesores**: Bonos con valor negativo (Parte 11)
+4. **Penalizaciones monetarias**: Penalizaciones que representan ganancia para la empresa (Parte 13)
 
 ```json
 {
   "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
-  "totalExcedente": 1300.00,                    // Total: ingresos + clases - bonos
+  "totalExcedente": 1500.00,                    // Total: ingresos + clases - bonos + penalizaciones
   "totalExcedenteIncomes": 500.00,              // Total de ingresos excedentes
   "totalExcedenteClasses": 1000.00,             // Total de excedente por clases no vistas
+  "totalPrepaidEnrollments": 0.00,              // Total de enrollments prepagados
   "totalBonuses": 200.00,                       // Total de bonos (se resta del total)
+  "totalExcedentePenalizations": 200.00,        // Total de excedente por penalizaciones monetarias
   "numberOfIncomes": 3,                         // Cantidad de ingresos excedentes
   "numberOfClassesNotViewed": 20,               // Cantidad de clases no vistas
   "numberOfBonuses": 2,                         // Cantidad de bonos
+  "numberOfPenalizations": 2,                   // Cantidad de penalizaciones monetarias
   "incomeDetails": [...],                        // Array de ingresos excedentes
   "classNotViewedDetails": [...],               // Array de clases no vistas (Parte 9)
-  "bonusDetails": [...]                          // Array de bonos con valor negativo (Parte 11)
+  "prepaidEnrollmentsDetails": [...],           // Array de enrollments prepagados
+  "bonusDetails": [...],                        // Array de bonos con valor negativo (Parte 11)
+  "penalizationDetails": [...]                  // Array de penalizaciones monetarias (Parte 13)
 }
 ```
 
 **Cálculo del Total:**
 ```
-totalExcedente = totalExcedenteIncomes + totalExcedenteClasses - totalBonuses
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations
 ```
 
 #### **🆕 Lógica de Alias y Ordenamiento**
@@ -1312,7 +1537,27 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
 {
   "penalizations": {
     "count": 3,
-    "totalMoney": 150.00
+    "totalMoney": 150.00,
+    "details": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+        "penalizationMoney": 50.00,
+        "description": "Falta de puntualidad",
+        "endDate": "2025-02-15T23:59:59.999Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+          "name": "Falta de Puntualidad"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+          "tipo": "Monetaria",
+          "nivel": 1,
+          "description": "Primera falta de puntualidad"
+        }
+      }
+    ]
   }
 }
 ```
@@ -1326,6 +1571,22 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
     - `status: 1` (activas)
     - `penalizationMoney > 0` (monetarias)
   - Representa el total de dinero que el profesor debe por penalizaciones
+- **`details`** (array): Array de objetos con información detallada de cada penalización monetaria activa
+  - Cada objeto contiene:
+    - **`penalizationId`** (string): ID único de la penalización
+    - **`penalizationMoney`** (number): Monto monetario de la penalización
+    - **`description`** (string/null): Descripción de la penalización (puede ser `null`)
+    - **`endDate`** (Date/null): Fecha de finalización de la penalización (puede ser `null`)
+    - **`support_file`** (string/null): URL o ruta del archivo de soporte asociado (puede ser `null`)
+    - **`createdAt`** (Date): Fecha de creación de la penalización
+    - **`penalizationType`** (object/null): Objeto con información del tipo de penalización:
+      - `id` (string): ID del tipo de penalización
+      - `name` (string/null): Nombre del tipo de penalización
+    - **`penalizationLevel`** (object/null): Objeto con información del nivel de penalización:
+      - `id` (string): ID del nivel de penalización
+      - `tipo` (string/null): Tipo del nivel (ej: "Monetaria")
+      - `nivel` (number/null): Número del nivel (ej: 1, 2, 3)
+      - `description` (string/null): Descripción del nivel
 
 **Criterios de Filtrado:**
 - Solo se consideran penalizaciones con `status: 1` (activas)
@@ -1348,7 +1609,27 @@ Cada profesor en el reporte incluye información sobre sus penalizaciones moneta
   "abonos": {...},
   "penalizations": {
     "count": 3,        // Tiene 3 penalizaciones monetarias activas
-    "totalMoney": 150.00  // Total de dinero de penalizaciones: $150.00
+    "totalMoney": 150.00,  // Total de dinero de penalizaciones: $150.00
+    "details": [
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9d7",
+        "penalizationMoney": 50.00,
+        "description": "Falta de puntualidad",
+        "endDate": "2025-02-15T23:59:59.999Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d8",
+          "name": "Falta de Puntualidad"
+        },
+        "penalizationLevel": {
+          "id": "64f8a1b2c3d4e5f6a7b8c9d9",
+          "tipo": "Monetaria",
+          "nivel": 1,
+          "description": "Primera falta de puntualidad"
+        }
+      }
+    ]
   }
 }
 ```
@@ -2151,11 +2432,11 @@ export default ProfessorsReport;
   amount: Number,              // Opcional, mínimo 0
   amountInDollars: Number,     // Opcional
   tasa: Number,                // Opcional
-  idDivisa: ObjectId,          // Referencia a Divisa
-  idProfessor: ObjectId,       // Referencia a Professor
-  idPaymentMethod: ObjectId,   // Referencia a PaymentMethod
-  idEnrollment: ObjectId,      // Referencia a Enrollment
-  idPenalization: ObjectId,    // Referencia a Penalizacion (cuando el income se usa para pagar una penalización)
+  idDivisa: ObjectId,          // Referencia a Divisa (puede ser null)
+  idProfessor: ObjectId,       // Referencia a Professor (puede ser null)
+  idPaymentMethod: ObjectId,   // Referencia a PaymentMethod (puede ser null)
+  idEnrollment: ObjectId,      // Referencia a Enrollment (puede ser null)
+  idPenalization: ObjectId,    // Referencia a Penalizacion (puede ser null, cuando el income se usa para pagar una penalización)
   note: String,                // Opcional
   createdAt: Date,             // Automático
   updatedAt: Date              // Automático
@@ -2166,8 +2447,12 @@ export default ProfessorsReport;
 - **`idDivisa`**: `{ _id, name }`
 - **`idProfessor`**: `{ _id, name, ciNumber }`
 - **`idPaymentMethod`**: `{ _id, name, type }`
-- **`idEnrollment`**: Objeto completo con `planId`, `studentIds`, `professorId` populados
-- **`idPenalization`**: `{ _id, ... }` (referencia a la colección `Penalizacion`)
+- **`idEnrollment`**: Objeto con los siguientes campos populados:
+  - `planId`: `{ _id, name }`
+  - `studentIds`: Array de objetos con estructura `{ _id, studentId: { _id, name, studentCode } }`
+  - `professorId`: `{ _id, name, ciNumber }`
+  - Campos adicionales: `enrollmentType`, `purchaseDate`, `pricePerStudent`, `totalAmount`, `status`, `alias`
+- **`idPenalization`**: `{ _id, ... }` (referencia a la colección `Penalizacion`, puede ser `null`)
 
 ---
 
@@ -2662,9 +2947,14 @@ Balance Remaining = (Amount + Old Balance) - Total
     "totalExcedente": 1500.00,
     "totalExcedenteIncomes": 500.00,
     "totalExcedenteClasses": 1000.00,
+    "totalPrepaidEnrollments": 0.00,
     "totalBonuses": 200.00,
+    "totalExcedentePenalizations": 200.00,
+    "incomeDetails": [...],
+    "classNotViewedDetails": [...],
+    "prepaidEnrollmentsDetails": [...],
     "bonusDetails": [...],
-    "classNotViewedDetails": [...]
+    "penalizationDetails": [...]
   }
 }
 ```

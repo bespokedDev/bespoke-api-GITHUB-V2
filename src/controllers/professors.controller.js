@@ -443,6 +443,7 @@
             })
             .populate('professorId', 'name email phone')
             .populate('planId', 'name')
+            .populate('studentIds.studentId', 'name email studentCode dob')
             .lean();
 
             // Procesar enrollments para formatear la respuesta
@@ -474,6 +475,18 @@
                         email: enrollment.professorId.email,
                         phone: enrollment.professorId.phone
                     } : null,
+                    studentIds: Array.isArray(enrollment.studentIds) 
+                        ? enrollment.studentIds.map(studentInfo => ({
+                            _id: studentInfo._id,
+                            studentId: {
+                                _id: studentInfo.studentId ? studentInfo.studentId._id : null,
+                                studentCode: studentInfo.studentId ? studentInfo.studentId.studentCode : null,
+                                name: studentInfo.studentId ? studentInfo.studentId.name : null,
+                                email: studentInfo.studentId ? studentInfo.studentId.email : null,
+                                dob: studentInfo.studentId ? studentInfo.studentId.dob : null
+                            }
+                        }))
+                        : [],
                     substituteInfo: {
                         assignedDate: assignedDate,
                         expiryDate: expiryDate

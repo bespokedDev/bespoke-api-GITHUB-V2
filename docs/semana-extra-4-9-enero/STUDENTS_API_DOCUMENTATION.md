@@ -551,6 +551,7 @@ No requiere body.
     "studentCode": "BES-0001"
   },
   "totalAvailableBalance": 1500,
+  "totalBalancePerClass": 500,
   "enrollmentDetails": [
     {
       "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d3",
@@ -572,8 +573,10 @@ No requiere body.
         "enrollmentId": "692a1f4a5fa3f53b825ee540",
         "classDate": "2024-01-22",
         "classTime": "10:00",
-        "minutesClassDefault": 60,
-        "minutesViewed": 30,
+        "originalClassDate": "2024-01-19",
+        "originalMinutesClassDefault": 60,
+        "originalMinutesViewed": 30,
+        "rescheduleMinutesViewed": 0,
         "availableMinutes": 30,
         "availableHours": "0.50"
       }
@@ -587,7 +590,8 @@ No requiere body.
         "enrollmentId": "692a1f4a5fa3f53b825ee540",
         "classDate": "2024-01-22",
         "classTime": "10:00",
-        "reschedule": 1
+        "reschedule": 1,
+        "classViewed": 0
       }
     ]
   },
@@ -631,8 +635,10 @@ No requiere body.
             "classRegistryId": "692a1f4a5fa3f53b825ee53f",
             "classDate": "2024-01-22",
             "classTime": "10:00",
-            "minutesClassDefault": 60,
-            "minutesViewed": 0,
+            "originalClassDate": "2024-01-19",
+            "originalMinutesClassDefault": 60,
+            "originalMinutesViewed": 0,
+            "rescheduleMinutesViewed": 0,
             "availableMinutes": 60,
             "availableHours": "1.00"
           }
@@ -809,7 +815,10 @@ No requiere body.
 - `studentCode` (String): Código único del estudiante
 
 **totalAvailableBalance:**
-- `totalAvailableBalance` (Number): Suma total de todos los `amount` del estudiante en todos sus enrollments activos
+- `totalAvailableBalance` (Number): Suma total de todos los `available_balance` de los enrollments activos del estudiante
+
+**totalBalancePerClass:**
+- `totalBalancePerClass` (Number): Suma total de todos los `balance_per_class` de los enrollments activos del estudiante
 
 **enrollmentDetails:**
 - Array de objetos con información detallada de cada enrollment activo:
@@ -828,26 +837,37 @@ No requiere body.
 - Este filtro se aplica automáticamente basándose en el rol del usuario en el token JWT
 
 **rescheduleTime:**
-- `totalAvailableMinutes` (Number): Total de minutos disponibles de reschedules (suma de `minutesClassDefault - minutesViewed` de todas las clases con `reschedule: 1`)
+- `totalAvailableMinutes` (Number): Total de minutos disponibles de reschedules (calculado basándose en las clases originales, no en las clases reschedule hijas)
 - `totalAvailableHours` (Number): Total de horas disponibles de reschedules (convertido de minutos, con 2 decimales)
-- `details` (Array): Desglose de cada clase en reschedule con:
-  - `classRegistryId` (String): ID del registro de clase
+- `details` (Array): Desglose de cada clase reschedule hija no vista con tiempo disponible:
+  - `classRegistryId` (String): ID del registro de clase reschedule hija
   - `enrollmentId` (String): ID del enrollment al que pertenece la clase
-  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classDate` (String): Fecha de la clase reschedule hija (formato `YYYY-MM-DD`)
   - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
-  - `minutesClassDefault` (Number): Duración por defecto de la clase en minutos
-  - `minutesViewed` (Number): Minutos ya vistos de la clase
-  - `availableMinutes` (Number): Minutos disponibles (`minutesClassDefault - minutesViewed`)
+  - `originalClassDate` (String): Fecha de la clase original (padre) que fue reprogramada (formato `YYYY-MM-DD` o `null`)
+  - `originalMinutesClassDefault` (Number): Duración por defecto de la clase original en minutos
+  - `originalMinutesViewed` (Number): Minutos ya vistos de la clase original
+  - `rescheduleMinutesViewed` (Number): Minutos ya vistos de la clase reschedule hija
+  - `availableMinutes` (Number): Minutos disponibles calculados como: `(originalMinutesClassDefault - originalMinutesViewed) - rescheduleMinutesViewed`
   - `availableHours` (String): Horas disponibles (convertido de minutos, con 2 decimales)
+  
+**⚠️ IMPORTANTE - Cálculo de Tiempo Disponible:**
+- El tiempo disponible se calcula basándose en la clase original (padre), no en la clase reschedule hija
+- Solo se incluyen clases reschedule hijas (`originalClassId !== null`) que no han sido vistas (`classViewed = 0`) y que tienen tiempo disponible (`availableMinutes > 0`)
 
 **rescheduleClasses:**
-- `total` (Number): Total de clases con `reschedule: 1`
-- `details` (Array): Desglose de cada clase con reschedule:
-  - `classRegistryId` (String): ID del registro de clase
+- `total` (Number): Total de clases reschedule hijas (con `originalClassId !== null` y `reschedule: 1` o `reschedule: 2`)
+- `details` (Array): Desglose de todas las clases reschedule hijas (independientemente de si ya se vieron o no):
+  - `classRegistryId` (String): ID del registro de clase reschedule hija
   - `enrollmentId` (String): ID del enrollment al que pertenece la clase
-  - `classDate` (String): Fecha de la clase (formato `YYYY-MM-DD`)
+  - `classDate` (String): Fecha de la clase reschedule hija (formato `YYYY-MM-DD`)
   - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
-  - `reschedule` (Number): Valor de reschedule (siempre `1`)
+  - `reschedule` (Number): Valor de reschedule (`1` = pendiente, `2` = vista)
+  - `classViewed` (Number): Estado de visualización de la clase (`0` = no vista, `1` = vista, `2` = parcialmente vista, `3` = no show, `4` = Class Lost)
+  
+**⚠️ IMPORTANTE - Clases Reschedule Hijas:**
+- Solo se incluyen clases reschedule hijas (con `originalClassId !== null`)
+- Se incluyen todas las clases reschedule hijas, independientemente de si ya se vieron o no, para llevar un control visual
 
 **viewedClasses:**
 - `total` (Number): Total de clases vistas (`classViewed: 1`)
@@ -896,9 +916,18 @@ No requiere body.
     - `endDate` (Date): Fecha de fin del enrollment
     - `status` (Number): Estado del enrollment (`1` = activo, `0` = inactivo)
   - `rescheduleTime` (Object): Tiempo disponible de reschedules para este enrollment:
-    - `totalAvailableMinutes` (Number): Total de minutos disponibles
+    - `totalAvailableMinutes` (Number): Total de minutos disponibles (calculado basándose en las clases originales)
     - `totalAvailableHours` (Number): Total de horas disponibles (con 2 decimales)
-    - `details` (Array): Desglose de cada clase en reschedule
+    - `details` (Array): Desglose de cada clase reschedule hija no vista con tiempo disponible, cada uno con:
+      - `classRegistryId` (String): ID del registro de clase reschedule hija
+      - `classDate` (String): Fecha de la clase reschedule hija (formato `YYYY-MM-DD`)
+      - `classTime` (String): Hora de la clase (formato `HH:mm` o `null`)
+      - `originalClassDate` (String): Fecha de la clase original (padre) que fue reprogramada (formato `YYYY-MM-DD` o `null`)
+      - `originalMinutesClassDefault` (Number): Duración por defecto de la clase original en minutos
+      - `originalMinutesViewed` (Number): Minutos ya vistos de la clase original
+      - `rescheduleMinutesViewed` (Number): Minutos ya vistos de la clase reschedule hija
+      - `availableMinutes` (Number): Minutos disponibles calculados como: `(originalMinutesClassDefault - originalMinutesViewed) - rescheduleMinutesViewed`
+      - `availableHours` (String): Horas disponibles (convertido de minutos, con 2 decimales)
   - `rescheduleClasses` (Object): Clases con reschedule = 1 para este enrollment:
     - `total` (Number): Total de clases con reschedule
     - `details` (Array): Desglose de cada clase
@@ -965,12 +994,14 @@ No requiere body.
    - El `amount` de cada estudiante se encuentra en `enrollment.studentIds[].amount`
 
 3. **Cálculo de Tiempo Disponible de Reschedules:**
-   - Se buscan todas las clases con `reschedule: 1` de los enrollments del estudiante
-   - Para cada clase, se calcula: `minutesClassDefault - minutesViewed`
+   - Se buscan todas las clases reschedule hijas (con `originalClassId !== null`) que no han sido vistas (`classViewed = 0`)
+   - Para cada clase reschedule hija, se obtiene su clase original (padre) mediante `originalClassId`
+   - El tiempo disponible se calcula basándose en la clase original: `(originalMinutesClassDefault - originalMinutesViewed) - rescheduleMinutesViewed`
+   - Solo se incluyen clases con tiempo disponible > 0
    - Se suman todos los minutos disponibles y se convierten a horas
 
 4. **Conteo de Clases:**
-   - **Clases con reschedule**: Se cuentan todas las clases con `reschedule: 1`
+   - **Clases con reschedule**: Se cuentan todas las clases reschedule hijas (con `originalClassId !== null` y `reschedule: 1` o `reschedule: 2`), independientemente de si ya se vieron o no
    - **Clases vistas**: Se cuentan todas las clases con `classViewed: 1`
    - **Clases por ver**: Se cuentan todas las clases con `classViewed: 0`
    - **Clases perdidas** (solo admin): Se cuentan clases con `classViewed: 0` y `classDate > endDate` del enrollment

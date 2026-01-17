@@ -125,29 +125,95 @@ const createClassFinalizationNotification = async (enrollment, stats) => {
             throw new Error('ID de categoría de notificación inválido');
         }
 
-        // Construir descripción dinámica
-        let description = `Finalización de clases del enrollment ${enrollment._id}. `;
+        // Construir descripción dinámica con información legible del enrollment
+        let enrollmentIdentifier = '';
+        
+        // Si existe alias, usarlo; sino, usar nombres de estudiantes
+        if (enrollment.alias && enrollment.alias.trim() !== '') {
+            enrollmentIdentifier = enrollment.alias.trim();
+        } else if (enrollment.studentIds && Array.isArray(enrollment.studentIds) && enrollment.studentIds.length > 0) {
+            // Obtener nombres de estudiantes del populate
+            const studentNames = enrollment.studentIds
+                .filter(s => s.studentId && s.studentId.name)
+                .map(s => s.studentId.name);
+            if (studentNames.length > 0) {
+                enrollmentIdentifier = studentNames.join(', ');
+            }
+        }
+        
+        // Si no hay alias ni estudiantes, usar ID como fallback
+        if (!enrollmentIdentifier) {
+            enrollmentIdentifier = enrollment._id.toString();
+        }
+        
+        // Obtener nombre del plan
+        const planName = enrollment.planId && enrollment.planId.name ? enrollment.planId.name : 'Plan desconocido';
+        
+        // Mapear enrollmentType a texto legible
+        let enrollmentTypeText = '';
+        if (enrollment.enrollmentType === 1) {
+            enrollmentTypeText = 'Single';
+        } else if (enrollment.enrollmentType === 2) {
+            enrollmentTypeText = 'Couple';
+        } else if (enrollment.enrollmentType === 3) {
+            enrollmentTypeText = 'Group';
+        } else {
+            enrollmentTypeText = 'Tipo desconocido';
+        }
+        
+        // Obtener idioma
+        const language = enrollment.language || 'Idioma no especificado';
+        
+        // Obtener nombre del profesor
+        const professorName = enrollment.professorId && enrollment.professorId.name 
+            ? enrollment.professorId.name 
+            : 'Profesor no asignado';
+        
+        // Construir descripción inicial con información del enrollment
+        let description = `Finalización de clases: ${enrollmentIdentifier} (Plan: ${planName}, Tipo: ${enrollmentTypeText}, Idioma: ${language}, Profesor: ${professorName}). `;
+        
+        // Función helper para manejar singular/plural
+        const pluralize = (count, singular, plural) => {
+            return count === 1 ? `${count} ${singular}` : `${count} ${plural}`;
+        };
         
         const parts = [];
         
-        if (stats.classLostCount > 0) {
-            parts.push(`${stats.classLostCount} clase(s) de tipo 4 (Class Lost - clase perdida)`);
-        }
+        // Orden lógico: Completadas → Parcialmente completadas → Parcialmente completadas reprogramadas → Reschedules vistos → No Show → Perdidas
         
+        // 1. Clases completadas completamente
         if (stats.viewedCount > 0) {
-            parts.push(`${stats.viewedCount} clase(s) de tipo 1 (vistas)`);
+            parts.push(pluralize(stats.viewedCount, 'clase vista en su totalidad', 'clases vistas en su totalidad'));
         }
         
+        // 2. Clases parcialmente vistas
         if (stats.partiallyViewedCount > 0) {
-            parts.push(`${stats.partiallyViewedCount} clase(s) de tipo 2 (parcialmente vista)`);
+            parts.push(pluralize(stats.partiallyViewedCount, 'clase vista parcialmente', 'clases vistas parcialmente'));
         }
         
+        // 3. Clases parcialmente completadas con reschedule realizado
         if (stats.partiallyViewedWithRescheduleCount > 0) {
-            parts.push(`${stats.partiallyViewedWithRescheduleCount} clase(s) de tipo 2 con reschedule`);
+            parts.push(pluralize(stats.partiallyViewedWithRescheduleCount, 'clase parcialmente completada con reschedule programado', 'clases parcialmente completadas con reschedule programado'));
+        }
+        
+        // 4. Reschedules vistos (clases hijas reprogramadas que fueron vistas)
+        if (stats.rescheduleViewedCount > 0) {
+            parts.push(pluralize(stats.rescheduleViewedCount, 'reschedule visto', 'reschedules vistos'));
+        }
+        
+        // 5. Clases No Show
+        if (stats.noShowCount > 0) {
+            parts.push(pluralize(stats.noShowCount, 'clase marcada como no show', 'clases marcadas como no show'));
+        }
+        
+        // 6. Clases perdidas (tomadas como lost class)
+        if (stats.classLostCount > 0) {
+            parts.push(pluralize(stats.classLostCount, 'clase perdida tomada como lost class', 'clases perdidas tomadas como lost class'));
         }
 
         if (parts.length > 0) {
-            description += `Total: ${parts.join(', ')}.`;
+            // Usar puntos para separar ideas más largas
+            description += `Resumen: ${parts.join('. ')}.`;
         } else {
             description += 'No se encontraron clases para reportar.';
         }
@@ -201,9 +267,14 @@ const processClassFinalization = async () => {
 
         // Buscar enrollments cuyo endDate < fecha actual
         // Buscar todos los enrollments (activos e inactivos) que hayan vencido
+        // Populate necesario para construir descripción legible de notificaciones
         const expiredEnrollments = await Enrollment.find({
             endDate: { $lt: now }
-        }).lean();
+        })
+        .populate('planId', 'name')
+        .populate('studentIds.studentId', 'name')
+        .populate('professorId', 'name')
+        .lean();
 
         console.log(`[CRONJOB] Encontrados ${expiredEnrollments.length} enrollments vencidos para procesar`);
         console.log(`[CRONJOB] Procesando clases del mes: ${monthYear}`);
@@ -292,7 +363,9 @@ const processClassFinalization = async () => {
                     classLostCount: 0, // classViewed = 4 (Class Lost - clase perdida)
                     viewedCount: 0, // classViewed = 1
                     partiallyViewedCount: 0, // classViewed = 2
-                    partiallyViewedWithRescheduleCount: 0 // classViewed = 2 y originalClassId apunta a clase con reschedule = 1
+                    partiallyViewedWithRescheduleCount: 0, // classViewed = 2 y originalClassId apunta a clase con reschedule = 1
+                    noShowCount: 0, // classViewed = 3 (No Show)
+                    rescheduleViewedCount: 0 // reschedule = 1 y (classViewed = 1 o classViewed = 2)
                 };
 
                 // Obtener IDs de clases con reschedule = 1 para verificar originalClassId
@@ -303,10 +376,22 @@ const processClassFinalization = async () => {
                 for (const classRecord of allClasses) {
                     if (classRecord.classViewed === 4) {
                         stats.classLostCount++;
+                    } else if (classRecord.classViewed === 3) {
+                        // No Show
+                        stats.noShowCount++;
                     } else if (classRecord.classViewed === 1) {
                         stats.viewedCount++;
+                        // Si es un reschedule visto completamente
+                        if (classRecord.reschedule === 1) {
+                            stats.rescheduleViewedCount++;
+                        }
                     } else if (classRecord.classViewed === 2) {
                         stats.partiallyViewedCount++;
+                        
+                        // Si es un reschedule visto parcialmente
+                        if (classRecord.reschedule === 1) {
+                            stats.rescheduleViewedCount++;
+                        }
                         
                         // Verificar si originalClassId apunta a una clase con reschedule = 1
                         if (classRecord.originalClassId) {

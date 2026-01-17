@@ -554,7 +554,7 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
             // Buscar registros donde:
             // 1. El studentId coincida directamente
             // 2. O el enrollmentId tenga al estudiante en su array studentIds
-            const studentObjectId = mongoose.Types.ObjectId(userId);
+            const studentObjectId = new mongoose.Types.ObjectId(userId);
             
             // Primero, obtener todos los enrollments donde el estudiante esté en studentIds
             const enrollmentsWithStudent = await Enrollment.find({
@@ -572,7 +572,7 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
             // Buscar registros donde:
             // 1. El professorId coincida directamente
             // 2. O el enrollmentId tenga al profesor como profesor
-            const professorObjectId = mongoose.Types.ObjectId(userId);
+            const professorObjectId = new mongoose.Types.ObjectId(userId);
             
             // Primero, obtener todos los enrollments donde el profesor sea el profesor
             const enrollmentsWithProfessor = await Enrollment.find({
@@ -588,7 +588,7 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
             ];
         } else if (userType === 'admin') {
             // Buscar registros donde el usuario admin coincida
-            query.userId = mongoose.Types.ObjectId(userId);
+            query.userId = new mongoose.Types.ObjectId(userId);
         } else {
             return res.status(400).json({
                 message: 'Tipo de usuario no válido o no encontrado en el token'
