@@ -311,9 +311,10 @@ notificationCtrl.getMyNotifications = async (req, res) => {
         } else if (userType === 'professor') {
             // Buscar notificaciones donde el profesor coincida
             query.idProfessor = userId;
-        } else if (userType === 'admin') {
-            // Buscar notificaciones donde el usuario admin coincida
-            query.userId = userId;
+        } else if (userType === 'admin' || userType === 'admin-jr') {
+            // Excepción: Los administradores (admin y admin-jr) pueden ver TODAS las notificaciones activas
+            // No se agrega ningún filtro adicional al query, solo isActive: true
+            // Esto permite que vean todas las notificaciones del sistema
         } else {
             return res.status(400).json({
                 message: 'Tipo de usuario no válido o no encontrado en el token'
