@@ -742,5 +742,169 @@ notificationCtrl.activate = async (req, res) => {
     }
 };
 
+/**
+ * @route PATCH /api/notifications/batch/activate
+ * @description Activa múltiples notificaciones en lote (establece isActive a true)
+ * @access Private (Requiere JWT - Solo admin)
+ */
+notificationCtrl.activateBatch = async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validar que ids sea un array
+        if (!Array.isArray(ids)) {
+            return res.status(400).json({
+                message: 'El campo "ids" debe ser un array'
+            });
+        }
+
+        // Validar que el array no esté vacío
+        if (ids.length === 0) {
+            return res.status(400).json({
+                message: 'El array "ids" no puede estar vacío'
+            });
+        }
+
+        // Validar que todos los IDs sean ObjectIds válidos
+        const invalidIds = ids.filter(id => !mongoose.Types.ObjectId.isValid(id));
+        if (invalidIds.length > 0) {
+            return res.status(400).json({
+                message: `IDs inválidos: ${invalidIds.join(', ')}`,
+                invalidIds: invalidIds
+            });
+        }
+
+        // Convertir todos los IDs a ObjectId
+        const objectIds = ids.map(id => new mongoose.Types.ObjectId(id));
+
+        // Buscar notificaciones que existen y no están activadas
+        const notificationsToUpdate = await Notification.find({
+            _id: { $in: objectIds },
+            isActive: false
+        }).lean();
+
+        const foundIds = notificationsToUpdate.map(n => n._id.toString());
+        const notFoundIds = ids.filter(id => !foundIds.includes(id));
+
+        // Actualizar notificaciones en lote
+        const updateResult = await Notification.updateMany(
+            { _id: { $in: objectIds }, isActive: false },
+            { $set: { isActive: true } },
+            { runValidators: true }
+        );
+
+        res.status(200).json({
+            message: 'Operación de activación en lote completada',
+            totalRequested: ids.length,
+            totalUpdated: updateResult.modifiedCount,
+            totalFound: notificationsToUpdate.length,
+            totalNotFound: notFoundIds.length,
+            notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined,
+            alreadyActive: ids.length - notificationsToUpdate.length - notFoundIds.length
+        });
+    } catch (error) {
+        console.error('Error al activar notificaciones en lote:', error);
+
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                message: 'Uno o más IDs de notificación son inválidos'
+            });
+        }
+
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                message: error.message
+            });
+        }
+
+        res.status(500).json({
+            message: 'Error interno al activar notificaciones en lote',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @route PATCH /api/notifications/batch/anular
+ * @description Anula múltiples notificaciones en lote (establece isActive a false)
+ * @access Private (Requiere JWT - Solo admin)
+ */
+notificationCtrl.anularBatch = async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validar que ids sea un array
+        if (!Array.isArray(ids)) {
+            return res.status(400).json({
+                message: 'El campo "ids" debe ser un array'
+            });
+        }
+
+        // Validar que el array no esté vacío
+        if (ids.length === 0) {
+            return res.status(400).json({
+                message: 'El array "ids" no puede estar vacío'
+            });
+        }
+
+        // Validar que todos los IDs sean ObjectIds válidos
+        const invalidIds = ids.filter(id => !mongoose.Types.ObjectId.isValid(id));
+        if (invalidIds.length > 0) {
+            return res.status(400).json({
+                message: `IDs inválidos: ${invalidIds.join(', ')}`,
+                invalidIds: invalidIds
+            });
+        }
+
+        // Convertir todos los IDs a ObjectId
+        const objectIds = ids.map(id => new mongoose.Types.ObjectId(id));
+
+        // Buscar notificaciones que existen y están activadas
+        const notificationsToUpdate = await Notification.find({
+            _id: { $in: objectIds },
+            isActive: true
+        }).lean();
+
+        const foundIds = notificationsToUpdate.map(n => n._id.toString());
+        const notFoundIds = ids.filter(id => !foundIds.includes(id));
+
+        // Actualizar notificaciones en lote
+        const updateResult = await Notification.updateMany(
+            { _id: { $in: objectIds }, isActive: true },
+            { $set: { isActive: false } },
+            { runValidators: true }
+        );
+
+        res.status(200).json({
+            message: 'Operación de anulación en lote completada',
+            totalRequested: ids.length,
+            totalUpdated: updateResult.modifiedCount,
+            totalFound: notificationsToUpdate.length,
+            totalNotFound: notFoundIds.length,
+            notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined,
+            alreadyInactive: ids.length - notificationsToUpdate.length - notFoundIds.length
+        });
+    } catch (error) {
+        console.error('Error al anular notificaciones en lote:', error);
+
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                message: 'Uno o más IDs de notificación son inválidos'
+            });
+        }
+
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                message: error.message
+            });
+        }
+
+        res.status(500).json({
+            message: 'Error interno al anular notificaciones en lote',
+            error: error.message
+        });
+    }
+};
+
 module.exports = notificationCtrl;
 

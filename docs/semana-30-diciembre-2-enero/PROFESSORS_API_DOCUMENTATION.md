@@ -1368,6 +1368,18 @@ GET /api/professors/6832845ebb53229d9559459b/substitute-enrollments
         "email": "maria.garcia@example.com",
         "phone": "+584121234567"
       },
+      "studentIds": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee540",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d0",
+            "studentCode": "BES-0084",
+            "name": "Jose Orlando Contreras",
+            "email": "contrerasnorlando@gmail.com",
+            "dob": "1995-03-15"
+          }
+        }
+      ],
       "substituteInfo": {
         "assignedDate": "2025-01-20T00:00:00.000Z",
         "expiryDate": "2025-02-20T23:59:59.999Z"
@@ -1391,6 +1403,28 @@ GET /api/professors/6832845ebb53229d9559459b/substitute-enrollments
         "email": "carlos.rodriguez@example.com",
         "phone": "+584129876543"
       },
+      "studentIds": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee541",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d1",
+            "studentCode": "BES-0085",
+            "name": "Yainery Veles",
+            "email": "yaineryveles99@gmail.com",
+            "dob": "1998-07-22"
+          }
+        },
+        {
+          "_id": "692a1f4a5fa3f53b825ee542",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d2",
+            "studentCode": "BES-0086",
+            "name": "María López",
+            "email": "maria.lopez@example.com",
+            "dob": "1996-11-10"
+          }
+        }
+      ],
       "substituteInfo": {
         "assignedDate": "sin fecha asignada",
         "expiryDate": "2025-02-15T23:59:59.999Z"
@@ -1414,6 +1448,38 @@ GET /api/professors/6832845ebb53229d9559459b/substitute-enrollments
         "email": "ana.martinez@example.com",
         "phone": "+584123456789"
       },
+      "studentIds": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee543",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d3",
+            "studentCode": "BES-0087",
+            "name": "Pedro Sánchez",
+            "email": "pedro.sanchez@example.com",
+            "dob": "1997-05-20"
+          }
+        },
+        {
+          "_id": "692a1f4a5fa3f53b825ee544",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d4",
+            "studentCode": "BES-0088",
+            "name": "Laura González",
+            "email": "laura.gonzalez@example.com",
+            "dob": "1999-09-15"
+          }
+        },
+        {
+          "_id": "692a1f4a5fa3f53b825ee545",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d5",
+            "studentCode": "BES-0089",
+            "name": "Carlos Ramírez",
+            "email": "carlos.ramirez@example.com",
+            "dob": "1994-12-08"
+          }
+        }
+      ],
       "substituteInfo": {
         "assignedDate": "sin fecha asignada",
         "expiryDate": "sin fecha asignada"
@@ -1452,6 +1518,14 @@ GET /api/professors/6832845ebb53229d9559459b/substitute-enrollments
     - `name` (String): Nombre completo del profesor encargado
     - `email` (String): Correo electrónico del profesor encargado
     - `phone` (String): Teléfono del profesor encargado
+  - `studentIds` (Array): Array de objetos con información de los estudiantes que pertenecen al enrollment:
+    - `_id` (String): ID del objeto studentId
+    - `studentId` (Object): Objeto con información del estudiante:
+      - `_id` (String): ID del estudiante
+      - `studentCode` (String): Código del estudiante
+      - `name` (String): Nombre del estudiante
+      - `email` (String): Correo electrónico del estudiante
+      - `dob` (String): Fecha de nacimiento del estudiante (formato YYYY-MM-DD)
   - `substituteInfo` (Object): Información de la suplencia:
     - `assignedDate` (Date/String): Fecha en que se asignó la suplencia. Si no existe o es `null`, retorna `"sin fecha asignada"` (string)
     - `expiryDate` (Date/String): Fecha en que debe vencer la suplencia. Si no existe o es `null`, retorna `"sin fecha asignada"` (string)
@@ -1567,6 +1641,16 @@ const getSubstituteEnrollments = async (professorId) => {
         console.log(`Teléfono profesor: ${enrollment.professor?.phone || 'No disponible'}`);
         console.log(`Fecha asignación suplencia: ${enrollment.substituteInfo.assignedDate}`);
         console.log(`Fecha vencimiento suplencia: ${enrollment.substituteInfo.expiryDate}`);
+        console.log(`Estudiantes: ${enrollment.studentIds?.length || 0}`);
+        
+        // Mostrar información de cada estudiante
+        if (enrollment.studentIds && enrollment.studentIds.length > 0) {
+          enrollment.studentIds.forEach(studentInfo => {
+            console.log(`  - ${studentInfo.studentId?.name || 'Sin nombre'} (${studentInfo.studentId?.studentCode || 'Sin código'})`);
+            console.log(`    Email: ${studentInfo.studentId?.email || 'No disponible'}`);
+            console.log(`    Fecha de Nacimiento: ${studentInfo.studentId?.dob || 'No disponible'}`);
+          });
+        }
       });
       
       return data;
@@ -1608,6 +1692,18 @@ getSubstituteEnrollments('6832845ebb53229d9559459b');
         "email": "maria.garcia@example.com",
         "phone": "+584121234567"
       },
+      "studentIds": [
+        {
+          "_id": "692a1f4a5fa3f53b825ee540",
+          "studentId": {
+            "_id": "6858c84b1b114315ccdf65d0",
+            "studentCode": "BES-0084",
+            "name": "Jose Orlando Contreras",
+            "email": "contrerasnorlando@gmail.com",
+            "dob": "1995-03-15"
+          }
+        }
+      ],
       "substituteInfo": {
         "assignedDate": "2025-01-20T00:00:00.000Z",
         "expiryDate": "2025-02-20T23:59:59.999Z"
@@ -1637,6 +1733,21 @@ getSubstituteEnrollments('6832845ebb53229d9559459b');
 {
   "_id": "692a1f4a5fa3f53b825ee53f",
   "alias": "Enrollment de Francés",
+  "enrollmentType": "couple",
+  "language": "French",
+  "status": 1,
+  "studentIds": [
+    {
+      "_id": "692a1f4a5fa3f53b825ee541",
+      "studentId": {
+        "_id": "6858c84b1b114315ccdf65d1",
+        "studentCode": "BES-0085",
+        "name": "Yainery Veles",
+        "email": "yaineryveles99@gmail.com",
+        "dob": "1998-07-22"
+      }
+    }
+  ],
   "substituteInfo": {
     "assignedDate": "sin fecha asignada",
     "expiryDate": "2025-02-20T23:59:59.999Z"
@@ -1649,6 +1760,21 @@ getSubstituteEnrollments('6832845ebb53229d9559459b');
 {
   "_id": "692a1f4a5fa3f53b825ee53f",
   "alias": "Enrollment de Inglés",
+  "enrollmentType": "single",
+  "language": "English",
+  "status": 1,
+  "studentIds": [
+    {
+      "_id": "692a1f4a5fa3f53b825ee540",
+      "studentId": {
+        "_id": "6858c84b1b114315ccdf65d0",
+        "studentCode": "BES-0084",
+        "name": "Jose Orlando Contreras",
+        "email": "contrerasnorlando@gmail.com",
+        "dob": "1995-03-15"
+      }
+    }
+  ],
   "substituteInfo": {
     "assignedDate": "sin fecha asignada",
     "expiryDate": "sin fecha asignada"

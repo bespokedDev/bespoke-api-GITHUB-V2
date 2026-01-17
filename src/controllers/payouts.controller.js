@@ -4,6 +4,7 @@ const Professor = require('../models/Professor');
 const Enrollment = require('../models/Enrollment');
 const ClassRegistry = require('../models/ClassRegistry');
 const Bonus = require('../models/Bonus');
+const ProfessorBonus = require('../models/ProfessorBonus');
 const PenalizationRegistry = require('../models/PenalizationRegistry');
 const Penalizacion = require('../models/Penalizacion');
 const moment = require('moment');
@@ -25,7 +26,7 @@ const basePopulateOptions = [
         { path: 'studentIds.studentId', select: 'name' } // Popular nombres de estudiantes dentro de la matrícula
     ]},
     { path: 'penalizationInfo.id', select: 'penalization_description penalizationMoney createdAt' }, // Popular información de penalizaciones
-    { path: 'bonusInfo.id', select: 'amount reason createdAt' } // Popular información de bonos
+    { path: 'bonusInfo.id', select: 'amount description bonusDate createdAt' } // Popular información de bonos (ProfessorBonus)
     // El campo paymentMethodId se populará manualmente en la función populatePaymentMethod, NO aquí con .populate()
 ];
 
@@ -317,14 +318,19 @@ payoutCtrl.create = async (req, res) => {
                     return res.status(400).json({ message: `Invalid bonus ID: ${bonus.id}` });
                 }
 
-                // Validar que el bono existe y pertenece al profesor
-                const bonusExists = await Bonus.findById(bonus.id);
+                // Validar que el bono existe y pertenece al profesor usando ProfessorBonus
+                const bonusExists = await ProfessorBonus.findById(bonus.id);
                 if (!bonusExists) {
                     return res.status(404).json({ message: `Bonus not found: ${bonus.id}` });
                 }
 
-                if (bonusExists.idProfessor.toString() !== professorId.toString()) {
+                if (bonusExists.professorId.toString() !== professorId.toString()) {
                     return res.status(400).json({ message: `Bonus ${bonus.id} does not belong to professor ${professorId}` });
+                }
+
+                // Validar que el bono esté activo
+                if (bonusExists.status !== 1) {
+                    return res.status(400).json({ message: `Bonus ${bonus.id} is not active (status: ${bonusExists.status})` });
                 }
 
                 if (typeof bonus.amount !== 'number' || bonus.amount < 0) {
@@ -399,14 +405,17 @@ payoutCtrl.create = async (req, res) => {
 
         const savedPayout = await newPayout.save();
 
-        // 10. Actualizar bonos: establecer idPayout
-        if (validatedBonusInfo.length > 0) {
-            const bonusIds = validatedBonusInfo.map(b => b.id);
-            await Bonus.updateMany(
-                { _id: { $in: bonusIds } },
-                { $set: { idPayout: savedPayout._id } }
-            );
-        }
+        // 10. Actualizar bonos: NOTA - ProfessorBonus no tiene campo idPayout
+        // La asociación con el payout se maneja a través del campo month y status
+        // Los bonos se filtran por month y status: 1 en el preview, por lo que no es necesario
+        // establecer un campo idPayout como en el modelo Bonus antiguo
+        // if (validatedBonusInfo.length > 0) {
+        //     const bonusIds = validatedBonusInfo.map(b => b.id);
+        //     await ProfessorBonus.updateMany(
+        //         { _id: { $in: bonusIds } },
+        //         { $set: { idPayout: savedPayout._id } } // Este campo no existe en ProfessorBonus
+        //     );
+        // }
 
         // 11. Actualizar penalizaciones: establecer payOutId
         if (validatedPenalizationInfo.length > 0) {
@@ -618,12 +627,17 @@ payoutCtrl.update = async (req, res) => {
                     if (!bonus.id || !mongoose.Types.ObjectId.isValid(bonus.id)) {
                         return res.status(400).json({ message: `Invalid bonus ID: ${bonus.id}` });
                     }
-                    const bonusExists = await Bonus.findById(bonus.id);
+                    // Validar que el bono existe y pertenece al profesor usando ProfessorBonus
+                    const bonusExists = await ProfessorBonus.findById(bonus.id);
                     if (!bonusExists) {
                         return res.status(404).json({ message: `Bonus not found: ${bonus.id}` });
                     }
-                    if (bonusExists.idProfessor.toString() !== effectiveProfessorId.toString()) {
+                    if (bonusExists.professorId.toString() !== effectiveProfessorId.toString()) {
                         return res.status(400).json({ message: `Bonus ${bonus.id} does not belong to professor ${effectiveProfessorId}` });
+                    }
+                    // Validar que el bono esté activo
+                    if (bonusExists.status !== 1) {
+                        return res.status(400).json({ message: `Bonus ${bonus.id} is not active (status: ${bonusExists.status})` });
                     }
                     if (typeof bonus.amount !== 'number' || bonus.amount < 0) {
                         return res.status(400).json({ message: `Invalid bonus amount for bonus ${bonus.id}` });
@@ -700,27 +714,30 @@ payoutCtrl.update = async (req, res) => {
             return res.status(404).json({ message: 'Payout not found.' });
         }
 
-        // Actualizar bonos: remover idPayout de bonos antiguos y establecer en nuevos
-        if (bonusInfo !== undefined) {
-            // Remover idPayout de bonos que ya no están en la lista
-            const oldBonusIds = currentPayout.bonusInfo ? currentPayout.bonusInfo.map(b => b.id.toString()) : [];
-            const newBonusIds = updatedFields.bonusInfo ? updatedFields.bonusInfo.map(b => b.id.toString()) : [];
-            const removedBonusIds = oldBonusIds.filter(id => !newBonusIds.includes(id));
-            if (removedBonusIds.length > 0) {
-                await Bonus.updateMany(
-                    { _id: { $in: removedBonusIds.map(id => new mongoose.Types.ObjectId(id)) } },
-                    { $set: { idPayout: null } }
-                );
-            }
-            // Establecer idPayout en bonos nuevos
-            if (updatedFields.bonusInfo && updatedFields.bonusInfo.length > 0) {
-                const bonusIds = updatedFields.bonusInfo.map(b => b.id);
-                await Bonus.updateMany(
-                    { _id: { $in: bonusIds } },
-                    { $set: { idPayout: updatedPayout._id } }
-                );
-            }
-        }
+        // Actualizar bonos: NOTA - ProfessorBonus no tiene campo idPayout
+        // La asociación con el payout se maneja a través del campo month y status
+        // Los bonos se filtran por month y status: 1 en el preview, por lo que no es necesario
+        // establecer un campo idPayout como en el modelo Bonus antiguo
+        // if (bonusInfo !== undefined) {
+        //     // Remover idPayout de bonos que ya no están en la lista
+        //     const oldBonusIds = currentPayout.bonusInfo ? currentPayout.bonusInfo.map(b => b.id.toString()) : [];
+        //     const newBonusIds = updatedFields.bonusInfo ? updatedFields.bonusInfo.map(b => b.id.toString()) : [];
+        //     const removedBonusIds = oldBonusIds.filter(id => !newBonusIds.includes(id));
+        //     if (removedBonusIds.length > 0) {
+        //         await ProfessorBonus.updateMany(
+        //             { _id: { $in: removedBonusIds.map(id => new mongoose.Types.ObjectId(id)) } },
+        //             { $set: { idPayout: null } } // Este campo no existe en ProfessorBonus
+        //         );
+        //     }
+        //     // Establecer idPayout en bonos nuevos
+        //     if (updatedFields.bonusInfo && updatedFields.bonusInfo.length > 0) {
+        //         const bonusIds = updatedFields.bonusInfo.map(b => b.id);
+        //         await ProfessorBonus.updateMany(
+        //             { _id: { $in: bonusIds } },
+        //             { $set: { idPayout: updatedPayout._id } } // Este campo no existe en ProfessorBonus
+        //         );
+        //     }
+        // }
 
         // Actualizar penalizaciones: remover payOutId de penalizaciones antiguas y establecer en nuevas
         if (penalizationInfo !== undefined) {
@@ -1037,30 +1054,30 @@ payoutCtrl.preview = async (req, res) => {
             subtotalEnrollments += enrollmentSubtotal;
         }
 
-        // Buscar bonos del profesor dentro del rango del mes
-        // Bonos válidos: idPayout es null y createdAt está dentro del rango del mes
-        const bonuses = await Bonus.find({
-            idProfessor: professorId,
-            idPayout: null
+        // Buscar bonos del profesor dentro del rango del mes usando ProfessorBonus
+        // Bonos válidos: status: 1 (activos) y month coincide con el mes del reporte
+        const professorBonuses = await ProfessorBonus.find({
+            professorId: professorId,
+            month: month,
+            status: 1 // Solo bonos activos
         })
+        .populate('userId', 'name email role')
+        .sort({ bonusDate: -1, createdAt: -1 })
         .lean();
 
-        // Filtrar bonos por createdAt dentro del rango del mes
-        const validBonuses = bonuses.filter(bonus => {
-            if (!bonus.createdAt) return false;
-            const bonusDate = new Date(bonus.createdAt);
-            return bonusDate >= startDate && bonusDate <= endDate;
-        });
-
         // Crear array de bonusInfo con detalles completos
-        const bonusInfo = validBonuses.map(bonus => ({
+        const bonusInfo = professorBonuses.map(bonus => ({
             id: bonus._id,
             amount: parseFloat((bonus.amount || 0).toFixed(2)),
-            reason: bonus.reason || null,
+            description: bonus.description || null,
+            bonusDate: bonus.bonusDate,
+            month: bonus.month,
+            userId: bonus.userId ? bonus.userId._id : null,
+            userName: bonus.userId ? bonus.userId.name : null,
             createdAt: bonus.createdAt
         }));
 
-        const totalBonuses = validBonuses.reduce((sum, bonus) => sum + (bonus.amount || 0), 0);
+        const totalBonuses = professorBonuses.reduce((sum, bonus) => sum + (bonus.amount || 0), 0);
 
         // Buscar penalizaciones del profesor dentro del rango del mes
         // Hacer populate de idPenalizacion para obtener información del tipo de penalización
