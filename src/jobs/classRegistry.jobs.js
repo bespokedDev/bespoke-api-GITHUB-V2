@@ -551,7 +551,7 @@ const createMonthlyClassClosureNotification = async (enrollment, monthYear, stat
  * Se ejecuta el último día de cada mes a las 00:00 (medianoche)
  * 
  * Reglas de negocio:
- * 1. Buscar todos los enrollments que tengan clases en el mes actual (sin filtrar por status)
+ * 1. Buscar enrollments con status = 1 (activo) que tengan clases en el mes actual
  * 2. Para cada enrollment:
  *    - Revisar todas sus ClassRegistry
  *    - Filtrar clases cuya classDate esté dentro del mes actual que está terminando
@@ -594,9 +594,10 @@ const processMonthlyClassClosure = async () => {
             return;
         }
 
-        // Buscar todos los enrollments que tienen clases en el mes (sin filtrar por status)
+        // Buscar enrollments que tienen clases en el mes y están activos (status = 1)
         const enrollmentsToProcess = await Enrollment.find({
-            _id: { $in: enrollmentIds }
+            _id: { $in: enrollmentIds },
+            status: 1
         }).lean();
 
         console.log(`[CRONJOB MENSUAL] Encontrados ${enrollmentsToProcess.length} enrollments con clases en el mes ${monthYear} para procesar`);
@@ -1028,12 +1029,87 @@ const initWeeklyUnguidedClassesCronjob = () => {
     console.log('[CRONJOB SEMANAL] Cronjob de clases no gestionadas semanalmente configurado (domingos a medianoche - PRODUCCIÓN)');
 };
 
+/**
+ * Cronjob para marcar como lost class (classViewed = 4) las clases no vistas cuando endDate = hoy y status = 1
+ * Se ejecuta diariamente a las 00:00 (medianoche)
+ *
+ * Reglas de negocio:
+ * 1. Buscar enrollments cuyo endDate sea el mismo día que la fecha de ejecución y status = 1 (activo)
+ * 2. Para cada enrollment encontrado:
+ *    - Buscar todas sus ClassRegistry con classViewed = 0
+ *    - Actualizarlas a classViewed = 4 (Class Lost - clase perdida)
+ */
+const processEndDateSameDayLostClass = async () => {
+    try {
+        console.log('[CRONJOB ENDDATE] Iniciando procesamiento de lost class por endDate = hoy...');
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        // Buscar enrollments con endDate = hoy (mismo día) y status = 1
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const enrollmentsSameDayEnd = await Enrollment.find({
+            endDate: { $gte: startOfDay, $lte: endOfDay },
+            status: 1
+        }).select('_id').lean();
+
+        console.log(`[CRONJOB ENDDATE] Encontrados ${enrollmentsSameDayEnd.length} enrollments con endDate = ${todayStr} y status = 1`);
+
+        let updatedClassesCount = 0;
+
+        for (const enrollment of enrollmentsSameDayEnd) {
+            try {
+                const updateResult = await ClassRegistry.updateMany(
+                    {
+                        enrollmentId: enrollment._id,
+                        classViewed: 0
+                    },
+                    { $set: { classViewed: 4 } }
+                );
+
+                if (updateResult.modifiedCount > 0) {
+                    updatedClassesCount += updateResult.modifiedCount;
+                    console.log(`[CRONJOB ENDDATE] Enrollment ${enrollment._id}: ${updateResult.modifiedCount} clase(s) actualizada(s) a Class Lost (4)`);
+                }
+            } catch (error) {
+                console.error(`[CRONJOB ENDDATE] Error procesando enrollment ${enrollment._id}:`, error.message);
+            }
+        }
+
+        console.log(`[CRONJOB ENDDATE] Procesamiento completado: ${updatedClassesCount} clase(s) marcada(s) como lost class (endDate = hoy)`);
+    } catch (error) {
+        console.error('[CRONJOB ENDDATE] Error en procesamiento de lost class por endDate = hoy:', error);
+    }
+};
+
+/**
+ * Inicializa el cronjob para marcar lost class cuando endDate = hoy y status = 1
+ * Se ejecuta diariamente a las 00:00 (medianoche)
+ */
+const initEndDateSameDayLostClassCronjob = () => {
+    cron.schedule('0 0 * * *', async () => {
+        console.log(`[CRONJOB ENDDATE] Ejecutando cronjob lost class por endDate = hoy - ${new Date().toISOString()}`);
+        await processEndDateSameDayLostClass();
+    }, {
+        scheduled: true,
+        timezone: 'America/Caracas'
+    });
+    console.log('[CRONJOB ENDDATE] Cronjob lost class por endDate = hoy configurado (diario a medianoche - PRODUCCIÓN)');
+};
+
 module.exports = {
     processClassFinalization,
     initClassFinalizationCronjob,
     processMonthlyClassClosure,
     initMonthlyClassClosureCronjob,
     processWeeklyUnguidedClasses,
-    initWeeklyUnguidedClassesCronjob
+    initWeeklyUnguidedClassesCronjob,
+    processEndDateSameDayLostClass,
+    initEndDateSameDayLostClassCronjob
 };
 

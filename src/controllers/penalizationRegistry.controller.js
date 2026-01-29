@@ -255,7 +255,7 @@ penalizationRegistryCtrl.create = async (req, res) => {
         }
 
         // Establecer status en 1 (activa) por defecto al crear
-        // Si se proporciona status en el request body, se respeta; si no, se establece en 1
+        // Si se proporciona status en el request body, se respeta; si no, se establece explícitamente en 1
         if (req.body.status !== undefined && req.body.status !== null) {
             const statusValue = Number(req.body.status);
             if (statusValue === 0 || statusValue === 1) {
@@ -266,6 +266,7 @@ penalizationRegistryCtrl.create = async (req, res) => {
                 });
             }
         } else {
+            // Asegurar que siempre se establezca explícitamente en 1 (activa) por defecto
             registryData.status = 1; // Activa por defecto
         }
 
@@ -595,8 +596,8 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
             });
         }
 
-        // Filtrar solo penalizaciones activas (status = 1)
-        query.status = 1;
+        // Mostrar tanto penalizaciones activas como inactivas (sin filtrar por status)
+        // query.status no se establece, por lo que se muestran todos los registros
 
         // Buscar registros de penalización con populate de todas las referencias
         const penalizations = await PenalizationRegistry.find(query)

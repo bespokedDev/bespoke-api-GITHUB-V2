@@ -2,7 +2,7 @@
 // Archivo principal para inicializar todos los cronjobs
 
 const { initEnrollmentsPaymentCronjob, initAutomaticPaymentsCronjob, initSubstituteProfessorExpiryCronjob } = require('./enrollments.jobs');
-const { initClassFinalizationCronjob, initMonthlyClassClosureCronjob, initWeeklyUnguidedClassesCronjob } = require('./classRegistry.jobs');
+const { initClassFinalizationCronjob, initMonthlyClassClosureCronjob, initWeeklyUnguidedClassesCronjob, initEndDateSameDayLostClassCronjob } = require('./classRegistry.jobs');
 
 /**
  * Inicializa todos los cronjobs del sistema
@@ -28,6 +28,9 @@ const initAllJobs = () => {
 
     // Inicializar cronjob de clases no gestionadas semanalmente
     initWeeklyUnguidedClassesCronjob();
+
+    // Inicializar cronjob lost class cuando endDate = hoy y status = 1
+    initEndDateSameDayLostClassCronjob();
 
     console.log('[JOBS] Todos los cronjobs han sido inicializados');
 };

@@ -2,7 +2,7 @@
 
 ## 📋 **Resumen**
 
-El sistema incluye cronjobs automatizados que se ejecutan periódicamente para gestionar diferentes aspectos del negocio. Todos los cronjobs están configurados para ejecutarse diariamente a las 00:00 (medianoche) en producción, pero pueden configurarse para ejecutarse en intervalos diferentes durante las pruebas.
+El sistema incluye **7 cronjobs** automatizados que se ejecutan periódicamente para gestionar enrollments, pagos, clases y lost class. En producción: los cronjobs diarios (enrollments por impago, pagos automáticos, profesores suplentes expirados, **lost class cuando endDate = hoy**) se ejecutan a las 00:00; el cronjob semanal (clases no gestionadas) los domingos a las 00:00; los cronjobs mensuales (finalización de clases y cierre mensual de clases) el último día de cada mes a las 00:00. La zona horaria es `America/Caracas`.
 
 ---
 
@@ -962,9 +962,9 @@ Este cronjob procesa el cierre mensual de clases, marcando las clases no vistas 
    - Procesa el mes que está terminando (mes actual)
 
 2. **Búsqueda de Enrollments con Clases en el Mes**
-   - Busca todos los enrollments que tengan clases en el mes actual (sin filtrar por status)
-   - No importa el `status` del enrollment (procesa activos, inactivos y en pausa)
-   - **⚠️ Manejo especial para enrollments en pausa (`status: 3`)**:
+   - Busca **solo enrollments con `status = 1` (activo)** que tengan clases en el mes actual
+   - Los enrollments con status 0 (disuelto), 2 (inactivo) o 3 (en pausa) **no se procesan**
+   - **⚠️ Manejo especial para enrollments en pausa (`status: 3`)** (solo aplica si en el futuro se incluyeran; actualmente se excluyen por el filtro `status: 1`):
      - Si el enrollment está en pausa pero **no tiene `pauseDate`**: se omite completamente, no se procesa ninguna clase
      - Si el enrollment está en pausa y **tiene `pauseDate`**: solo se procesan clases del mes donde `classDate < pauseDate` (clases anteriores a la pausa)
 
@@ -1002,7 +1002,8 @@ Este cronjob procesa el cierre mensual de clases, marcando las clases no vistas 
    }).select('enrollmentId').lean();
    
    const enrollmentsToProcess = await Enrollment.find({
-       _id: { $in: enrollmentIds }
+       _id: { $in: enrollmentIds },
+       status: 1  // Solo enrollments activos
    }).lean();
    ```
 
@@ -1127,6 +1128,89 @@ Este cronjob incluye lógica especial para enrollments en pausa:
 
 5. **Protección de Enrollments en Pausa**: Los enrollments en pausa están protegidos. Solo se procesan las clases que ocurrieron antes de la pausa, asegurando que las clases posteriores a la pausa no se marquen como "Class Lost" automáticamente.
 
+6. **Solo Enrollments Activos**: Desde la actualización, este cronjob **solo procesa enrollments con `status = 1` (activo)**. Enrollments disueltos (0), inactivos (2) o en pausa (3) se excluyen desde la consulta inicial.
+
+---
+
+### **7. Cronjob Lost Class cuando endDate = Hoy (Status = 1)**
+
+**Archivo**: `src/jobs/classRegistry.jobs.js`  
+**Función**: `processEndDateSameDayLostClass`  
+**Inicialización**: `initEndDateSameDayLostClassCronjob`
+
+#### **Descripción**
+Este cronjob marca como "Class Lost" (clase perdida) todas las clases no vistas de los enrollments cuyo `endDate` coincide con el día de ejecución y tienen `status = 1` (activo). Se ejecuta diariamente a medianoche para que, el mismo día en que vence un enrollment activo, las clases que no se gestionaron pasen a `classViewed = 4`.
+
+#### **Reglas de Negocio**
+
+1. **Frecuencia de Ejecución**
+   - Se ejecuta **todos los días** a las 00:00 (medianoche)
+   - Expresión cron: `'0 0 * * *'`
+   - Zona horaria: `America/Caracas`
+
+2. **Búsqueda de Enrollments**
+   - Busca enrollments donde:
+     - `endDate` sea el **mismo día** que la fecha de ejecución (comparación por día, ignorando hora)
+     - `status = 1` (activo)
+
+3. **Actualización de Clases**
+   - Para cada enrollment encontrado:
+     - Busca todas sus `ClassRegistry` con `classViewed: 0`
+     - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
+   - No se filtra por `reschedule`; todas las clases no vistas del enrollment se marcan como lost class.
+
+#### **Proceso de Ejecución**
+
+1. **Cálculo del Día Actual**
+   - Normaliza la fecha actual a medianoche (00:00:00)
+   - Construye rango del día: `startOfDay` (00:00:00) a `endOfDay` (23:59:59) para comparar `endDate`
+
+2. **Búsqueda de Enrollments**
+   ```javascript
+   const enrollmentsSameDayEnd = await Enrollment.find({
+       endDate: { $gte: startOfDay, $lte: endOfDay },
+       status: 1
+   }).select('_id').lean();
+   ```
+
+3. **Actualización de ClassRegistry**
+   - Para cada enrollment:
+     - `ClassRegistry.updateMany({ enrollmentId, classViewed: 0 }, { $set: { classViewed: 4 } })`
+   - Registra en logs cuántas clases se actualizaron por enrollment
+
+#### **Diferencia con Otros Cronjobs de Lost Class**
+
+| Cronjob | Cuándo actúa | Qué clases actualiza |
+|--------|---------------|----------------------|
+| **Cierre mensual** (`processMonthlyClassClosure`) | Último día del mes | Solo clases del **mes actual** con `classViewed: 0`; solo enrollments con **status = 1** |
+| **Finalización de clases** (`processClassFinalization`) | Último día del mes | Enrollments con **endDate &lt; hoy**; todas las clases con `classViewed: 0` y `reschedule: 0` |
+| **endDate = hoy** (`processEndDateSameDayLostClass`) | Todos los días | Enrollments con **endDate = hoy** y **status = 1**; todas las clases con `classViewed: 0` |
+
+#### **Sin Notificaciones ni Penalizaciones**
+Este cronjob **no crea** notificaciones ni penalizaciones. Solo actualiza `classViewed` de las clases no vistas a `4`.
+
+#### **Logs del Cronjob**
+El cronjob registra en consola:
+- Fecha del día procesado
+- Número de enrollments con `endDate = hoy` y `status = 1`
+- Por cada enrollment: número de clases actualizadas a Class Lost (4)
+- Total de clases marcadas como lost class
+
+**Ejemplo de Logs:**
+```
+[CRONJOB ENDDATE] Ejecutando cronjob lost class por endDate = hoy - 2025-01-15T00:00:00.000Z
+[CRONJOB ENDDATE] Iniciando procesamiento de lost class por endDate = hoy...
+[CRONJOB ENDDATE] Encontrados 2 enrollments con endDate = 2025-01-15 y status = 1
+[CRONJOB ENDDATE] Enrollment 64f8a1b2c3d4e5f6a7b8c9d0: 3 clase(s) actualizada(s) a Class Lost (4)
+[CRONJOB ENDDATE] Procesamiento completado: 3 clase(s) marcada(s) como lost class (endDate = hoy)
+```
+
+#### **Inicialización**
+Se registra en `src/jobs/index.js` como:
+```javascript
+initEndDateSameDayLostClassCronjob();
+```
+
 ---
 
 ## 🔍 **Monitoreo y Debugging**
@@ -1162,9 +1246,9 @@ Todos los cronjobs generan logs detallados en la consola con el prefijo `[CRONJO
 ```
 src/
   jobs/
-    index.js                    # Inicialización centralizada
+    index.js                    # Inicialización centralizada (7 cronjobs)
     enrollments.jobs.js         # Cronjob de enrollments por impago, pagos automáticos y profesores suplentes expirados
-    classRegistry.jobs.js       # Cronjob de finalización de clases, cierre mensual y clases no gestionadas semanalmente
+    classRegistry.jobs.js      # Cronjob de finalización de clases, cierre mensual, clases no gestionadas semanalmente, lost class cuando endDate = hoy
 ```
 
 ### **Dependencias**
@@ -1229,6 +1313,13 @@ cron.schedule('0 0 * * 0', async () => {
 // Se ejecuta los domingos a las 00:00
 ```
 
+**`src/jobs/classRegistry.jobs.js`** (cronjob lost class por endDate = hoy):
+```javascript
+// Cronjob lost class cuando endDate = hoy y status = 1 - Ya configurado para producción:
+cron.schedule('0 0 * * *', async () => {
+// Se ejecuta todos los días a medianoche
+```
+
 ---
 
 ## 📝 **Notas Importantes**
@@ -1245,9 +1336,8 @@ cron.schedule('0 0 * * 0', async () => {
    - **Cronjob de clases no gestionadas semanalmente**: Procesa clases con `classViewed: 0` dentro del rango semanal, pero filtra según el estado de pausa del enrollment:
      - Si el enrollment tiene `status: 3` y no tiene `pauseDate`: se excluyen todas sus clases
      - Si el enrollment tiene `status: 3` y tiene `pauseDate`: solo se incluyen clases donde `classDate < pauseDate`
-   - **Cronjob de cierre mensual de clases**: Procesa enrollments con clases en el mes, pero con manejo especial para enrollments en pausa:
-     - Si `status: 3` y no tiene `pauseDate`: se omite completamente
-     - Si `status: 3` y tiene `pauseDate`: solo procesa clases del mes donde `classDate < pauseDate`
+   - **Cronjob de cierre mensual de clases**: **Solo procesa enrollments con `status = 1` (activo)** que tengan clases en el mes actual. Enrollments con status 0, 2 o 3 se excluyen desde la consulta. No aplica manejo de pausa porque los en pausa (3) ya están excluidos.
+   - **Cronjob lost class cuando endDate = hoy**: Solo procesa enrollments con `endDate` = día de ejecución y `status = 1`. Actualiza todas las clases con `classViewed: 0` a `classViewed: 4` para esos enrollments.
 
 3. **Notificaciones**: 
    - Las notificaciones se crean automáticamente y están disponibles para los usuarios del sistema

@@ -47,9 +47,9 @@ const IncomeSchema = new mongoose.Schema({
         required: false, // <--- ¡Asegúrate de que sea `false`!
         default: null    // Opcional: para que se guarde explícitamente como null si no se envía
     },
-    idPenalization: {
+    idPenalizationRegistry: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Penalizacion',
+        ref: 'PenalizationRegistry',
         required: false,
         default: null
         // Referencia a la penalización que se está pagando con este income

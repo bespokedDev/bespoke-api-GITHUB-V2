@@ -818,9 +818,14 @@ GET /api/incomes/summary-by-payment-method?startDate=2024-01-01&endDate=2024-01-
 - **Método**: `GET`
 - **Ruta**: `/api/incomes/professors-payout-report`
 - **Descripción**: Genera reportes detallados de pagos por profesor para un mes específico, incluyendo la nueva funcionalidad de "excedentes" para ingresos sin enrollment ni profesor asociado
+- **REGLA FINAL**: El reporte muestra datos desde el primer día del mes solicitado hasta la fecha actual cuando se solicita el reporte (no hasta el final del mes completo)
 
 #### **Query Parameters** (obligatorio)
 - `month` (string): Mes en formato YYYY-MM (ej: "2025-07")
+  - **Comportamiento dinámico**:
+    - **Mes actual**: Si se solicita el reporte el día 20 de febrero de 2025 con `month=2025-02`, mostrará datos del 1 de febrero al 20 de febrero (hasta hoy)
+    - **Mes pasado**: Si se solicita el reporte en febrero de 2025 con `month=2025-01`, mostrará datos del 1 de enero al 31 de enero (mes completo)
+    - **Mes futuro**: Si se solicita el reporte en febrero de 2025 con `month=2025-03`, mostrará datos del 1 de marzo al último día de marzo (mes completo, aunque no debería haber datos futuros)
 
 #### **Ejemplo de URL**
 ```
@@ -921,7 +926,8 @@ GET /api/incomes/professors-payout-report?month=2025-01
           }
         ]
       },
-      "totalFinal": 900.00
+      "totalNeto": 1100.00,  // 🆕 Total sin descuentos (totalTeacher + bonos)
+      "totalFinal": 950.00   // Total con descuentos (totalNeto - penalizaciones)
     }
   ],
   "totals": {
@@ -1006,18 +1012,22 @@ GET /api/incomes/professors-payout-report?month=2025-01
         }
       ]
     },
-    "totalFinal": 212.50
+    "totalNeto": 287.50,  // 🆕 Total sin descuentos (subtotal.total + bonos)
+    "totalFinal": 212.50  // Total con descuentos (totalNeto - penalizaciones)
   },
   "excedente": {
     "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
-    "totalExcedente": 1500.00,
+    "totalExcedente": 1800.00,
     "totalExcedenteIncomes": 500.00,
     "totalExcedenteClasses": 1000.00,
     "totalPrepaidEnrollments": 200.00,
+    "totalPausedEnrollments": 300.00,  // 🆕 Total de enrollments en pausa
     "totalBonuses": 200.00,
+    "totalExcedentePenalizations": 200.00,  // 🆕 Solo estudiantes con incomes vinculados
     "numberOfIncomes": 5,
     "numberOfClassesNotViewed": 20,
     "numberOfBonuses": 2,
+    "numberOfPausedEnrollments": 2,  // 🆕 Número de enrollments en pausa
     "incomeDetails": [
       {
         "incomeId": "64f8a1b2c3d4e5f6a7b8c9d9",
@@ -1082,6 +1092,54 @@ GET /api/incomes/professors-payout-report?month=2025-01
         ]
       }
     ],
+    "pausedEnrollmentsDetails": [  // 🆕 PARTE 14: Enrollments en pausa
+      {
+        "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9dd",
+        "enrollmentAlias": "Grupo Avanzado",
+        "studentNames": "Juan & María",
+        "professorName": "Profesor X",
+        "plan": "G - Plan Grupal",
+        "status": 3,
+        "pauseDate": "2025-01-25T00:00:00.000Z",
+        "availableBalance": 250.00,
+        "excedente": 250.00
+      }
+    ],
+    "penalizationDetails": [  // 🆕 PARTE 14: Solo estudiantes con incomes vinculados
+      {
+        "penalizationId": "64f8a1b2c3d4e5f6a7b8c9de",
+        "studentId": "...",
+        "studentName": "María García",
+        "studentCode": "STU001",
+        "penalizationMoney": 200.00,
+        "totalIncomesAmount": 200.00,
+        "excedenteAmount": 200.00,
+        "isFullyPaid": true,
+        "description": "Penalización por vencimiento de pago",
+        "endDate": "2025-01-15T00:00:00.000Z",
+        "support_file": null,
+        "createdAt": "2025-01-10T10:30:00.000Z",
+        "penalizationType": {
+          "id": "...",
+          "name": "Vencimiento de pago"
+        },
+        "penalizationLevel": {
+          "id": "...",
+          "tipo": "Amonestación",
+          "nivel": 1,
+          "description": "Primera amonestación"
+        },
+        "linkedIncomes": [
+          {
+            "incomeId": "...",
+            "amount": 200.00,
+            "income_date": "2025-01-15T10:30:00.000Z",
+            "divisa": "USD",
+            "paymentMethod": "Transferencia"
+          }
+        ]
+      }
+    ],
     "bonusDetails": [
       {
         "bonusId": "...",
@@ -1110,8 +1168,9 @@ El reporte de excedentes ahora incluye cinco componentes:
    - Ingresos que no tienen enrollment ni profesor asociado
    - Casos de uso: Pagos adicionales, donaciones, ingresos misceláneos, pagos por servicios extra
 
-2. **Clases No Vistas** (Parte 9):
-   - Clases con `classViewed = 0` (no vista) o `3` (no show) dentro del mes
+2. **Clases Perdidas (Lost Classes)** (Parte 9 - Actualizado):
+   - Clases con `classViewed = 4` (lost class) dentro del mes
+   - **IMPORTANTE**: `classViewed = 0` NO se considera excedente porque pueden estar sin ver aún
    - Excedente calculado como: `number_of_classes × pricePerHour`
    - Solo se consideran clases normales (`reschedule = 0`)
 
@@ -1124,7 +1183,12 @@ El reporte de excedentes ahora incluye cinco componentes:
    - Enrollments creados en el mes pero con fechas fuera del rango
    - Se calcula el excedente usando la misma lógica que enrollments ordinarios
 
-5. **Penalizaciones Monetarias** (Parte 13): 🆕 **NUEVO**
+5. **Enrollments en Pausa** (Parte 14.4): 🆕 **NUEVO**
+   - Enrollments con `status = 3` (en pausa)
+   - El `available_balance` completo se considera excedente
+   - Se incluyen aunque estén fuera del rango de fechas del mes
+
+6. **Penalizaciones Monetarias de Estudiantes** (Parte 13/14.5.2): 🆕 **ACTUALIZADO**
    - Penalizaciones monetarias activas creadas en el mes del reporte
    - Se suman todas las penalizaciones con `status: 1` y `penalizationMoney > 0`
    - Filtradas por `createdAt` dentro del rango del mes
@@ -1377,21 +1441,24 @@ El reporte de excedentes ahora incluye cinco tipos de excedentes:
   "numberOfClassesNotViewed": 20,               // Cantidad de clases no vistas
   "numberOfBonuses": 2,                         // Cantidad de bonos
   "incomeDetails": [...],                        // Array de ingresos excedentes (incluye prepagados)
-  "classNotViewedDetails": [...],               // Array de clases no vistas (Parte 9)
+  "classNotViewedDetails": [...],               // Array de clases perdidas (classViewed = 4) (Parte 9)
   "prepaidEnrollmentsDetails": [...],           // 🆕 Array de enrollments prepagados (Parte 12)
+  "pausedEnrollmentsDetails": [...],            // 🆕 PARTE 14: Array de enrollments en pausa
+  "penalizationDetails": [...],                 // 🆕 PARTE 14: Array de penalizaciones de estudiantes con incomes vinculados
   "bonusDetails": [...]                          // Array de bonos con valor negativo (Parte 11)
 }
 ```
 
-**Cálculo del Total:**
+**Cálculo del Total (Actualizado Parte 14):**
 ```
-totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments + totalPausedEnrollments - totalBonuses + totalExcedentePenalizations
 ```
 
 **Notas Importantes:**
-- `totalExcedentePenalizations`: Suma de todas las penalizaciones monetarias activas (`status: 1` y `penalizationMoney > 0`) creadas en el mes del reporte
-- Las penalizaciones se filtran por `createdAt` dentro del rango del mes para ser consistentes con la lógica del reporte mensual
-- Las penalizaciones se suman al total de excedentes porque representan dinero que se debe pagar
+- `totalExcedentePenalizations`: Solo penalizaciones de estudiantes con incomes vinculados (ver Parte 14.5.2)
+- `totalPausedEnrollments`: Total de `available_balance` de enrollments en pausa (ver Parte 14.4)
+- Las penalizaciones de estudiantes se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
+- Las penalizaciones de profesores se descuentan del pago del profesor (no son excedente)
 
 #### **🆕 Lógica de Alias y Ordenamiento**
 
@@ -2748,10 +2815,11 @@ Balance Remaining = (Amount + Old Balance) - Total
 
 ---
 
-### **PARTE 9: Manejo de Clases No Vistas (0 o 3) en Excedentes**
+### **PARTE 9: Manejo de Clases Perdidas (Lost Classes) en Excedentes** 🆕 **ACTUALIZADO**
 
 #### **Implementación:**
-- Se buscan todas las clases con `classViewed = 0` (no vista) o `classViewed = 3` (no show) dentro del mes del reporte
+- Se buscan todas las clases con `classViewed = 4` (lost class) dentro del mes del reporte
+- **IMPORTANTE**: `classViewed = 0` (no vista) **NO se considera excedente** porque pueden estar sin ver aún
 - Solo se consideran clases normales (`reschedule = 0`)
 - Se calcula el excedente como: `number_of_classes × pricePerHour`
 
@@ -2971,9 +3039,60 @@ Balance Remaining = (Amount + Old Balance) - Total
 - `excedente` (Number): Excedente calculado para este enrollment (basado en `available_balance` y `totalAmount`)
 - `incomes` (Array): Array de objetos con los incomes asociados a este enrollment dentro del rango del mes (misma estructura que `incomeDetails`)
 
-#### **Cálculo del Total:**
+#### **Campos del Array `pausedEnrollmentsDetails` (Parte 14.4):** 🆕 **NUEVO**
+- `enrollmentId` (String): ID del enrollment en pausa
+- `enrollmentAlias` (String/null): Alias del enrollment (si existe)
+- `studentNames` (String): Nombres de estudiantes concatenados (o alias si existe)
+- `professorName` (String): Nombre del profesor encargado
+- `plan` (String): Nombre del plan formateado (ej: "G - Plan Grupal")
+- `status` (Number): Estado del enrollment (3 = en pausa, 0 = disuelto, 2 = desactivado)
+- `pauseDate` (Date/null): Fecha en que se pausó el enrollment
+- `availableBalance` (Number): Balance disponible del enrollment
+- `excedente` (Number): Excedente igual al `availableBalance` completo
+
+**Notas:**
+- Se incluyen enrollments con `status = 3` (en pausa) y enrollments que cambiaron de status 3 a 0 o 2
+- Se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
+- El excedente siempre es igual al `available_balance` completo
+
+#### **Campos del Array `penalizationDetails` (Parte 14.5.2):** 🆕 **ACTUALIZADO**
+- `penalizationId` (String): ID de la penalización
+- `studentId` (String/null): ID del estudiante
+- `studentName` (String): Nombre del estudiante
+- `studentCode` (String/null): Código del estudiante
+- `penalizationMoney` (Number): Monto total de la penalización
+- `totalIncomesAmount` (Number): Suma total de los incomes vinculados
+- `excedenteAmount` (Number): Monto que se considera excedente
+  - Si `totalIncomesAmount >= penalizationMoney`: `excedenteAmount = penalizationMoney`
+  - Si `totalIncomesAmount < penalizationMoney`: `excedenteAmount = totalIncomesAmount`
+- `isFullyPaid` (Boolean): Indica si la penalización está completamente pagada
+- `description` (String/null): Descripción de la penalización
+- `endDate` (Date/null): Fecha de fin relacionada con la penalización
+- `support_file` (String/null): Archivo de soporte o evidencia
+- `createdAt` (Date): Fecha de creación de la penalización
+- `penalizationType` (Object/null): Tipo de penalización
+  - `id` (String): ID del tipo de penalización
+  - `name` (String/null): Nombre del tipo de penalización
+- `penalizationLevel` (Object/null): Nivel de penalización
+  - `id` (String): ID del nivel
+  - `tipo` (String/null): Tipo del nivel
+  - `nivel` (Number/null): Número del nivel
+  - `description` (String/null): Descripción del nivel
+- `linkedIncomes` (Array): Array de incomes vinculados a esta penalización
+  - `incomeId` (String): ID del income
+  - `amount` (Number): Monto del income
+  - `income_date` (Date): Fecha del income
+  - `divisa` (String): Divisa del income
+  - `paymentMethod` (String): Método de pago del income
+
+**Notas:**
+- Solo se incluyen penalizaciones de estudiantes (`idStudent`) con al menos un income vinculado
+- Se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
+- Las penalizaciones de profesores (`idProfessor`) NO aparecen aquí, se descuentan del pago del profesor
+
+#### **Cálculo del Total (Actualizado Parte 14):**
 ```
-totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments - totalBonuses + totalExcedentePenalizations
+totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments + totalPausedEnrollments - totalBonuses + totalExcedentePenalizations
 ```
 
 #### **Aplicado en:**
@@ -2982,19 +3101,24 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 
 ---
 
-### **PARTE 13: Penalizaciones Monetarias en Excedentes** 🆕 **NUEVO**
+### **PARTE 13: Penalizaciones Monetarias en Excedentes** 🆕 **ACTUALIZADO**
 
-#### **Implementación:**
-- Se buscan todas las penalizaciones monetarias activas creadas en el mes del reporte
-- Filtros aplicados:
-  - `status: 1` (activas)
-  - `penalizationMoney > 0` (monetarias)
-  - `createdAt` dentro del rango del mes (para ser consistente con la lógica del reporte mensual)
+#### **Implementación Anterior (Deprecada):**
+- ❌ Se sumaban todas las penalizaciones monetarias activas del mes como excedente automáticamente
+- ❌ Se filtraban por `createdAt` dentro del rango del mes
+
+#### **Nueva Implementación (Parte 14.5):**
+- ✅ Solo las penalizaciones de **estudiantes** (`idStudent`) pueden generar excedente
+- ✅ Solo generan excedente si tienen **incomes vinculados** (`Income.idPenalizationRegistry = PenalizationRegistry._id`)
+- ✅ Se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
+- ✅ Las penalizaciones de **profesores** (`idProfessor`) se descuentan del pago del profesor (ver Parte 14.5.1)
 
 #### **Cálculo del Excedente:**
-- Se suman todos los valores de `penalizationMoney` de las penalizaciones que cumplen los filtros
-- El resultado se agrega al campo `totalExcedentePenalizations`
-- Las penalizaciones se suman al total de excedentes porque representan dinero que se debe pagar
+- Se buscan todas las penalizaciones de estudiantes con `status: 1` y `penalizationMoney > 0`
+- Para cada penalización, se buscan incomes vinculados y se suman sus `amount`
+- **Si los incomes cubren completamente el `penalizationMoney`**: excedente = `penalizationMoney`
+- **Si los incomes NO cubren completamente**: excedente = suma de los incomes vinculados
+- Solo se incluyen penalizaciones que tienen al menos un income vinculado
 
 #### **Estructura en Reporte de Excedentes:**
 ```json
@@ -3030,10 +3154,12 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 ```
 
 #### **Notas Importantes:**
-- Las penalizaciones se filtran por `createdAt` dentro del rango del mes para ser consistentes con la lógica del reporte mensual
-- Solo se consideran penalizaciones con `status: 1` (activas) y `penalizationMoney > 0` (monetarias)
-- Las penalizaciones se suman al total de excedentes porque representan dinero que se debe pagar
-- Si no hay penalizaciones en el mes, `totalExcedentePenalizations` será `0.00`
+- ⚠️ **Cambio importante**: Ya NO se suman todas las penalizaciones automáticamente
+- Solo las penalizaciones de estudiantes con incomes vinculados generan excedente
+- Las penalizaciones de profesores se descuentan del pago (ver Parte 14.5.1)
+- Se incluyen penalizaciones aunque estén fuera del rango de fechas del mes (persistencia)
+- Si una penalización no tiene incomes vinculados, NO genera excedente
+- Si no hay penalizaciones con incomes vinculados, `totalExcedentePenalizations` será `0.00`
 
 #### **Aplicado en:**
 - Función `generateExcedenteReportLogic`
@@ -3041,14 +3167,290 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 
 ---
 
+### **PARTE 14: Mejoras y Correcciones en Reportes de Pagos** 🆕 **NUEVO**
+
+#### **14.1: Actualización del Cálculo de Horas Fraccionarias**
+
+**Cambio Implementado:**
+- Límite de minutos para cálculo de horas fraccionarias actualizado de **45 a 50 minutos**
+
+**Nueva Lógica:**
+```javascript
+≤15 minutos → 0.25 horas
+≤30 minutos → 0.5 horas
+≤50 minutos → 0.75 horas
+>50 minutos → 1.0 hora completa
+```
+
+**Aplicado en:**
+- Función `convertMinutesToFractionalHours` en `income.controllers.js`
+- Todos los cálculos de horas vistas en reportes de profesores
+
+---
+
+#### **14.2: Manejo de Clases Tipo 2 (Parcialmente Vista) con Reschedules**
+
+**Cambio Implementado:**
+- Para clases con `classViewed = 2` (parcialmente vista), se **suman** los `minutesViewed` del reschedule a los de la clase original
+- **NO se reemplazan**, ambos valores son importantes y se suman antes de calcular las horas
+
+**Lógica:**
+```javascript
+Si classViewed === 2 Y hay reschedule del mismo profesor:
+  totalMinutes = classOriginalMinutes + rescheduleMinutes
+  totalHours = convertMinutesToFractionalHours(totalMinutes)
+```
+
+**Aplicado en:**
+- Función `processClassRegistryForEnrollment` en `income.controllers.js`
+
+---
+
+#### **14.3: Manejo de Reschedules No-Show y Lost-Class**
+
+**Cambio Implementado:**
+- Si un reschedule tiene `classViewed = 3` (no-show) o `classViewed = 4` (lost-class):
+  - Se usan los `minutesViewed` de la clase padre (`originalClassId`)
+  - Si la clase padre tiene `minutesViewed = 0` → se trata como lost-class y **NO se cuenta tiempo** (será excedente)
+  - Si la clase padre tiene `minutesViewed > 0` → se usa ese tiempo para el cálculo
+- Solo cuenta si el reschedule está dentro de la fecha del reporte
+
+**Lógica:**
+```javascript
+Si reschedule.classViewed === 3 o 4:
+  Si clasePadre.minutesViewed === 0:
+    → Lost class, no contar tiempo (será excedente)
+  Si clasePadre.minutesViewed > 0:
+    → Usar clasePadre.minutesViewed para cálculo
+```
+
+**Aplicado en:**
+- Función `processClassRegistryForEnrollment` en `income.controllers.js`
+
+---
+
+#### **14.4: Manejo de Enrollments en Pausa (Status = 3)**
+
+**Cambio Implementado:**
+- Los enrollments con `status = 3` (en pausa) se excluyen del procesamiento normal de reportes de profesores
+- Solo se consideran clases hasta `pauseDate` (fecha de pausa)
+- El `available_balance` completo se considera como **excedente**
+- No se calculan registros de clase, solo `available_balance`
+- Se incluyen en el reporte aunque estén fuera del rango de fechas del mes (persistencia)
+
+**Reglas de Negocio:**
+1. Si enrollment cambió de status 3 a 0 (disuelto): todo lo no visto queda excedente
+2. Si enrollment cambió de status 3 a 2 (desactivado): el `available_balance` es excedente
+3. Si enrollment está en pausa (status 3): el `available_balance` completo es excedente
+
+**Estructura en Reporte de Excedentes:**
+```json
+{
+  "totalPausedEnrollments": 500.00,
+  "numberOfPausedEnrollments": 2,
+  "pausedEnrollmentsDetails": [
+    {
+      "enrollmentId": "...",
+      "enrollmentAlias": "Grupo Avanzado",
+      "studentNames": "Juan & María",
+      "professorName": "Profesor X",
+      "plan": "G - Plan Grupal",
+      "status": 3,
+      "pauseDate": "2025-01-25T00:00:00.000Z",
+      "availableBalance": 250.00,
+      "excedente": 250.00
+    }
+  ]
+}
+```
+
+**Aplicado en:**
+- Función `processClassRegistryForEnrollment`: Retorna mapa vacío si enrollment está en pausa
+- Función `generateGeneralProfessorsReportLogic`: Excluye enrollments con `status = 3`
+- Función `generateSpecificProfessorReportLogic`: Excluye enrollments con `status = 3`
+- Función `generateExcedenteReportLogic`: Incluye enrollments en pausa con su `available_balance`
+
+---
+
+#### **14.5: Nueva Lógica de PenalizationRegistry**
+
+**Cambio Implementado:**
+- **Eliminado**: Campo `IdIncome` del modelo `PenalizationRegistry`
+- **Eliminado**: Suma automática de todas las penalizaciones como excedente
+- **Nueva lógica**: Las penalizaciones solo generan excedente o descuento según su tipo y estado
+
+**14.5.1: Penalizaciones de Profesores (idProfessor)**
+
+**Comportamiento:**
+- Se descuentan del `totalFinal` del profesor (no son excedente)
+- Se muestran en la sección `penalizations` del reporte del profesor
+- Se calcula `totalNeto` (sin descuentos) y `totalFinal` (con descuentos)
+
+**Estructura en Reporte de Profesores:**
+```json
+{
+  "professorId": "...",
+  "professorName": "Juan Pérez",
+  "totalTeacher": 1000.00,
+  "abonos": {
+    "total": 100.00
+  },
+  "penalizations": {
+    "count": 2,
+    "totalMoney": 150.00,
+    "details": [...]
+  },
+  "totalNeto": 1100.00,  // 🆕 Total sin descuentos (totalTeacher + bonos)
+  "totalFinal": 950.00   // Total con descuentos (totalNeto - penalizaciones)
+}
+```
+
+**14.5.2: Penalizaciones de Estudiantes (idStudent)**
+
+**Comportamiento:**
+- Solo generan excedente si tienen **incomes vinculados** (`Income.idPenalizationRegistry = PenalizationRegistry._id`)
+- Se buscan todos los incomes vinculados y se suman sus `amount`
+- **Si los incomes cubren completamente el `penalizationMoney`**: excedente total = `penalizationMoney`
+- **Si los incomes NO cubren completamente**: excedente = suma de los incomes vinculados
+- Se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
+
+**Estructura en Reporte de Excedentes:**
+```json
+{
+  "totalExcedentePenalizations": 300.00,
+  "penalizationDetails": [
+    {
+      "penalizationId": "...",
+      "studentId": "...",
+      "studentName": "María García",
+      "studentCode": "STU001",
+      "penalizationMoney": 200.00,
+      "totalIncomesAmount": 200.00,
+      "excedenteAmount": 200.00,
+      "isFullyPaid": true,
+      "description": "Penalización por vencimiento de pago",
+      "linkedIncomes": [
+        {
+          "incomeId": "...",
+          "amount": 200.00,
+          "income_date": "2025-01-15T10:30:00.000Z",
+          "divisa": "USD",
+          "paymentMethod": "Transferencia"
+        }
+      ]
+    },
+    {
+      "penalizationId": "...",
+      "studentId": "...",
+      "studentName": "Juan Pérez",
+      "penalizationMoney": 150.00,
+      "totalIncomesAmount": 100.00,
+      "excedenteAmount": 100.00,  // Solo los incomes pagados
+      "isFullyPaid": false,
+      "linkedIncomes": [...]
+    }
+  ]
+}
+```
+
+**Aplicado en:**
+- Modelo `PenalizationRegistry.js`: Eliminado campo `IdIncome`
+- Función `generateExcedenteReportLogic`: Nueva lógica para penalizaciones de estudiantes
+- Funciones `generateGeneralProfessorsReportLogic` y `generateSpecificProfessorReportLogic`: Descuentos para profesores
+
+---
+
+#### **14.6: Incomes Sin Referencias**
+
+**Clarificación:**
+- Un income se considera "sin referencias" (excedente) solo si **NO tiene** `idEnrollment` **NI** `idProfessor`
+- Los demás campos (`idDivisa`, `idPaymentMethod`, `idStudent`, `idPenalizationRegistry`) pueden existir normalmente
+- Estos campos proporcionan contexto al income pero no lo excluyen de ser excedente
+
+**Aplicado en:**
+- Función `generateExcedenteReportLogic`
+- Lógica de búsqueda de incomes excedentes
+
+---
+
+#### **14.7: Actualización de Totales en Reportes**
+
+**Cambios en Estructura de Respuesta:**
+
+**Reporte de Profesores Generales:**
+```json
+{
+  "report": [
+    {
+      "totalTeacher": 1000.00,
+      "totalBespoke": 200.00,
+      "totalBalanceRemaining": 300.00,
+      "abonos": {
+        "total": 100.00
+      },
+      "penalizations": {
+        "count": 2,
+        "totalMoney": 150.00
+      },
+      "totalNeto": 1100.00,  // 🆕 Nuevo campo
+      "totalFinal": 950.00
+    }
+  ]
+}
+```
+
+**Reporte de Profesor Especial (Andrea Wias):**
+```json
+{
+  "specialProfessorReport": {
+    "subtotal": {
+      "total": 187.50,
+      "balanceRemaining": 62.50
+    },
+    "abonos": {
+      "total": 100.00
+    },
+    "penalizations": {
+      "count": 2,
+      "totalMoney": 75.00
+    },
+    "totalNeto": 287.50,  // 🆕 Nuevo campo
+    "totalFinal": 212.50
+  }
+}
+```
+
+**Reporte de Excedentes:**
+```json
+{
+  "excedente": {
+    "totalExcedente": 2000.00,
+    "totalExcedenteIncomes": 500.00,
+    "totalExcedenteClasses": 1000.00,
+    "totalPrepaidEnrollments": 200.00,
+    "totalPausedEnrollments": 300.00,  // 🆕 Nuevo campo
+    "totalBonuses": 200.00,
+    "totalExcedentePenalizations": 200.00,  // 🆕 Actualizado: solo estudiantes con incomes
+    "numberOfPausedEnrollments": 2,  // 🆕 Nuevo campo
+    "pausedEnrollmentsDetails": [...],  // 🆕 Nuevo campo
+    "penalizationDetails": [...]  // 🆕 Actualizado: solo estudiantes con incomes vinculados
+  }
+}
+```
+
+---
+
 ### **📋 Resumen de Archivos Modificados/Creados**
 
 #### **Archivos Modificados:**
 1. `src/controllers/income.controllers.js`
-   - Partes 1-9, 11, 12: Todas las mejoras en reportes financieros
+   - Partes 1-9, 11, 12, 14: Todas las mejoras en reportes financieros
+   - Parte 14: Nuevas reglas de negocio para enrollments en pausa, penalizaciones, reschedules y cálculo de horas
 2. `src/controllers/specialProfessorReport.controller.js`
    - Partes 1-5, 7, 10, 11: Ajustes para reporte especial
-3. `src/app.js`
+3. `src/models/PenalizationRegistry.js`
+   - Parte 14: Eliminado campo `IdIncome`
+4. `src/app.js`
    - Parte 11: Registro de rutas de bonos de profesores
 
 #### **Archivos Creados:**
