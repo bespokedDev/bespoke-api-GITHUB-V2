@@ -261,10 +261,16 @@ notificationCtrl.list = async (req, res) => {
             .sort({ createdAt: -1 })
             .lean();
 
+        // Añadir key virtual: "leido" cuando isActive === false, "por leer" cuando isActive === true
+        const notificationsWithEstadoLectura = notifications.map(notif => ({
+            ...notif,
+            estadoLectura: notif.isActive === false ? 'leido' : 'por leer'
+        }));
+
         res.status(200).json({
             message: 'Notificaciones obtenidas exitosamente',
-            count: notifications.length,
-            notifications: notifications
+            count: notificationsWithEstadoLectura.length,
+            notifications: notificationsWithEstadoLectura
         });
     } catch (error) {
         console.error('Error al listar notificaciones:', error);

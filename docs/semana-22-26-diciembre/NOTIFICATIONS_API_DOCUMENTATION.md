@@ -299,10 +299,23 @@ Obtiene una lista de todas las notificaciones registradas en el sistema. Permite
 - `idEnrollment` (String): Filtrar por ID de enrollment
 - `idProfessor` (String): Filtrar por ID de profesor
 - `idStudent` (String): Filtrar por ID de estudiante
-- `isActive` (Boolean/String): Filtrar por estado activo/inactivo (`true` o `false`)
+- `isActive` (Boolean/String): Filtrar por estado:
+  - `true` o `"true"`: solo notificaciones **activas** (por leer)
+  - `false` o `"false"`: solo notificaciones **anuladas** (leídas)
+  - Si no se envía: se devuelven **todas** (activas y anuladas)
 
 #### **Request Body**
 No requiere body.
+
+#### **Key virtual en el listado: `estadoLectura`**
+Cada notificación en la respuesta incluye una key **virtual** (solo en este endpoint, no se persiste en BD):
+
+| Valor de `isActive` | Valor de `estadoLectura` |
+|--------------------|--------------------------|
+| `true`             | `"por leer"`             |
+| `false`            | `"leido"`                |
+
+Sirve para mostrar en el frontend si la notificación está leída (anulada) o por leer (activa).
 
 #### **Response Exitosa (200 OK)**
 ```json
@@ -336,8 +349,17 @@ No requiere body.
         "email": "juan.perez@example.com"
       },
       "isActive": true,
+      "estadoLectura": "por leer",
       "createdAt": "2024-01-15T10:30:00.000Z",
       "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "_id": "64f8a1b2c3d4e5f6a7b8c9d9",
+      "notification_description": "Notificación ya procesada",
+      "isActive": false,
+      "estadoLectura": "leido",
+      "createdAt": "2024-01-14T10:00:00.000Z",
+      "updatedAt": "2024-01-16T12:00:00.000Z"
     }
   ]
 }
@@ -347,6 +369,12 @@ No requiere body.
 ```bash
 # Filtrar por estudiante
 GET /api/notifications?idStudent=64f8a1b2c3d4e5f6a7b8c9d4
+
+# Solo notificaciones activas (por leer)
+GET /api/notifications?isActive=true
+
+# Solo notificaciones anuladas (leídas)
+GET /api/notifications?isActive=false
 
 # Filtrar por categoría y estado activo
 GET /api/notifications?idCategoryNotification=64f8a1b2c3d4e5f6a7b8c9d1&isActive=true
@@ -952,14 +980,15 @@ anularNotificationsBatch([
   - `idProfessor`: Muestra `name`, `email`, `phone`
   - `idStudent`: Array de estudiantes, cada uno muestra `name`, `studentCode`, `email` (y `phone` en algunos casos)
 
-### **Filtros en List**
+### **Filtros en List (GET /api/notifications)**
 - Puedes filtrar las notificaciones por cualquier combinación de:
   - `idCategoryNotification`: Para obtener notificaciones de una categoría específica
   - `idPenalization`: Para obtener notificaciones relacionadas con una penalización
   - `idEnrollment`: Para obtener notificaciones de un enrollment específico
   - `idProfessor`: Para obtener notificaciones de un profesor específico
   - `idStudent`: Para obtener notificaciones de un estudiante específico
-  - `isActive`: Para obtener solo notificaciones activas o anuladas
+  - `isActive`: Para filtrar por estado: `true` = solo activas (por leer), `false` = solo anuladas (leídas). Si no se envía, se devuelven todas.
+- **Key virtual `estadoLectura`**: En el listado, cada notificación incluye `estadoLectura`: `"por leer"` cuando `isActive` es `true`, y `"leido"` cuando `isActive` es `false`. Solo existe en la respuesta de este endpoint; no se guarda en base de datos.
 
 ### **Ordenamiento**
 - La lista de notificaciones se ordena por fecha de creación descendente (`createdAt: -1`), mostrando las más recientes primero
