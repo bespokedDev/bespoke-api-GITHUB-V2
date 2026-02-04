@@ -268,6 +268,9 @@ Cada registro de clase (`ClassRegistry`) se crea automáticamente cuando se crea
 - `classViewed` (number): Estado de visualización de la clase (por defecto: 0)
   - `0` = Clase no vista (valor por defecto al crear el enrollment)
   - `1` = Clase vista
+  - `2` = Clase parcialmente vista (se usa `minutesViewed` para cálculos fraccionales en `balance_per_class`; no se cambia a 4 al pausar ni en cronjobs)
+  - `3` = Clase no show
+  - `4` = Class Lost (clase perdida; asignado al marcar clases no vistas o por cronjobs)
 - `minutesClassDefault` (number): Duración por defecto de la clase en minutos (por defecto: 60)
   - Valor por defecto: `60` minutos (1 hora)
 
@@ -1315,7 +1318,7 @@ No requiere body.
   - `homework` (string): Tarea asignada (puede ser null)
   - `token` (string): Token de la clase (puede ser null)
   - `reschedule` (number): Estado de reschedule (0, 1, o 2)
-  - `classViewed` (number): Estado de visualización (0 o 1)
+  - `classViewed` (number): Estado de visualización (0 = no vista, 1 = vista, 2 = parcialmente vista, 3 = no show, 4 = Class Lost)
   - `minutesClassDefault` (number): Duración por defecto en minutos (por defecto: 60)
   - `createdAt` (Date): Fecha de creación del registro
   - `updatedAt` (Date): Fecha de última actualización
@@ -1682,6 +1685,32 @@ No requiere body.
 Cuando se ejecuta el endpoint de pausa, se actualizan los siguientes campos:
 - `status`: Se establece a `3` (en pausa)
 - `pauseDate`: Se establece automáticamente con la fecha y hora actual en que se ejecuta la pausa
+
+#### **Lógica de ClassRegistry y balance_per_class al pausar**
+
+Al pausar, se consideran las clases del enrollment en el rango de fechas `[startDate, pauseDate]` (formato YYYY-MM-DD):
+
+**1. Clases con `classViewed: 0` (no vistas)**  
+- **Actualización de estado**: Solo las que cumplan la regla se marcan como **`classViewed: 4`** (Class Lost – clase perdida).  
+- **Regla padre/reschedule**: Si la clase es **padre** (`originalClassId` null) y tiene **`reschedule: 1`** (tiene clase hija de reschedule), se comprueba si existe alguna clase **hija** (`originalClassId` = ese padre) con **`classViewed: 1` o `2`**.  
+  - Si existe esa hija vista o parcialmente vista → el **padre no se marca como 4** y **no se resta** dinero (la clase se considera recuperada con el reschedule).  
+  - Si no existe (hija 0 o no hay hija) → el padre sí se marca 4 y se aplica la resta.  
+- **Hijas (reschedule)**: Las clases con `classViewed: 0` que son hijas (`originalClassId` no null) sí se marcan como **4**, pero **nunca** se resta dinero por ellas en `balance_per_class`.  
+- **Resta en `balance_per_class`**: Solo por cada **clase padre** (no hija) que efectivamente pase de 0 → 4 se resta **un valor completo de clase**: `valuePerClass = totalAmount / monthlyClasses`. El total restado es `valuePerClass * (número de padres 0→4)`.
+
+**2. Clases con `classViewed: 2` (parcialmente vistas)**  
+- **Actualización de estado**: **No se cambian**; siguen con **`classViewed: 2`**.  
+- **Resta en `balance_per_class`**: Solo se considera a las que son **padres** (`originalClassId` null). Por cada una se resta del `balance_per_class` el **valor de los minutos vistos**, no el de los no vistos:  
+  - Se usa el campo **`minutesViewed`** de la clase (padre).  
+  - Se convierte a fracción de hora con la función del sistema: `convertMinutesToFractionalHours(minutes)` → 0, 0.25, 0.5, 0.75 o 1.0 (según rangos ≤15, ≤30, ≤50, >50 minutos).  
+  - **Resta por esa clase** = `valuePerClass * fractionViewed`.  
+  - Los minutos no vistos **no** se restan del `balance_per_class`.  
+- Las clases reschedule (hijas) **nunca** restan dinero.
+
+**Resumen**  
+- Solo **classViewed 0** puede pasar a **4**; **classViewed 2** se deja en **2**.  
+- Se resta de `balance_per_class`: (1) valor completo por cada padre 0→4 que no esté “recuperado” por reschedule, y (2) valor proporcional a minutos vistos (`valuePerClass * fractionViewed`) por cada padre con classViewed 2 en el rango.  
+- Las clases tipo reschedule (hijas) no generan resta en `balance_per_class`.
 
 #### **Errores Posibles**
 - `400`: ID de matrícula inválido

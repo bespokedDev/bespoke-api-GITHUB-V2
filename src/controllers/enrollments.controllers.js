@@ -934,15 +934,19 @@ enrollmentCtrl.disolve = async (req, res) => {
 /**
  * @route PATCH /api/enrollments/:id/pause
  * @description Pausa una matrícula (establece status a 3 = en pausa)
+ * Además: solo classViewed 0 en rango [startDate, pauseDate] pasan a classViewed 4 (class lost).
+ * classViewed 2 se deja en 2; solo se resta del balance_per_class el valor fraccional según minutesViewed.
+ * Si clase padre (0) tiene reschedule 1 y la hija tiene classViewed 1 o 2, el padre no se marca 4 ni se resta.
  * @access Private (Requiere JWT) - Solo admin
  */
 enrollmentCtrl.pause = async (req, res) => {
     try {
+        const pauseDateNow = new Date();
         const pausedEnrollment = await Enrollment.findByIdAndUpdate(
             req.params.id,
-            { 
+            {
                 status: 3, // 3 = en pausa
-                pauseDate: new Date() // Establecer la fecha de pausa con la fecha actual
+                pauseDate: pauseDateNow
             },
             { new: true }
         );
@@ -951,7 +955,89 @@ enrollmentCtrl.pause = async (req, res) => {
             return res.status(404).json({ message: 'Matrícula no encontrada' });
         }
 
-        // Popular en la respuesta
+        // Formatear fechas a YYYY-MM-DD (UTC) para comparar con classDate (string)
+        const toYYYYMMDD = (date) => {
+            const d = new Date(date);
+            const y = d.getUTCFullYear();
+            const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+
+        const startDate = pausedEnrollment.startDate ? new Date(pausedEnrollment.startDate) : null;
+        const startDateStr = startDate ? toYYYYMMDD(startDate) : null;
+        const pauseDateStr = toYYYYMMDD(pauseDateNow);
+
+        if (startDateStr) {
+            // Solo classViewed 0 en rango [startDate, pauseDate] → classViewed 4. Regla padre/reschedule: padre 0 con reschedule 1 y hija 1 o 2 no se marca 4 ni se resta.
+            // classViewed 2 en rango: se deja en 2; solo se resta del balance_per_class el valor fraccional según minutesViewed (padres).
+            const classesWithZeroInRange = await ClassRegistry.find({
+                enrollmentId: req.params.id,
+                classDate: { $gte: startDateStr, $lte: pauseDateStr },
+                classViewed: 0
+            }).select('_id originalClassId reschedule').lean();
+
+            const parentIdsWithReschedule = classesWithZeroInRange
+                .filter(cr => cr.originalClassId == null && cr.reschedule === 1)
+                .map(cr => cr._id);
+            const parentsRecoveredByReschedule = parentIdsWithReschedule.length > 0
+                ? await ClassRegistry.find({
+                    enrollmentId: req.params.id,
+                    originalClassId: { $in: parentIdsWithReschedule },
+                    classViewed: { $in: [1, 2] }
+                }).select('originalClassId').lean()
+                : [];
+            const recoveredParentIds = new Set(parentsRecoveredByReschedule.map(r => r.originalClassId.toString()));
+
+            const classesToMark4 = classesWithZeroInRange.filter(cr => {
+                if (cr.originalClassId != null) return true; // hijas 0 → marcar 4 (no restan)
+                if (cr.reschedule === 1 && recoveredParentIds.has(cr._id.toString())) return false; // padre recuperado
+                return true;
+            });
+            const classIdsToMark4 = classesToMark4.map(cr => cr._id);
+
+            const parentsWithClassViewed2 = await ClassRegistry.find({
+                enrollmentId: req.params.id,
+                classDate: { $gte: startDateStr, $lte: pauseDateStr },
+                classViewed: 2,
+                originalClassId: null
+            }).select('minutesViewed').lean();
+
+            const monthlyClasses = pausedEnrollment.monthlyClasses || 0;
+            const totalAmount = pausedEnrollment.totalAmount || 0;
+            const currentBalancePerClass = pausedEnrollment.balance_per_class ?? 0;
+            const valuePerClass = monthlyClasses > 0 ? totalAmount / monthlyClasses : 0;
+
+            let totalToSubtract = 0;
+            if (classIdsToMark4.length > 0) {
+                await ClassRegistry.updateMany(
+                    { _id: { $in: classIdsToMark4 }, classViewed: 0 },
+                    { $set: { classViewed: 4 } }
+                );
+                const parentCount0 = classesToMark4.filter(cr => cr.originalClassId == null).length;
+                totalToSubtract += valuePerClass * parentCount0;
+                console.log(`[ENROLLMENT PAUSE] Enrollment ${req.params.id}: ${classIdsToMark4.length} clase(s) classViewed 0 → 4 en rango ${startDateStr} - ${pauseDateStr} (${parentCount0} padre(s) restan valor completo)`);
+            }
+            for (const cr of parentsWithClassViewed2) {
+                const fractionViewed = utilsFunctions.convertMinutesToFractionalHours(cr.minutesViewed ?? 0);
+                totalToSubtract += valuePerClass * fractionViewed;
+            }
+            if (parentsWithClassViewed2.length > 0) {
+                console.log(`[ENROLLMENT PAUSE] ${parentsWithClassViewed2.length} clase(s) classViewed 2 (se dejan en 2): resta fraccional según minutesViewed`);
+            }
+
+            if (totalToSubtract > 0) {
+                const newBalancePerClass = Math.max(0, currentBalancePerClass - totalToSubtract);
+                await Enrollment.findByIdAndUpdate(
+                    req.params.id,
+                    { balance_per_class: parseFloat(newBalancePerClass.toFixed(2)) },
+                    { new: true, runValidators: true }
+                );
+                console.log(`[ENROLLMENT PAUSE] balance_per_class: ${currentBalancePerClass} - ${totalToSubtract.toFixed(2)} = ${newBalancePerClass.toFixed(2)}`);
+            }
+        }
+
+        // Popular en la respuesta (traer enrollment actualizado por si se modificó balance_per_class)
         const populatedPausedEnrollment = await Enrollment.findById(pausedEnrollment._id)
                                                                 .populate(populateOptions)
                                                                 .lean();

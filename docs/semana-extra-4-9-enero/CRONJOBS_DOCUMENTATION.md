@@ -476,10 +476,10 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
      - Si el enrollment está en pausa pero **no tiene `pauseDate`**: se omite completamente, no se procesa ninguna clase
      - Si el enrollment está en pausa y **tiene `pauseDate`**: solo se procesan clases donde `classDate < pauseDate` (clases anteriores a la pausa)
 
-3. **Actualización de Clases No Vistas**
-   - Para cada enrollment vencido, busca todas sus ClassRegistry
-   - Si una clase tiene `classViewed: 0` y `reschedule: 0`:
-     - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
+3. **Actualización de Clases No Vistas (`classViewed: 0` → `4`)**
+   - Para cada enrollment vencido, busca todas sus ClassRegistry (o las filtradas por `classDate < pauseDate` si está en pausa).
+   - **Regla padre/reschedule**: Se consideran todas las clases con `classViewed: 0`. Si la clase es **padre** (`originalClassId` null) y tiene **`reschedule: 1`**, se comprueba si existe alguna clase **hija** (`originalClassId` = ese padre) con **`classViewed: 1` o `2`**. Si existe → el padre **no** se marca 4 ni se resta dinero (clase recuperada). Si no existe → el padre sí se marca 4 y se resta. Las **hijas** (reschedule) con `classViewed: 0` sí se marcan como **4**, pero **nunca** se resta dinero por ellas.
+   - Solo las clases que pasan a `classViewed: 4` según la regla anterior se actualizan en BD.
 
 4. **Creación de Penalización para Profesor**
    - **Cuando se actualizan clases a Class Lost** (`classViewed: 4`):
@@ -535,11 +535,11 @@ Este cronjob finaliza automáticamente las clases de enrollments que han vencido
      - Se registra en logs: `"Enrollment [ID] está en pausa. Solo procesando clases anteriores a [pauseDate]"`
      - Solo se procesan clases que ocurrieron **antes** de que se pausara el enrollment
 
-4. **Actualización de Clases**
-   - Busca las ClassRegistry del enrollment (o las filtradas por fecha de pausa si aplica)
-   - Actualiza las clases con `classViewed: 0` y `reschedule: 0` a `classViewed: 4` (Class Lost)
-   - **Solo se procesan clases que cumplen los criterios de pausa** (si el enrollment está en pausa)
-   - Las clases posteriores a la pausa están protegidas y no se marcan como "Class Lost"
+4. **Actualización de Clases y `balance_per_class`**
+   - Busca las ClassRegistry del enrollment (o las filtradas por fecha de pausa si aplica).
+   - **Clases con `classViewed: 0`**: Se aplica la regla padre/reschedule; las que correspondan se actualizan a `classViewed: 4`. Solo por cada **padre** (no hija) que pase a 4 se resta de `balance_per_class` un valor completo: `valuePerClass = totalAmount / monthlyClasses`. Las clases reschedule (hijas) **nunca** restan dinero.
+   - **Clases con `classViewed: 2`** (parcialmente vistas): **No se cambian** de estado (siguen en 2). Por cada **padre** con `classViewed: 2` se resta del `balance_per_class` el **valor de los minutos vistos**: se usa `minutesViewed` de la clase, se convierte a fracción de hora con `convertMinutesToFractionalHours` (0, 0.25, 0.5, 0.75, 1.0) y se resta `valuePerClass * fractionViewed`. Los minutos no vistos no se restan.
+   - **Solo se procesan clases que cumplen los criterios de pausa** (si el enrollment está en pausa). Las clases posteriores a la pausa están protegidas.
 
 4. **Creación de Penalización y Notificación para Profesor**
    - **Solo si se actualizaron clases a Class Lost** (`classesToUpdate.length > 0`):
@@ -631,8 +631,9 @@ Finalización de clases del enrollment 64f8a1b2c3d4e5f6a7b8c9d0. Total: 3 clase(
 
 - **0**: Clase no vista (por defecto al crear el enrollment)
 - **1**: Clase vista completamente
-- **2**: Clase parcialmente vista
-- **3**: Clase no show (asignada automáticamente por el cronjob)
+- **2**: Clase parcialmente vista (no se cambia a 4 en este cron; solo se resta del `balance_per_class` el valor de los minutos vistos)
+- **3**: Clase no show
+- **4**: Class Lost (clase perdida); se asigna a clases 0 que no estén recuperadas por reschedule
 
 #### **Estados de Reschedule**
 
@@ -968,13 +969,10 @@ Este cronjob procesa el cierre mensual de clases, marcando las clases no vistas 
      - Si el enrollment está en pausa pero **no tiene `pauseDate`**: se omite completamente, no se procesa ninguna clase
      - Si el enrollment está en pausa y **tiene `pauseDate`**: solo se procesan clases del mes donde `classDate < pauseDate` (clases anteriores a la pausa)
 
-3. **Actualización de Clases No Vistas del Mes**
-   - Para cada enrollment, busca todas sus ClassRegistry
-   - Filtra clases que estén dentro del rango del mes actual (primer día a último día del mes)
-   - Si el enrollment está en pausa con `pauseDate`, aplica el filtro adicional de `classDate < pauseDate`
-   - Si una clase tiene `classViewed: 0`:
-     - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
-     - Solo se actualizan las clases que cumplen los criterios de pausa (si aplica)
+3. **Actualización de Clases del Mes y `balance_per_class`**
+   - Para cada enrollment, busca todas sus ClassRegistry y filtra las del mes actual (y `classDate < pauseDate` si está en pausa).
+   - **Clases con `classViewed: 0`**: Se aplica la **regla padre/reschedule** (padre con reschedule 1 y hija con classViewed 1 o 2 no se marca 4 ni se resta; hijas 0 sí se marcan 4 pero no restan). Solo las que correspondan pasan a `classViewed: 4`. Solo por cada **padre** que pase a 4 se resta de `balance_per_class` un valor completo (`valuePerClass`). Las clases reschedule (hijas) **nunca** restan dinero.
+   - **Clases con `classViewed: 2`**: **No se cambian** de estado (siguen en 2). Por cada **padre** con `classViewed: 2` en el mes se resta del `balance_per_class` el **valor de los minutos vistos**: `valuePerClass * convertMinutesToFractionalHours(minutesViewed)`. Los minutos no vistos no se restan.
 
 4. **Generación de Estadísticas del Mes**
    - Cuenta las clases por tipo dentro del mes:
@@ -1020,12 +1018,10 @@ Este cronjob procesa el cierre mensual de clases, marcando las clases no vistas 
      - Solo se procesan clases que ocurrieron **antes** de que se pausara el enrollment
 
 4. **Actualización de Clases del Mes**
-   - Busca las ClassRegistry del enrollment dentro del mes (o las filtradas por fecha de pausa si aplica)
-   - Filtra clases que estén dentro del rango del mes actual (primer día a último día del mes)
-   - Si el enrollment está en pausa con `pauseDate`, aplica el filtro adicional de `classDate < pauseDate`
-   - Actualiza las clases con `classViewed: 0` a `classViewed: 4` (Class Lost)
-   - **Solo se procesan clases que cumplen los criterios de pausa** (si el enrollment está en pausa)
-   - Las clases posteriores a la pausa están protegidas y no se marcan como "Class Lost"
+   - Busca las ClassRegistry del enrollment dentro del mes (o las filtradas por fecha de pausa si aplica).
+   - Actualiza a `classViewed: 4` solo las clases con `classViewed: 0` que cumplan la regla padre/reschedule (igual que en el cron de finalización de clases).
+   - Resta de `balance_per_class`: valor completo por cada padre 0→4; más `valuePerClass * fractionViewed` por cada padre con `classViewed: 2` en el mes (minutos vistos). Las clases reschedule (hijas) no restan.
+   - **Solo se procesan clases que cumplen los criterios de pausa** (si el enrollment está en pausa). Las clases posteriores a la pausa están protegidas.
 
 4. **Cálculo de Estadísticas del Mes**
    - Recorre todas las clases del mes (filtradas por pausa si aplica)
@@ -1153,11 +1149,10 @@ Este cronjob marca como "Class Lost" (clase perdida) todas las clases no vistas 
      - `endDate` sea el **mismo día** que la fecha de ejecución (comparación por día, ignorando hora)
      - `status = 1` (activo)
 
-3. **Actualización de Clases**
-   - Para cada enrollment encontrado:
-     - Busca todas sus `ClassRegistry` con `classViewed: 0`
-     - Actualiza `classViewed` a `4` (Class Lost - clase perdida)
-   - No se filtra por `reschedule`; todas las clases no vistas del enrollment se marcan como lost class.
+3. **Actualización de Clases y `balance_per_class`**
+   - Para cada enrollment encontrado se aplica la **regla padre/reschedule**: entre las clases con `classViewed: 0`, los padres con `reschedule: 1` cuya hija tenga `classViewed: 1` o `2` no se marcan 4 ni se resta dinero; el resto de clases 0 (padres que sí se marcan 4 e hijas 0) se actualizan a `classViewed: 4`. Las **hijas** (reschedule) **nunca** restan dinero en `balance_per_class`.
+   - Solo por cada **padre** (no hija) que pase de 0 → 4 se resta de `balance_per_class` un valor completo: `valuePerClass * (número de padres 0→4)`.
+   - **Nota**: Este cron **no** aplica resta por clases con `classViewed: 2` (parcialmente vistas), para evitar doble descuento con el cierre mensual; solo se restan valores por clases 0 que pasan a 4 (padres).
 
 #### **Proceso de Ejecución**
 

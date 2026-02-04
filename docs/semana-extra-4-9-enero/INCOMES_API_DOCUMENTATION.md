@@ -17,7 +17,17 @@ const headers = {
 ```
 
 ---
-a
+
+## 🔧 **Utilidades compartidas (controlador de Incomes)**
+
+El controlador de ingresos utiliza la función **`convertMinutesToFractionalHours`** desde el módulo compartido **`src/utils/utilsFunctions`**. Dicha función convierte minutos a horas fraccionarias para el cálculo de horas vistas en reportes y en el procesamiento de ClassRegistry (clases vistas/parcialmente vistas).
+
+- **Entrada**: `minutes` (número).
+- **Salida**: `0`, `0.25`, `0.5`, `0.75` o `1.0` según rangos: ≤15 → 0.25, ≤30 → 0.5, ≤50 → 0.75, >50 → 1.0.
+- **Uso en Incomes**: Cálculo de horas vistas por clase en reportes de profesores y en la lógica que procesa `ClassRegistry` (horas por clase, reschedules, etc.). La misma función se usa en el controlador de enrollments (pausa) y en los cronjobs de class registry para el descuento en `balance_per_class` de clases parcialmente vistas (`classViewed: 2`).
+
+---
+
 ## 🚀 **Endpoints Disponibles**
 
 ### **1. Crear Ingreso**

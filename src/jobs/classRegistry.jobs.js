@@ -5,6 +5,7 @@ const ClassRegistry = require('../models/ClassRegistry');
 const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
 const PenalizationRegistry = require('../models/PenalizationRegistry');
+const utilsFunctions = require('../utils/utilsFunctions');
 const mongoose = require('mongoose');
 
 /**
@@ -323,36 +324,64 @@ const processClassFinalization = async () => {
                     console.log(`[CRONJOB] Enrollment ${enrollment._id}: ${classesToProcess.length} clases anteriores a la pausa de ${classRegistries.length} totales`);
                 }
 
-                // Actualizar clases con classViewed = 0 y reschedule = 0 → cambiar a classViewed = 4 (Class Lost)
-                const classesToUpdate = classesToProcess.filter(
-                    cr => cr.classViewed === 0 && cr.reschedule === 0
+                // Actualizar clases con classViewed = 0 → cambiar a classViewed = 4 (Class Lost)
+                // Regla padre/reschedule: si clase padre tiene reschedule 1 y la hija tiene classViewed 1 o 2, el padre NO se marca 4 ni se resta (clase recuperada)
+                const classesWithZero = classesToProcess.filter(cr => cr.classViewed === 0);
+                const parentIdsWithReschedule = classesWithZero
+                    .filter(cr => cr.originalClassId == null && cr.reschedule === 1)
+                    .map(cr => cr._id);
+                const recoveredParentIds = new Set(
+                    parentIdsWithReschedule.length > 0
+                        ? classRegistries
+                            .filter(cr => cr.originalClassId && [1, 2].includes(cr.classViewed) && parentIdsWithReschedule.some(pid => pid.toString() === cr.originalClassId.toString()))
+                            .map(cr => cr.originalClassId.toString())
+                        : []
                 );
+                const classesToUpdate = classesWithZero.filter(cr => {
+                    if (cr.originalClassId != null) return true; // hijas con 0 → marcar 4 (no restan)
+                    if (cr.reschedule === 1 && recoveredParentIds.has(cr._id.toString())) return false; // padre recuperado por hija 1 o 2
+                    return true;
+                });
 
+                const monthlyClasses = enrollment.monthlyClasses || 0;
+                const totalAmount = enrollment.totalAmount || 0;
+                const valuePerClass = monthlyClasses > 0 ? totalAmount / monthlyClasses : 0;
+                let totalToSubtract = 0;
                 if (classesToUpdate.length > 0) {
-                    // Obtener IDs de las clases a actualizar
                     const classIdsToUpdate = classesToUpdate.map(cr => cr._id);
                     const updateResult = await ClassRegistry.updateMany(
-                        {
-                            _id: { $in: classIdsToUpdate },
-                            classViewed: 0,
-                            reschedule: 0
-                        },
-                        {
-                            $set: { classViewed: 4 } // Cambiar a Class Lost (clase perdida)
-                        }
+                        { _id: { $in: classIdsToUpdate }, classViewed: 0 },
+                        { $set: { classViewed: 4 } }
                     );
                     updatedClassesCount += updateResult.modifiedCount;
-                    console.log(`[CRONJOB] Actualizadas ${updateResult.modifiedCount} clases a Class Lost (4) para enrollment ${enrollment._id}`);
+                    const parentCount = classesToUpdate.filter(cr => cr.originalClassId == null).length;
+                    totalToSubtract += valuePerClass * parentCount;
+                    console.log(`[CRONJOB] Actualizadas ${updateResult.modifiedCount} clases classViewed 0 → 4 para enrollment ${enrollment._id} (${parentCount} padre(s) restan valor completo)`);
 
-                    // Crear penalización y notificación para el profesor cuando se actualizan clases a Class Lost
                     const penalizationCreated = await createClassLostPenalization(
-                        enrollment, 
-                        monthYear, 
-                        updateResult.modifiedCount
+                        enrollment,
+                        monthYear,
+                        parentCount
                     );
                     if (penalizationCreated) {
                         penalizationsCreated++;
                     }
+                }
+                // classViewed 2: se dejan en 2; solo se resta del balance_per_class el valor fraccional según minutesViewed (padres)
+                const parentsWithClassViewed2 = classesToProcess.filter(cr => cr.classViewed === 2 && cr.originalClassId == null);
+                for (const cr of parentsWithClassViewed2) {
+                    const fractionViewed = utilsFunctions.convertMinutesToFractionalHours(cr.minutesViewed ?? 0);
+                    totalToSubtract += valuePerClass * fractionViewed;
+                }
+                if (totalToSubtract > 0) {
+                    const currentBalancePerClass = enrollment.balance_per_class ?? 0;
+                    const newBalancePerClass = Math.max(0, currentBalancePerClass - totalToSubtract);
+                    await Enrollment.findByIdAndUpdate(
+                        enrollment._id,
+                        { balance_per_class: parseFloat(newBalancePerClass.toFixed(2)) },
+                        { new: true, runValidators: true }
+                    );
+                    console.log(`[CRONJOB] balance_per_class enrollment ${enrollment._id}: ${currentBalancePerClass} - ${totalToSubtract.toFixed(2)} = ${newBalancePerClass.toFixed(2)}`);
                 }
 
                 // Obtener todas las clases a procesar (solo las que cumplen el criterio de pausa si aplica)
@@ -657,23 +686,54 @@ const processMonthlyClassClosure = async () => {
                 }
 
                 // Actualizar clases con classViewed = 0 → cambiar a classViewed = 4 (Class Lost) (solo del mes actual)
-                const classesToUpdate = classesInMonth.filter(
-                    cr => cr.classViewed === 0
+                // Regla padre/reschedule: si clase padre tiene reschedule 1 y la hija tiene classViewed 1 o 2, el padre NO se marca 4 ni se resta
+                const classesWithZeroInMonth = classesInMonth.filter(cr => cr.classViewed === 0);
+                const parentIdsWithReschedule = classesWithZeroInMonth
+                    .filter(cr => cr.originalClassId == null && cr.reschedule === 1)
+                    .map(cr => cr._id);
+                const recoveredParentIds = new Set(
+                    parentIdsWithReschedule.length > 0
+                        ? classRegistries
+                            .filter(cr => cr.originalClassId && [1, 2].includes(cr.classViewed) && parentIdsWithReschedule.some(pid => pid.toString() === cr.originalClassId.toString()))
+                            .map(cr => cr.originalClassId.toString())
+                        : []
                 );
+                const classesToUpdate = classesWithZeroInMonth.filter(cr => {
+                    if (cr.originalClassId != null) return true;
+                    if (cr.reschedule === 1 && recoveredParentIds.has(cr._id.toString())) return false;
+                    return true;
+                });
+                const parentCount = classesToUpdate.filter(cr => cr.originalClassId == null).length;
 
+                const monthlyClasses = enrollment.monthlyClasses || 0;
+                const totalAmount = enrollment.totalAmount || 0;
+                const valuePerClass = monthlyClasses > 0 ? totalAmount / monthlyClasses : 0;
+                let totalToSubtract = 0;
                 if (classesToUpdate.length > 0) {
                     const classIdsToUpdate = classesToUpdate.map(cr => cr._id);
                     const updateResult = await ClassRegistry.updateMany(
-                        {
-                            _id: { $in: classIdsToUpdate },
-                            classViewed: 0
-                        },
-                        {
-                            $set: { classViewed: 4 } // Cambiar a Class Lost (clase perdida)
-                        }
+                        { _id: { $in: classIdsToUpdate }, classViewed: 0 },
+                        { $set: { classViewed: 4 } }
                     );
                     updatedClassesCount += updateResult.modifiedCount;
-                    console.log(`[CRONJOB MENSUAL] Actualizadas ${updateResult.modifiedCount} clases a Class Lost (4) para enrollment ${enrollment._id} (mes ${monthYear})`);
+                    totalToSubtract += valuePerClass * parentCount;
+                    console.log(`[CRONJOB MENSUAL] Actualizadas ${updateResult.modifiedCount} clases classViewed 0 → 4 para enrollment ${enrollment._id} (mes ${monthYear}) (${parentCount} padre(s) restan valor completo)`);
+                }
+                // classViewed 2 en el mes: se dejan en 2; solo se resta del balance_per_class el valor fraccional según minutesViewed (padres)
+                const parentsWithClassViewed2InMonth = classesInMonth.filter(cr => cr.classViewed === 2 && cr.originalClassId == null);
+                for (const cr of parentsWithClassViewed2InMonth) {
+                    const fractionViewed = utilsFunctions.convertMinutesToFractionalHours(cr.minutesViewed ?? 0);
+                    totalToSubtract += valuePerClass * fractionViewed;
+                }
+                if (totalToSubtract > 0) {
+                    const currentBalancePerClass = enrollment.balance_per_class ?? 0;
+                    const newBalancePerClass = Math.max(0, currentBalancePerClass - totalToSubtract);
+                    await Enrollment.findByIdAndUpdate(
+                        enrollment._id,
+                        { balance_per_class: parseFloat(newBalancePerClass.toFixed(2)) },
+                        { new: true, runValidators: true }
+                    );
+                    console.log(`[CRONJOB MENSUAL] balance_per_class enrollment ${enrollment._id}: ${currentBalancePerClass} - ${totalToSubtract.toFixed(2)} = ${newBalancePerClass.toFixed(2)}`);
                 }
 
                 // Obtener todas las clases del mes a procesar (solo las que cumplen el criterio de pausa si aplica)
@@ -1064,17 +1124,56 @@ const processEndDateSameDayLostClass = async () => {
 
         for (const enrollment of enrollmentsSameDayEnd) {
             try {
-                const updateResult = await ClassRegistry.updateMany(
-                    {
-                        enrollmentId: enrollment._id,
-                        classViewed: 0
-                    },
-                    { $set: { classViewed: 4 } }
+                // Regla padre/reschedule: no marcar padre con reschedule 1 si la hija tiene classViewed 1 o 2
+                const classesWithZero = await ClassRegistry.find({
+                    enrollmentId: enrollment._id,
+                    classViewed: 0
+                }).select('_id originalClassId reschedule').lean();
+                const allClasses = await ClassRegistry.find({ enrollmentId: enrollment._id })
+                    .select('_id originalClassId classViewed').lean();
+                const parentIdsWithReschedule = classesWithZero
+                    .filter(cr => cr.originalClassId == null && cr.reschedule === 1)
+                    .map(cr => cr._id);
+                const recoveredParentIds = new Set(
+                    parentIdsWithReschedule.length > 0
+                        ? allClasses
+                            .filter(cr => cr.originalClassId && [1, 2].includes(cr.classViewed) && parentIdsWithReschedule.some(pid => pid.toString() === cr.originalClassId.toString()))
+                            .map(cr => cr.originalClassId.toString())
+                        : []
                 );
+                const classesToUpdate = classesWithZero.filter(cr => {
+                    if (cr.originalClassId != null) return true;
+                    if (cr.reschedule === 1 && recoveredParentIds.has(cr._id.toString())) return false;
+                    return true;
+                });
+                const parentCount = classesToUpdate.filter(cr => cr.originalClassId == null).length;
+                const classIdsToUpdate = classesToUpdate.map(cr => cr._id);
 
-                if (updateResult.modifiedCount > 0) {
+                if (classIdsToUpdate.length > 0) {
+                    const updateResult = await ClassRegistry.updateMany(
+                        { _id: { $in: classIdsToUpdate }, classViewed: 0 },
+                        { $set: { classViewed: 4 } }
+                    );
                     updatedClassesCount += updateResult.modifiedCount;
-                    console.log(`[CRONJOB ENDDATE] Enrollment ${enrollment._id}: ${updateResult.modifiedCount} clase(s) actualizada(s) a Class Lost (4)`);
+                    console.log(`[CRONJOB ENDDATE] Enrollment ${enrollment._id}: ${updateResult.modifiedCount} clase(s) classViewed 0 → 4 (${parentCount} padre(s) restan valor completo)`);
+
+                    if (parentCount > 0) {
+                        const enrollmentDoc = await Enrollment.findById(enrollment._id).select('monthlyClasses totalAmount balance_per_class').lean();
+                        if (enrollmentDoc) {
+                            const monthlyClasses = enrollmentDoc.monthlyClasses || 0;
+                            const totalAmount = enrollmentDoc.totalAmount || 0;
+                            const currentBalancePerClass = enrollmentDoc.balance_per_class ?? 0;
+                            const valuePerClass = monthlyClasses > 0 ? totalAmount / monthlyClasses : 0;
+                            const totalToSubtract = valuePerClass * parentCount;
+                            const newBalancePerClass = Math.max(0, currentBalancePerClass - totalToSubtract);
+                            await Enrollment.findByIdAndUpdate(
+                                enrollment._id,
+                                { balance_per_class: parseFloat(newBalancePerClass.toFixed(2)) },
+                                { new: true, runValidators: true }
+                            );
+                            console.log(`[CRONJOB ENDDATE] balance_per_class enrollment ${enrollment._id}: ${currentBalancePerClass} - ${totalToSubtract.toFixed(2)} (${parentCount} padre(s)) = ${newBalancePerClass.toFixed(2)}`);
+                        }
+                    }
                 }
             } catch (error) {
                 console.error(`[CRONJOB ENDDATE] Error procesando enrollment ${enrollment._id}:`, error.message);

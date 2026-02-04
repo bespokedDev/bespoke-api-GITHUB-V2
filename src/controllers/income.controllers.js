@@ -45,19 +45,6 @@ const populateIncome = async (query) => {
 };
 
 /**
- * Función auxiliar para convertir minutos a horas fraccionarias
- * @param {number} minutes - Minutos a convertir
- * @returns {number} - Horas fraccionarias (0.25, 0.5, 0.75, 1.0)
- */
-const convertMinutesToFractionalHours = (minutes) => {
-    if (!minutes || minutes <= 0) return 0;
-    if (minutes <= 15) return 0.25;
-    if (minutes <= 30) return 0.5;
-    if (minutes <= 50) return 0.75;
-    return 1.0; // >50 minutos = 1 hora completa
-};
-
-/**
  * Función auxiliar para procesar ClassRegistry de un enrollment y calcular horas vistas
  * PARTE 4 y 5: Procesa ClassRegistry dentro del mes, calcula horas vistas con reschedules
  * PARTE 6: Asigna dinero al profesor correcto (enrollment.professorId o classRegistry.professorId o userId)
@@ -105,14 +92,14 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         }
     }
 
-    // REGLA 4: Si enrollment está en pausa (status = 3), no calcular registros de clase, solo available_balance
-    if (enrollment.status === 3) {
+    // REGLA 4: Si enrollment está en pausa (status = 3) sin pauseDate, no procesar clases (no se puede acotar el rango)
+    if (enrollment.status === 3 && !enrollment.pauseDate) {
         if (isTargetEnrollment) {
-            console.log(`⏸️ Enrollment en pausa: No se procesan registros de clase, solo available_balance`);
+            console.log(`⏸️ Enrollment en pausa sin pauseDate: No se procesan registros de clase`);
         }
-        // Retornar mapa vacío ya que no se procesan clases
         return new Map();
     }
+    // Si status = 3 con pauseDate: effectiveEndDate ya está acotado arriba; se procesan clases vistas / no show hasta pauseDate
 
     // PARTE 5: Buscar todas las clases originales (padre) dentro del mes
     // Las clases originales pueden tener reschedule: 0 (normales) o reschedule: 1 (con reschedule asociado)
@@ -339,7 +326,7 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                 if (rescheduleMinutesForOriginalProfessor > 0) {
                     // Sumar los minutos del reschedule a los de la clase original
                     const totalMinutesForClass2 = classOriginalMinutes + rescheduleMinutesForOriginalProfessor;
-                    const totalHoursForClass2 = convertMinutesToFractionalHours(totalMinutesForClass2);
+                    const totalHoursForClass2 = utilsFunctions.convertMinutesToFractionalHours(totalMinutesForClass2);
                     
                     if (!hoursByProfessor.has(classOriginalProfessorId)) {
                         hoursByProfessor.set(classOriginalProfessorId, {
@@ -367,7 +354,7 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                     reschedulesByProfessor.delete(classOriginalProfessorId);
                 } else {
                     // No hay reschedule del mismo profesor, procesar clase original normalmente
-                    const classOriginalHours = convertMinutesToFractionalHours(classOriginalMinutes);
+                    const classOriginalHours = utilsFunctions.convertMinutesToFractionalHours(classOriginalMinutes);
                     if (!hoursByProfessor.has(classOriginalProfessorId)) {
                         hoursByProfessor.set(classOriginalProfessorId, {
                             hoursSeen: 0,
@@ -391,7 +378,7 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
             } else {
                 // Para otras clases (no tipo 2), procesar clase original y reschedules por separado
                 if (classOriginalMinutes > 0) {
-                    const classOriginalHours = convertMinutesToFractionalHours(classOriginalMinutes);
+                    const classOriginalHours = utilsFunctions.convertMinutesToFractionalHours(classOriginalMinutes);
                     if (!hoursByProfessor.has(classOriginalProfessorId)) {
                         hoursByProfessor.set(classOriginalProfessorId, {
                             hoursSeen: 0,
@@ -421,7 +408,7 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
             // Luego, agregar horas de reschedules restantes a cada profesor correspondiente
             for (const [rescheduleProfId, rescheduleMinutes] of reschedulesByProfessor.entries()) {
                 if (rescheduleMinutes > 0) {
-                    const rescheduleHours = convertMinutesToFractionalHours(rescheduleMinutes);
+                    const rescheduleHours = utilsFunctions.convertMinutesToFractionalHours(rescheduleMinutes);
                     if (!hoursByProfessor.has(rescheduleProfId)) {
                         hoursByProfessor.set(rescheduleProfId, {
                             hoursSeen: 0,
@@ -447,7 +434,7 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
             // No hay reschedules, asignar todas las horas al profesor de la clase original
             // IMPORTANTE: Solo sumar si classOriginalMinutes > 0 para evitar sumar 0 horas
             if (classOriginalMinutes > 0) {
-                const fractionalHours = convertMinutesToFractionalHours(classOriginalMinutes);
+                const fractionalHours = utilsFunctions.convertMinutesToFractionalHours(classOriginalMinutes);
                 
                 if (!hoursByProfessor.has(classOriginalProfessorId)) {
                     hoursByProfessor.set(classOriginalProfessorId, {
@@ -523,12 +510,10 @@ const generateGeneralProfessorsReportLogic = async (month) => {
     const EXCLUDED_PROFESSOR_ID = new mongoose.Types.ObjectId("685a1caa6c566777c1b5dc4b");
 
     // PARTE 3: Filtrar enrollments que se superponen con el mes
-    // Buscar enrollments donde el rango del enrollment se superpone con el rango del mes
-    // Un enrollment se superpone si: startDate <= endDate del mes Y endDate >= startDate del mes
-    // REGLA 1 y 4: Excluir enrollments en pausa (status = 3) del procesamiento normal
+    // Incluir enrollments activos y en pausa (status 1 y 3). En pausa: se procesan clases hasta pauseDate (ver processClassRegistryForEnrollment)
     const enrollments = await Enrollment.find({
         professorId: { $ne: EXCLUDED_PROFESSOR_ID, $exists: true, $ne: null },
-        status: { $ne: 3 }, // Excluir enrollments en pausa (status = 3)
+        status: { $in: [1, 3] }, // Activos (1) y en pausa (3); en pausa solo clases con classDate <= pauseDate
         startDate: { $lte: endDate }, // startDate del enrollment <= fin del mes
         endDate: { $gte: startDate }  // endDate del enrollment >= inicio del mes
     })
@@ -1122,12 +1107,10 @@ const generateSpecificProfessorReportLogic = async (month) => {
     console.log(`[generateSpecificProfessorReportLogic] Rango de fechas: ${startDate.toISOString()} a ${endDate.toISOString()}`);
 
     // PARTE 3: Filtrar enrollments que se superponen con el mes
-    // Buscar enrollments donde el rango del enrollment se superpone con el rango del mes
-    // Un enrollment se superpone si: startDate <= endDate del mes Y endDate >= startDate del mes
-    // REGLA 1 y 4: Excluir enrollments en pausa (status = 3) del procesamiento normal
+    // Incluir enrollments activos y en pausa (status 1 y 3). En pausa: solo clases con classDate <= pauseDate
     const enrollments = await Enrollment.find({
         professorId: TARGET_PROFESSOR_ID,
-        status: { $ne: 3 }, // Excluir enrollments en pausa (status = 3)
+        status: { $in: [1, 3] }, // Activos (1) y en pausa (3)
         startDate: { $lte: endDate }, // startDate del enrollment <= fin del mes
         endDate: { $gte: startDate }  // endDate del enrollment >= inicio del mes
     })
@@ -1509,18 +1492,16 @@ const generateExcedenteReportLogic = async (month) => {
     const monthStartStr = moment(startDate).format('YYYY-MM-DD');
     const monthEndStr = moment(endDate).format('YYYY-MM-DD');
 
-    // Buscar ingresos que NO tengan ni idEnrollment ni idProfessor
+    // Buscar ingresos excedentes básicos: sin enlace a penalización, enrollment, ni profesor
+    // (idStudent no existe en el modelo Income; solo se filtran los anteriores)
     const excedenteIncomes = await Income.find({
         income_date: {
             $gte: startDate,
             $lte: endDate
         },
-        $or: [
-            { idEnrollment: { $exists: false } },
-            { idEnrollment: null },
-            { idProfessor: { $exists: false } },
-            { idProfessor: null }
-        ]
+        idEnrollment: null,
+        idProfessor: null,
+        idPenalizationRegistry: null
     })
     .populate('idDivisa', 'name')
     .populate('idPaymentMethod', 'name type')
@@ -1753,7 +1734,8 @@ const generateExcedenteReportLogic = async (month) => {
         prepaidIncomesTotal += prepaidIncomesSum;
         prepaidIncomesCount += prepaidIncomes.length;
 
-        // Agregar incomes a incomeDetails
+        // Detalles de incomes prepagados (solo para este enrollment; NO se agregan a incomeDetails)
+        // incomeDetails es solo para excedentes básicos (sin idEnrollment, idProfessor, idPenalizationRegistry)
         const prepaidIncomeDetails = prepaidIncomes.map(income => ({
             incomeId: income._id,
             deposit_name: income.deposit_name || 'Sin nombre',
@@ -1766,7 +1748,6 @@ const generateExcedenteReportLogic = async (month) => {
             income_date: income.income_date,
             createdAt: income.createdAt
         }));
-        incomeDetails.push(...prepaidIncomeDetails);
 
         // Obtener nombres de estudiantes (usar alias si existe, sino concatenar nombres)
         const hasAlias = enrollment.alias !== null && enrollment.alias !== undefined;
@@ -1833,11 +1814,14 @@ const generateExcedenteReportLogic = async (month) => {
 
         // REGLA 1.2: Si cambió a status 0 (disuelto), todo lo no visto queda excedente
         // REGLA 1.3: Si cambió a status 2 (desactivado), el available_balance es excedente
-        // REGLA 4: Para enrollments en pausa (status 3), el available_balance completo es excedente
+        // REGLA 4: Para enrollments en pausa (status 3), excedente = (availableBalance - totalAmount) + balance_per_class
         const availableBalance = enrollment.available_balance || 0;
-        
-        if (availableBalance > 0) {
-            totalPausedEnrollmentsExcedente += availableBalance;
+        const balancePerClass = enrollment.balance_per_class ?? 0;
+        const totalAmount = enrollment.totalAmount || 0;
+        const excedenteValue = (availableBalance - totalAmount) + balancePerClass;
+
+        if (excedenteValue > 0) {
+            totalPausedEnrollmentsExcedente += excedenteValue;
 
             // Obtener nombres de estudiantes
             const hasAlias = enrollment.alias !== null && enrollment.alias !== undefined;
@@ -1865,7 +1849,7 @@ const generateExcedenteReportLogic = async (month) => {
                 status: enrollment.status,
                 pauseDate: enrollment.pauseDate || null,
                 availableBalance: parseFloat(availableBalance.toFixed(2)),
-                excedente: parseFloat(availableBalance.toFixed(2))
+                excedente: parseFloat(excedenteValue.toFixed(2))
             });
         }
     }
