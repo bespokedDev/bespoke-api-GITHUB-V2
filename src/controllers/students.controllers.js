@@ -321,6 +321,8 @@ studentCtrl.studentInfo = async (req, res) => {
         let totalAvailableBalance = 0;
         // Calcular el total sumando todos los balance_per_class de los enrollments del estudiante
         let totalBalancePerClass = 0;
+        // Calcular el total sumando todos los totalAmount de los enrollments del estudiante
+        let totalAmount = 0;
         const enrollmentDetails = [];
 
         enrollments.forEach(enrollment => {
@@ -342,6 +344,10 @@ studentCtrl.studentInfo = async (req, res) => {
                 const balancePerClass = enrollment.balance_per_class || 0;
                 totalBalancePerClass += balancePerClass;
 
+                // Sumar el totalAmount del enrollment (si existe, sino 0)
+                const enrollmentTotalAmount = enrollment.totalAmount || 0;
+                totalAmount += enrollmentTotalAmount;
+
                 // Agregar información detallada del enrollment
                 // amount ahora es el balance_per_class del enrollment (no el amount del studentInfo)
                 // rescheduleHours se calculará después de cargar las clases
@@ -360,6 +366,7 @@ studentCtrl.studentInfo = async (req, res) => {
 
         console.log('📊 Total available balance calculado:', totalAvailableBalance);
         console.log('📊 Total balance per class calculado:', totalBalancePerClass);
+        console.log('📊 Total amount calculado:', totalAmount);
         console.log('📋 Detalles de enrollments:', enrollmentDetails.length);
 
         // Obtener todos los IDs de enrollments del estudiante
@@ -643,6 +650,7 @@ studentCtrl.studentInfo = async (req, res) => {
             },
             totalAvailableBalance: totalAvailableBalance,
             totalBalancePerClass: totalBalancePerClass,
+            totalAmount: totalAmount,
             enrollmentDetails: enrollmentDetails,
             rescheduleTime: {
                 totalAvailableMinutes: totalRescheduleMinutes,

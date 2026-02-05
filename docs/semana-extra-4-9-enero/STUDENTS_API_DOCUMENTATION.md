@@ -552,6 +552,7 @@ No requiere body.
   },
   "totalAvailableBalance": 1500,
   "totalBalancePerClass": 500,
+  "totalAmount": 2000,
   "enrollmentDetails": [
     {
       "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d3",
@@ -819,6 +820,9 @@ No requiere body.
 
 **totalBalancePerClass:**
 - `totalBalancePerClass` (Number): Suma total de todos los `balance_per_class` de los enrollments activos del estudiante
+
+**totalAmount:**
+- `totalAmount` (Number): Suma total de todos los `totalAmount` de los enrollments activos del estudiante
 
 **enrollmentDetails:**
 - Array de objetos con información detallada de cada enrollment activo:

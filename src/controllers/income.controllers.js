@@ -63,6 +63,7 @@ const populateIncome = async (query) => {
  *   }
  */
 const processClassRegistryForEnrollment = async (enrollment, monthStartDate, monthEndDate) => {
+    
     // REGLA 1 y 4: Si enrollment está en pausa (status = 3), solo considerar clases hasta pauseDate
     let effectiveEndDate = monthEndDate;
     if (enrollment.status === 3 && enrollment.pauseDate) {
@@ -71,26 +72,18 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         const monthEndDateObj = moment(monthEndDate);
         if (pauseDateObj.isBefore(monthEndDateObj) || pauseDateObj.isSame(monthEndDateObj)) {
             effectiveEndDate = enrollment.pauseDate;
+            console.log(`   ⚠️ Enrollment en pausa: effectiveEndDate limitado a pauseDate: ${moment(effectiveEndDate).format('YYYY-MM-DD')}`);
         }
     }
     
     // Formatear fechas del mes para comparar con classDate (string YYYY-MM-DD)
     const monthStartStr = moment(monthStartDate).format('YYYY-MM-DD');
     const monthEndStr = moment(effectiveEndDate).format('YYYY-MM-DD');
-
+    
     // 🐛 DEBUG: Identificar enrollment específico para logging
     const TARGET_ENROLLMENT_ID = "6966bab5e258e901ef589e19";
     const enrollmentIdStr = enrollment._id ? enrollment._id.toString() : enrollment.toString();
     const isTargetEnrollment = enrollmentIdStr === TARGET_ENROLLMENT_ID;
-
-    if (isTargetEnrollment) {
-        console.log('\n🔍 ========== DEBUG: processClassRegistryForEnrollment ==========');
-        console.log(`📋 Enrollment ID: ${enrollmentIdStr}`);
-        console.log(`📅 Rango de fechas: ${monthStartStr} a ${monthEndStr}`);
-        if (enrollment.status === 3) {
-            console.log(`⏸️ Enrollment en pausa (status=3), pauseDate: ${enrollment.pauseDate ? moment(enrollment.pauseDate).format('YYYY-MM-DD') : 'N/A'}`);
-        }
-    }
 
     // REGLA 4: Si enrollment está en pausa (status = 3) sin pauseDate, no procesar clases (no se puede acotar el rango)
     if (enrollment.status === 3 && !enrollment.pauseDate) {
@@ -118,21 +111,19 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         // NOTA: No filtrar por classViewed aquí, se filtrará en el procesamiento
         // Necesitamos encontrar clases con classViewed: 0 que tengan reschedules asociados
     })
-    .populate('professorId', 'name ciNumber typeId')
     .populate('userId', 'name email role')
     .lean();
 
-    if (isTargetEnrollment) {
-        console.log(`\n📚 Clases originales (padre) encontradas: ${classRegistriesInMonth.length}`);
-        classRegistriesInMonth.forEach((cr, idx) => {
-            console.log(`  [${idx + 1}] ClassRegistry ID: ${cr._id}`);
-            console.log(`      - classDate: ${cr.classDate}`);
-            console.log(`      - classViewed: ${cr.classViewed} (${cr.classViewed === 1 ? 'Vista' : cr.classViewed === 2 ? 'Parcial' : 'No Show'})`);
-            console.log(`      - minutesViewed: ${cr.minutesViewed} (${cr.minutesViewed ? `${cr.minutesViewed} min` : 'null/0'})`);
-            console.log(`      - reschedule: ${cr.reschedule} (${cr.reschedule === 0 ? 'Normal' : 'Con reschedule'})`);
-            console.log(`      - originalClassId: ${cr.originalClassId} (${cr.originalClassId ? 'Hija' : 'Padre'})`);
-        });
-    }
+    // IMPORTANTE: Con .lean(), los ObjectIds se convierten en objetos especiales de MongoDB
+    // Necesitamos acceder al campo directamente, pero puede que necesitemos convertirlo manualmente
+    
+    // IMPORTANTE: No hacer populate de professorId porque si el ObjectId no existe en Professors,
+    // Mongoose lo convierte en null. En su lugar, accederemos directamente al campo professorId
+    // que contiene el ObjectId raw de la base de datos
+
+    // Log general para todos los enrollments
+  
+
 
     // PARTE 5: Buscar todos los reschedules (clases hijas) dentro del mes para optimizar consultas
     // Buscar reschedules que estén dentro del mes y que tengan originalClassId de las clases originales encontradas
@@ -146,20 +137,12 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         originalClassId: { $in: originalClassIds }, // Reschedules que apuntan a las clases originales encontradas
         reschedule: { $in: [1, 2] } // Clases hijas en reschedule (1 = en reschedule, 2 = reschedule visto)
     })
-    .populate('professorId', 'name ciNumber typeId')
     .populate('userId', 'name email role')
     .lean();
+    
+    // IMPORTANTE: No hacer populate de professorId porque si el ObjectId no existe en Professors,
+    // Mongoose lo convierte en null. Accederemos directamente al campo professorId
 
-    if (isTargetEnrollment) {
-        console.log(`\n🔄 Reschedules (clases hijas) encontrados: ${reschedulesInMonth.length}`);
-        reschedulesInMonth.forEach((rs, idx) => {
-            console.log(`  [${idx + 1}] Reschedule ID: ${rs._id}`);
-            console.log(`      - classDate: ${rs.classDate}`);
-            console.log(`      - reschedule: ${rs.reschedule} (${rs.reschedule === 1 ? 'En reschedule' : 'Reschedule visto'})`);
-            console.log(`      - minutesViewed: ${rs.minutesViewed} (${rs.minutesViewed ? `${rs.minutesViewed} min` : 'null/0'})`);
-            console.log(`      - originalClassId: ${rs.originalClassId} (apunta a clase padre)`);
-        });
-    }
 
     // Crear un mapa de reschedules por originalClassId para acceso rápido
     const reschedulesMap = new Map();
@@ -182,6 +165,11 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         (enrollment.professorId._id ? enrollment.professorId._id.toString() : enrollment.professorId.toString()) : 
         null;
 
+    // Profesor suplente del enrollment (si existe)
+    const enrollmentSubstituteProfessorId = enrollment.substituteProfessor && enrollment.substituteProfessor.professorId ?
+        (enrollment.substituteProfessor.professorId._id ? enrollment.substituteProfessor.professorId._id.toString() : enrollment.substituteProfessor.professorId.toString()) :
+        null;
+
     // PARTE 5 y 6: Procesar cada clase original (padre) y sumar minutos de reschedules (hijos) si existen
     // También determinar a qué profesor asignar las horas (considerando reschedules)
     for (const classRecord of classRegistriesInMonth) {
@@ -189,23 +177,31 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         const classRecordId = classRecord._id.toString();
         const reschedulesForThisClass = reschedulesMap.get(classRecordId) || [];
         
-        if (isTargetEnrollment) {
-            console.log(`\n📝 Procesando clase original (padre) ID: ${classRecordId}`);
-            console.log(`   - classDate: ${classRecord.classDate}`);
-            console.log(`   - classViewed: ${classRecord.classViewed} (${classRecord.classViewed === 1 ? 'Vista' : classRecord.classViewed === 2 ? 'Parcial' : 'No Show'})`);
-            console.log(`   - minutesViewed original: ${classRecord.minutesViewed}`);
-            console.log(`   - reschedule: ${classRecord.reschedule} (${classRecord.reschedule === 0 ? 'Normal' : 'Con reschedule'})`);
-            console.log(`   - Reschedules (hijos) asociados: ${reschedulesForThisClass.length}`);
-        }
         
         // PARTE 6: Determinar el profesor de la clase original
         let classOriginalProfessorId = enrollmentProfessorId; // Por defecto, profesor del enrollment
         
+        // Acceder directamente al professorId como ObjectId (no poblado)
+        // Con .lean(), el campo professorId será un ObjectId directo si existe en la DB
+        let classProfessorId = null;
+        
         if (classRecord.professorId) {
-            const classProfessorId = classRecord.professorId._id ? 
-                classRecord.professorId._id.toString() : 
-                classRecord.professorId.toString();
+            // professorId puede ser un ObjectId directo o un objeto con _id
+            if (classRecord.professorId._id) {
+                // Si está poblado (aunque no debería estar)
+                classProfessorId = classRecord.professorId._id.toString();
+            } else if (classRecord.professorId.toString) {
+                // Si es un ObjectId directo
+                classProfessorId = classRecord.professorId.toString();
+            } else if (typeof classRecord.professorId === 'string') {
+                // Si es un string (ya convertido)
+                classProfessorId = classRecord.professorId;
+            }
+        }
+        
+        if (classProfessorId) {
             classOriginalProfessorId = classProfessorId;
+            
         } else if (classRecord.userId) {
             // Si no hay professorId, usar userId (si existe y es válido)
             // Pero el dinero sigue yendo al profesor del enrollment según las reglas
@@ -217,12 +213,7 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         const reschedulesByProfessor = new Map(); // Map<professorId, totalMinutes>
         
         for (const reschedule of reschedulesForThisClass) {
-            if (isTargetEnrollment) {
-                console.log(`   🔄 Procesando reschedule (hijo) ID: ${reschedule._id}`);
-                console.log(`      - reschedule: ${reschedule.reschedule}`);
-                console.log(`      - classViewed: ${reschedule.classViewed}`);
-                console.log(`      - minutesViewed: ${reschedule.minutesViewed} (${reschedule.minutesViewed ? '✅ Se procesará' : '❌ Se ignorará (null/0)'})`);
-            }
+           
             
             // REGLA 4: Si reschedule tiene classViewed = 3 o 4 (no-show o lost-class), usar minutesViewed de la clase padre
             let rescheduleMinutesToUse = 0;
@@ -231,15 +222,8 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                 rescheduleMinutesToUse = classRecord.minutesViewed || 0;
                 if (rescheduleMinutesToUse === 0) {
                     // Si la clase padre tiene minutesViewed = 0, es lost-class
-                    if (isTargetEnrollment) {
-                        console.log(`      ⚠️ Reschedule es no-show/lost-class y clase padre tiene 0 minutos → Lost class`);
-                    }
                     // Para lost-class, no se cuenta tiempo (será excedente)
                     continue;
-                } else {
-                    if (isTargetEnrollment) {
-                        console.log(`      ℹ️ Reschedule es no-show/lost-class, usando minutesViewed de clase padre: ${rescheduleMinutesToUse} min`);
-                    }
                 }
             } else if (reschedule.minutesViewed) {
                 // Para otros casos, usar los minutesViewed del reschedule
@@ -250,16 +234,31 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                 // PARTE 6: Determinar a qué profesor asignar los minutos del reschedule
                 let rescheduleProfessorId = classOriginalProfessorId; // Por defecto, profesor de la clase original
                 
+                // Acceder directamente al professorId como ObjectId (no poblado)
+                let rescheduleProfId = null;
+                
                 if (reschedule.professorId) {
-                    const rescheduleProfId = reschedule.professorId._id ? 
-                        reschedule.professorId._id.toString() : 
-                        reschedule.professorId.toString();
+                    // professorId puede ser un ObjectId directo o un objeto con _id
+                    if (reschedule.professorId._id) {
+                        // Si está poblado (aunque no debería estar)
+                        rescheduleProfId = reschedule.professorId._id.toString();
+                    } else if (reschedule.professorId.toString) {
+                        // Si es un ObjectId directo
+                        rescheduleProfId = reschedule.professorId.toString();
+                    } else if (typeof reschedule.professorId === 'string') {
+                        // Si es un string (ya convertido)
+                        rescheduleProfId = reschedule.professorId;
+                    }
+                }
+                
+                if (rescheduleProfId) {
                     rescheduleProfessorId = rescheduleProfId;
+                    
                 } else if (reschedule.userId) {
                     // Si no hay professorId en reschedule, usar userId (si existe y es válido)
                     // Pero el dinero sigue yendo al profesor de la clase original según las reglas
                     rescheduleProfessorId = classOriginalProfessorId;
-                }
+                } 
                 
                 // Agrupar minutos de reschedules por profesor
                 if (!reschedulesByProfessor.has(rescheduleProfessorId)) {
@@ -271,10 +270,6 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                     currentMinutes + rescheduleMinutesToUse
                 );
                 
-                if (isTargetEnrollment) {
-                    console.log(`      ✅ Reschedule agregado: ${rescheduleMinutesToUse} min → Profesor ${rescheduleProfessorId}`);
-                    console.log(`      📊 Total acumulado para este profesor: ${currentMinutes + rescheduleMinutesToUse} min`);
-                }
             }
         }
         
@@ -290,9 +285,6 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         const hasReschedules = reschedulesForThisClass.length > 0;
         
         if (!hasValidClassViewed && !hasReschedules) {
-            if (isTargetEnrollment) {
-                console.log(`   ⚠️ Saltando clase original ${classRecord._id} porque classViewed=${classRecord.classViewed} (no válido) y no tiene reschedules`);
-            }
             continue;
         }
         
@@ -300,22 +292,12 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
             classOriginalMinutes = classRecord.minutesViewed;
             if (classRecord.classViewed === 3 && (!classOriginalMinutes || classOriginalMinutes === null || classOriginalMinutes === 0)) {
                 classOriginalMinutes = 60; // 1 hora completa para clases no show
-                if (isTargetEnrollment) {
-                    console.log(`   ⚠️ classViewed = 3 y minutesViewed es null/0 → Se asume 60 minutos (1 hora completa)`);
-                }
+                
             } else {
                 classOriginalMinutes = classOriginalMinutes || 0;
             }
-        } else {
-            // classViewed = 0 pero tiene reschedules, solo contar los reschedules
-            if (isTargetEnrollment) {
-                console.log(`   ℹ️ classViewed = 0, solo se contarán reschedules si existen`);
-            }
-        }
+        } 
         
-        if (isTargetEnrollment) {
-            console.log(`   📊 Minutos calculados para clase original: ${classOriginalMinutes} min`);
-        }
         
         if (reschedulesByProfessor.size > 0) {
             // Hay reschedules, asignar horas según el profesor
@@ -330,25 +312,15 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                     
                     if (!hoursByProfessor.has(classOriginalProfessorId)) {
                         hoursByProfessor.set(classOriginalProfessorId, {
-                            hoursSeen: 0,
-                            classCount: 0
-                        });
-                    }
+                        hoursSeen: 0,
+                        classCount: 0
+                    });
+                }
                     const class2Data = hoursByProfessor.get(classOriginalProfessorId);
                     const hoursBefore = class2Data.hoursSeen;
                     class2Data.hoursSeen += totalHoursForClass2;
                     class2Data.classCount += 1;
                     
-                    if (isTargetEnrollment) {
-                        console.log(`   ✅ Clase tipo 2 (parcialmente vista) con reschedule:`);
-                        console.log(`      - Minutos clase original: ${classOriginalMinutes} min`);
-                        console.log(`      - Minutos reschedule: ${rescheduleMinutesForOriginalProfessor} min`);
-                        console.log(`      - Total minutos sumados: ${totalMinutesForClass2} min`);
-                        console.log(`      - Horas fraccionarias: ${totalHoursForClass2} horas`);
-                        console.log(`      - Profesor: ${classOriginalProfessorId}`);
-                        console.log(`      - hoursSeen antes: ${hoursBefore}`);
-                        console.log(`      - hoursSeen después: ${class2Data.hoursSeen}`);
-                    }
                     
                     // Eliminar este reschedule del mapa para no procesarlo dos veces
                     reschedulesByProfessor.delete(classOriginalProfessorId);
@@ -366,14 +338,6 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                     classOriginalData.hoursSeen += classOriginalHours;
                     classOriginalData.classCount += 1;
                     
-                    if (isTargetEnrollment) {
-                        console.log(`   ✅ Clase original agregada (sin reschedule del mismo profesor):`);
-                        console.log(`      - Minutos: ${classOriginalMinutes} min`);
-                        console.log(`      - Horas fraccionarias: ${classOriginalHours} horas`);
-                        console.log(`      - Profesor: ${classOriginalProfessorId}`);
-                        console.log(`      - hoursSeen antes: ${hoursBefore}`);
-                        console.log(`      - hoursSeen después: ${classOriginalData.hoursSeen}`);
-                    }
                 }
             } else {
                 // Para otras clases (no tipo 2), procesar clase original y reschedules por separado
@@ -390,18 +354,6 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                     classOriginalData.hoursSeen += classOriginalHours;
                     classOriginalData.classCount += 1;
                     
-                    if (isTargetEnrollment) {
-                        console.log(`   ✅ Clase original agregada:`);
-                        console.log(`      - Minutos: ${classOriginalMinutes} min`);
-                        console.log(`      - Horas fraccionarias: ${classOriginalHours} horas`);
-                        console.log(`      - Profesor: ${classOriginalProfessorId}`);
-                        console.log(`      - hoursSeen antes: ${hoursBefore}`);
-                        console.log(`      - hoursSeen después: ${classOriginalData.hoursSeen}`);
-                    }
-                } else {
-                    if (isTargetEnrollment) {
-                        console.log(`   ⚠️ Clase original NO agregada: classOriginalMinutes = 0`);
-                    }
                 }
             }
             
@@ -409,25 +361,17 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
             for (const [rescheduleProfId, rescheduleMinutes] of reschedulesByProfessor.entries()) {
                 if (rescheduleMinutes > 0) {
                     const rescheduleHours = utilsFunctions.convertMinutesToFractionalHours(rescheduleMinutes);
-                    if (!hoursByProfessor.has(rescheduleProfId)) {
-                        hoursByProfessor.set(rescheduleProfId, {
-                            hoursSeen: 0,
-                            classCount: 0
-                        });
-                    }
-                    const rescheduleData = hoursByProfessor.get(rescheduleProfId);
+                if (!hoursByProfessor.has(rescheduleProfId)) {
+                    hoursByProfessor.set(rescheduleProfId, {
+                        hoursSeen: 0,
+                        classCount: 0
+                    });
+                }
+                const rescheduleData = hoursByProfessor.get(rescheduleProfId);
                     const hoursBefore = rescheduleData.hoursSeen;
-                    rescheduleData.hoursSeen += rescheduleHours;
-                    rescheduleData.classCount += 1;
+                rescheduleData.hoursSeen += rescheduleHours;
+                rescheduleData.classCount += 1;
                     
-                    if (isTargetEnrollment) {
-                        console.log(`   ✅ Reschedule agregado:`);
-                        console.log(`      - Minutos totales: ${rescheduleMinutes} min`);
-                        console.log(`      - Horas fraccionarias: ${rescheduleHours} horas`);
-                        console.log(`      - Profesor: ${rescheduleProfId}`);
-                        console.log(`      - hoursSeen antes: ${hoursBefore}`);
-                        console.log(`      - hoursSeen después: ${rescheduleData.hoursSeen}`);
-                    }
                 }
             }
         } else {
@@ -438,40 +382,27 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
                 
                 if (!hoursByProfessor.has(classOriginalProfessorId)) {
                     hoursByProfessor.set(classOriginalProfessorId, {
-                        hoursSeen: 0,
-                        classCount: 0
-                    });
-                }
+                    hoursSeen: 0,
+                    classCount: 0
+                });
+            }
                 const professorData = hoursByProfessor.get(classOriginalProfessorId);
                 const hoursBefore = professorData.hoursSeen;
-                professorData.hoursSeen += fractionalHours;
-                professorData.classCount += 1;
+            professorData.hoursSeen += fractionalHours;
+            professorData.classCount += 1;
                 
-                if (isTargetEnrollment) {
-                    console.log(`   ✅ Clase original agregada (sin reschedules):`);
-                    console.log(`      - Minutos: ${classOriginalMinutes} min`);
-                    console.log(`      - Horas fraccionarias: ${fractionalHours} horas`);
-                    console.log(`      - Profesor: ${classOriginalProfessorId}`);
-                    console.log(`      - hoursSeen antes: ${hoursBefore}`);
-                    console.log(`      - hoursSeen después: ${professorData.hoursSeen}`);
-                }
-            } else {
-                if (isTargetEnrollment) {
-                    console.log(`   ⚠️ Clase original NO agregada: classOriginalMinutes = 0`);
-                }
-            }
+            } 
         }
     }
     
-    if (isTargetEnrollment) {
-        console.log(`\n📊 ========== RESULTADO FINAL ==========`);
-        for (const [profId, data] of hoursByProfessor.entries()) {
-            console.log(`   Profesor ${profId}:`);
-            console.log(`      - hoursSeen: ${data.hoursSeen} horas`);
-            console.log(`      - classCount: ${data.classCount}`);
-        }
-        console.log(`==========================================\n`);
+    for (const [profId, data] of hoursByProfessor.entries()) {
+        // Un profesor es suplente si NO es ni el profesor original ni el suplente del enrollment
+        const isOriginalProfessor = enrollmentProfessorId && profId === enrollmentProfessorId;
+        const isSubstituteProfessor = enrollmentSubstituteProfessorId && profId === enrollmentSubstituteProfessorId;
+        const isSubstitute = !isOriginalProfessor && !isSubstituteProfessor;
+        
     }
+
 
     return hoursByProfessor;
 };
@@ -572,13 +503,47 @@ const generateGeneralProfessorsReportLogic = async (month) => {
     const professorTypesMap = new Map();
     allProfessorTypes.forEach(type => professorTypesMap.set(type._id.toString(), type));
 
-    for (const professorId in enrollmentGroupedByProfessor) {
+    // IMPORTANTE: Usar un Set para rastrear profesores procesados y asegurar que se procesen todos,
+    // incluyendo los que solo son suplentes (agregados dinámicamente durante el procesamiento)
+    const processedProfessors = new Set();
+    
+    // Procesar todos los profesores, incluyendo los que se agreguen dinámicamente como suplentes
+    // Usar un while loop para asegurar que se procesen todos los profesores, incluso los agregados durante la iteración
+    let allProfessorIds = Object.keys(enrollmentGroupedByProfessor);
+    let currentIndex = 0;
+    
+    
+    while (currentIndex < allProfessorIds.length) {
+        const professorId = allProfessorIds[currentIndex];
+        
+        // Si ya se procesó este profesor, saltarlo
+        if (processedProfessors.has(professorId)) {
+            currentIndex++;
+            continue;
+        }
+        
+        processedProfessors.add(professorId);
+        
+        // Si se agregaron nuevos profesores durante el procesamiento, actualizar la lista
+        const currentKeys = Object.keys(enrollmentGroupedByProfessor);
+        if (currentKeys.length > allProfessorIds.length) {
+            allProfessorIds = currentKeys;
+        }
+        
         const professorEnrollments = enrollmentGroupedByProfessor[professorId];
+        const enrollmentCount = Object.keys(professorEnrollments).length;
         const professorDetails = [];
         let currentProfessorName = 'Profesor Desconocido';
 
         for (const enrollmentId in professorEnrollments) {
             const data = professorEnrollments[enrollmentId];
+            
+            // IMPORTANTE: Saltar entradas de suplentes (externos o del enrollment) en el loop principal
+            // Estas se procesan después en el bloque "PARTE 6: Procesar entradas de suplentes"
+            if (data.isSubstitute || data.isEnrollmentSubstitute) {
+                continue;
+            }
+            
             const enrollment = data.enrollmentInfo;
             const professor = data.professorInfo;
             const plan = enrollment.planId;
@@ -615,7 +580,7 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             // Buscar todos los ClassRegistry del enrollment donde reschedule = 0 (solo clases normales, no reschedules)
             const totalNormalClasses = await ClassRegistry.countDocuments({
                 enrollmentId: enrollment._id,
-                reschedule: 0 // Solo clases normales, excluir reschedules
+                originalClassId: null // Solo clases normales, excluir reschedules
             });
 
             // totalHours debe ser el número real de registros de clase del enrollment
@@ -688,6 +653,12 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             
             // Obtener horas vistas del profesor del enrollment
             const enrollmentProfessorId = professor._id.toString();
+            
+            // Obtener profesor suplente del enrollment (si existe)
+            const enrollmentSubstituteProfessorId = enrollment.substituteProfessor && enrollment.substituteProfessor.professorId ?
+                (enrollment.substituteProfessor.professorId._id ? enrollment.substituteProfessor.professorId._id.toString() : enrollment.substituteProfessor.professorId.toString()) :
+                null;
+            
             const professorHoursData = hoursByProfessor.get(enrollmentProfessorId) || { hoursSeen: 0, classCount: 0 };
             const hoursSeenForEnrollmentProfessor = professorHoursData.hoursSeen;
 
@@ -707,6 +678,40 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 balanceRemaining = calculatedAmount - totalTeacher - totalBespoke;
             }
 
+            // Buscar clases específicas que dio el profesor del enrollment dentro del mes
+            const monthStartStr = moment.utc(startDate).format('YYYY-MM-DD');
+            const monthEndStr = moment.utc(endDate).format('YYYY-MM-DD');
+            const enrollmentProfessorObjectId = new mongoose.Types.ObjectId(enrollmentProfessorId);
+            
+            // Buscar clases donde el professorId coincide con el profesor del enrollment
+            // Incluir clases originales y reschedules que tengan este profesor
+            const professorClasses = await ClassRegistry.find({
+                enrollmentId: enrollment._id,
+                classDate: {
+                    $gte: monthStartStr,
+                    $lte: monthEndStr
+                },
+                professorId: enrollmentProfessorObjectId,
+                classViewed: { $in: [1, 2, 3] } // Solo clases vistas, parcialmente vistas o no show
+            })
+            .populate('originalClassId', 'classDate classTime')
+            .lean();
+
+            // Buscar clases perdidas (classViewed = 4) para este enrollment dentro del mes
+            const lostClasses = await ClassRegistry.find({
+                enrollmentId: enrollment._id,
+                classDate: {
+                    $gte: monthStartStr,
+                    $lte: monthEndStr
+                },
+                reschedule: 0, // Solo clases normales, no reschedules
+                classViewed: 4 // Solo clases perdidas (lost classes)
+            }).lean();
+
+            // Calcular monto de clases perdidas
+            const lostClassesCount = lostClasses.length;
+            const lostClassesAmount = pricePerHour > 0 ? lostClassesCount * pricePerHour : 0;
+
             // Crear entrada para el profesor del enrollment
             professorDetails.push({
                 professorId: professor._id,
@@ -724,13 +729,50 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 totalTeacher: parseFloat(totalTeacher.toFixed(2)),
                 totalBespoke: parseFloat(totalBespoke.toFixed(2)),
                 balanceRemaining: parseFloat(balanceRemaining.toFixed(2)),
+                professorClasses: {
+                    count: professorClasses.length,
+                    details: professorClasses.map(c => ({
+                        classId: c._id,
+                        classDate: c.classDate,
+                        classTime: c.classTime || null,
+                        minutesViewed: c.minutesViewed || 0,
+                        classViewed: c.classViewed,
+                        reschedule: c.reschedule,
+                        isReschedule: c.originalClassId !== null,
+                        originalClassDate: c.originalClassId ? (c.originalClassId.classDate || null) : null,
+                        originalClassTime: c.originalClassId ? (c.originalClassId.classTime || null) : null
+                    }))
+                },
+                lostClasses: {
+                    count: lostClassesCount,
+                    amount: parseFloat(lostClassesAmount.toFixed(2)),
+                    details: lostClasses.map(c => ({
+                        classId: c._id,
+                        classDate: c.classDate,
+                        classTime: c.classTime || null
+                    }))
+                },
                 status: 1
             });
 
             // PARTE 6: Si hay clases dadas por suplentes, almacenar información para procesarlas después
             // Guardamos la información de suplentes en una estructura temporal
+            // IMPORTANTE: Guardar balanceRemaining y pricePerHour del enrollment original para usarlos en suplentes
+            const originalBalanceRemaining = parseFloat(balanceRemaining.toFixed(2));
+            const originalPricePerHour = parseFloat(pricePerHour.toFixed(3));
+            
             for (const [substituteProfessorId, substituteHoursData] of hoursByProfessor.entries()) {
-                if (substituteProfessorId !== enrollmentProfessorId && substituteHoursData.hoursSeen > 0) {
+               
+                
+                // Determinar el tipo de profesor
+                const isOriginalProfessor = substituteProfessorId === enrollmentProfessorId;
+                const isSubstituteProfessor = enrollmentSubstituteProfessorId && substituteProfessorId === enrollmentSubstituteProfessorId;
+                const isExternalSubstitute = !isOriginalProfessor && !isSubstituteProfessor;
+                
+                // IMPORTANTE: Tanto suplentes externos como suplentes del enrollment deben agregarse al reporte
+                // La diferencia es que el suplente del enrollment se procesa como parte del enrollment, no como suplente externo
+                if ((isExternalSubstitute || isSubstituteProfessor) && substituteHoursData.hoursSeen > 0) {
+                   
                     // Es un profesor suplente que dio clases de este enrollment
                     // Almacenar información para procesar después
                     if (!enrollmentGroupedByProfessor[substituteProfessorId]) {
@@ -745,32 +787,45 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                             .populate('typeId')
                             .lean();
                         
-                        if (substituteProfessor && substituteProfessor.typeId) {
-                            enrollmentGroupedByProfessor[substituteProfessorId][substituteKey] = {
-                                enrollmentInfo: enrollment,
-                                professorInfo: substituteProfessor,
-                                isSubstitute: true,
-                                originalEnrollmentProfessorId: enrollmentProfessorId,
-                                substituteHoursData: substituteHoursData,
-                                substituteProfessorId: substituteProfessorId
-                            };
-                        }
+                        if (substituteProfessor) {
+                            if (substituteProfessor && substituteProfessor.typeId) {
+                                enrollmentGroupedByProfessor[substituteProfessorId][substituteKey] = {
+                                    enrollmentInfo: enrollment,
+                                    professorInfo: substituteProfessor,
+                                    isSubstitute: isExternalSubstitute, // true solo para suplentes externos
+                                    isEnrollmentSubstitute: isSubstituteProfessor, // true para suplente del enrollment
+                                    originalEnrollmentProfessorId: enrollmentProfessorId,
+                                    substituteHoursData: substituteHoursData,
+                                    substituteProfessorId: substituteProfessorId,
+                                    // Guardar valores del enrollment original para usar en suplentes
+                                    originalBalanceRemaining: originalBalanceRemaining,
+                                    originalPricePerHour: originalPricePerHour
+                                };
+                            } 
+                        } 
                     }
-                }
+                } 
             }
 
             if (professor && professor.name) { currentProfessorName = professor.name; }
         }
 
         // PARTE 6: Procesar entradas de suplentes para este profesor
-        // Buscar si hay enrollments donde este profesor fue suplente
+        // Buscar si hay enrollments donde este profesor fue suplente (externo o del enrollment)
         for (const enrollmentKey in professorEnrollments) {
             const data = professorEnrollments[enrollmentKey];
             
-            // Si es una entrada de suplente, procesarla
-            if (data.isSubstitute && data.substituteHoursData && data.substituteHoursData.hoursSeen > 0) {
+            // Si es una entrada de suplente (externo o del enrollment), procesarla
+            const isSubstituteEntry = (data.isSubstitute || data.isEnrollmentSubstitute) && data.substituteHoursData && data.substituteHoursData.hoursSeen > 0;
+            
+            if (isSubstituteEntry) {
                 const enrollment = data.enrollmentInfo;
                 const substituteProfessor = data.professorInfo; // Ya está poblado
+
+                // Establecer nombre del profesor suplente
+                if (substituteProfessor && substituteProfessor.name) {
+                    currentProfessorName = substituteProfessor.name;
+                }
 
                 if (substituteProfessor && substituteProfessor.typeId) {
                     const plan = enrollment.planId;
@@ -803,11 +858,24 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                             }).join(' & ')
                             : 'Estudiante Desconocido';
 
-                    // Calcular pricePerHour (mismo cálculo que para el enrollment)
-                    const totalNormalClasses = await ClassRegistry.countDocuments({
-                        enrollmentId: enrollment._id,
-                        reschedule: 0
-                    });
+                    // Para suplentes: usar pricePerHour del enrollment original (guardado cuando se procesó el profesor original)
+                    // Si no está disponible, calcularlo (fallback)
+                    let pricePerHour = data.originalPricePerHour || 0;
+                    
+                    if (!pricePerHour) {
+                        // Fallback: calcular pricePerHour si no está guardado
+                        const totalNormalClasses = await ClassRegistry.countDocuments({
+                            enrollmentId: enrollment._id,
+                            reschedule: 0
+                        });
+                        
+                        if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
+                            const price = plan.pricing[enrollment.enrollmentType];
+                            if (typeof price === 'number') {
+                                pricePerHour = price / totalNormalClasses;
+                            }
+                        }
+                    }
 
                     // totalHours debe ser el número real de registros de clase del enrollment
                     // Incluye clases normales (reschedule = 0) y clases padre en reschedule (reschedule = 1 o 2)
@@ -816,13 +884,6 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                         enrollmentId: enrollment._id,
                         originalClassId: null // Solo clases padre (normales o en reschedule), excluir reschedules en sí
                     });
-                    let pricePerHour = 0;
-                    if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
-                        const price = plan.pricing[enrollment.enrollmentType];
-                        if (typeof price === 'number') {
-                            pricePerHour = price / totalNormalClasses;
-                        }
-                    }
 
                     // Obtener rates del profesor suplente
                     let substitutePPerHour = 0;
@@ -837,20 +898,9 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                         console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ El profesor suplente ${substituteProfessor._id || substituteProfessor} no tiene typeId, usando substitutePPerHour = 0`);
                     }
 
-                    // Calcular amount y balance (mismo que para el enrollment)
-                    const availableBalance = enrollment.available_balance || 0;
-                    const totalAmount = enrollment.totalAmount || 0;
-                    
-                    let calculatedAmount = 0;
-                    let calculatedBalance = 0;
-                    
-                    if (availableBalance >= totalAmount) {
-                        calculatedAmount = totalAmount;
-                        calculatedBalance = availableBalance - totalAmount;
-                    } else {
-                        calculatedAmount = 0;
-                        calculatedBalance = availableBalance;
-                    }
+                    // Para suplentes: amount = 0, balance = balanceRemaining del enrollment original
+                    const calculatedAmount = 0; // Suplentes no tienen amount propio
+                    const calculatedBalance = data.originalBalanceRemaining || 0; // Usar balanceRemaining del enrollment original
 
                     // PARTE 7: Calcular Total Teacher, Total Bespoke y Balance Remaining para suplente
                     const substituteHoursSeen = data.substituteHoursData.hoursSeen;
@@ -861,21 +911,58 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                     // Total Bespoke = (Hours Seen × Price/Hour) - Total Teacher
                     const substituteTotalBespoke = (substituteHoursSeen * pricePerHour) - substituteTotalTeacher;
                     
-                    // Balance Remaining = Amount - Total Teacher - Total Bespoke + Balance (si Balance != 0)
-                    let substituteBalanceRemaining = 0;
-                    if (calculatedBalance !== 0) {
-                        substituteBalanceRemaining = calculatedAmount - substituteTotalTeacher - substituteTotalBespoke + calculatedBalance;
-                    } else {
-                        substituteBalanceRemaining = calculatedAmount - substituteTotalTeacher - substituteTotalBespoke;
-                    }
+                    // Balance Remaining = Balance - Total Teacher - Total Bespoke
+                    // (Balance es el balanceRemaining del enrollment original)
+                    const substituteBalanceRemaining = calculatedBalance - substituteTotalTeacher - substituteTotalBespoke;
 
+                    // Buscar clases específicas que dio el profesor suplente dentro del mes
+                    const monthStartStr = moment.utc(startDate).format('YYYY-MM-DD');
+                    const monthEndStr = moment.utc(endDate).format('YYYY-MM-DD');
+                    // Obtener el ID del profesor suplente desde data o desde substituteProfessor
+                    const substituteProfessorId = data.substituteProfessorId || (substituteProfessor._id ? substituteProfessor._id.toString() : substituteProfessor._id);
+                    const substituteProfessorObjectId = new mongoose.Types.ObjectId(substituteProfessorId);
+                    
+                    // Buscar clases donde el professorId coincide con el suplente
+                    // Incluir clases originales y reschedules que tengan este profesor
+                    const substituteClasses = await ClassRegistry.find({
+                        enrollmentId: enrollment._id,
+                        classDate: {
+                            $gte: monthStartStr,
+                            $lte: monthEndStr
+                        },
+                        professorId: substituteProfessorObjectId,
+                        classViewed: { $in: [1, 2, 3] } // Solo clases vistas, parcialmente vistas o no show
+                    })
+                    .populate('originalClassId', 'classDate classTime')
+                    .lean();
+
+                    // Buscar clases perdidas (classViewed = 4) para este enrollment dentro del mes
+                    // Nota: Las clases perdidas son las mismas para el enrollment, independientemente del profesor
+                    const lostClasses = await ClassRegistry.find({
+                        enrollmentId: enrollment._id,
+                        classDate: {
+                            $gte: monthStartStr,
+                            $lte: monthEndStr
+                        },
+                        reschedule: 0, // Solo clases normales, no reschedules
+                        classViewed: 4 // Solo clases perdidas (lost classes)
+                    }).lean();
+
+                    // Calcular monto de clases perdidas
+                    const lostClassesCount = lostClasses.length;
+                    const lostClassesAmount = pricePerHour > 0 ? lostClassesCount * pricePerHour : 0;
+
+                    // Determinar el tipo de suplente y el texto a mostrar
+                    const isEnrollmentSubstitute = data.isEnrollmentSubstitute || false;
+                    const substituteLabel = isEnrollmentSubstitute ? ' (Suplente del Enrollment)' : ' (Suplente)';
+                    
                     // Agregar entrada para el profesor suplente
                     professorDetails.push({
                         professorId: substituteProfessor._id,
                         enrollmentId: enrollment._id,
                         period: period,
                         plan: planDisplay,
-                        studentName: studentNamesConcatenated + ' (Suplente)',
+                        studentName: studentNamesConcatenated + substituteLabel,
                         amount: parseFloat(calculatedAmount.toFixed(2)),
                         amountInDollars: parseFloat(calculatedAmount.toFixed(2)),
                         totalHours: totalHours,
@@ -886,8 +973,32 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                         totalTeacher: parseFloat(substituteTotalTeacher.toFixed(2)),
                         totalBespoke: parseFloat(substituteTotalBespoke.toFixed(2)),
                         balanceRemaining: parseFloat(substituteBalanceRemaining.toFixed(2)),
+                        substituteClasses: {
+                            count: substituteClasses.length,
+                            details: substituteClasses.map(c => ({
+                                classId: c._id,
+                                classDate: c.classDate,
+                                classTime: c.classTime || null,
+                                minutesViewed: c.minutesViewed || 0,
+                                classViewed: c.classViewed,
+                                reschedule: c.reschedule,
+                                isReschedule: c.originalClassId !== null,
+                                originalClassDate: c.originalClassId ? (c.originalClassId.classDate || null) : null,
+                                originalClassTime: c.originalClassId ? (c.originalClassId.classTime || null) : null
+                            }))
+                        },
+                        lostClasses: {
+                            count: lostClassesCount,
+                            amount: parseFloat(lostClassesAmount.toFixed(2)),
+                            details: lostClasses.map(c => ({
+                                classId: c._id,
+                                classDate: c.classDate,
+                                classTime: c.classTime || null
+                            }))
+                        },
                         status: 1,
-                        isSubstitute: true,
+                        isSubstitute: !isEnrollmentSubstitute, // true solo para suplentes externos
+                        isEnrollmentSubstitute: isEnrollmentSubstitute, // true para suplente del enrollment
                         originalEnrollmentProfessorId: data.originalEnrollmentProfessorId
                     });
                 }
@@ -1036,6 +1147,9 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             totalNeto: parseFloat(totalNeto.toFixed(2)), // 🆕 Total neto sin descuentos (totalTeacher + bonos)
             totalFinal: parseFloat(totalFinal.toFixed(2)) // Total final con descuentos (totalNeto - penalizaciones)
         });
+        
+        // Avanzar al siguiente profesor
+        currentIndex++;
     }
 
     const finalReport = Array.from(professorsReportMap.values())
@@ -1103,9 +1217,6 @@ const generateSpecificProfessorReportLogic = async (month) => {
 
     const TARGET_PROFESSOR_ID = new mongoose.Types.ObjectId("685a1caa6c566777c1b5dc4b"); // ID del profesor Andrea Wias
 
-    console.log(`[generateSpecificProfessorReportLogic] Buscando enrollments para profesor ${TARGET_PROFESSOR_ID} en mes ${month}`);
-    console.log(`[generateSpecificProfessorReportLogic] Rango de fechas: ${startDate.toISOString()} a ${endDate.toISOString()}`);
-
     // PARTE 3: Filtrar enrollments que se superponen con el mes
     // Incluir enrollments activos y en pausa (status 1 y 3). En pausa: solo clases con classDate <= pauseDate
     const enrollments = await Enrollment.find({
@@ -1132,26 +1243,15 @@ const generateSpecificProfessorReportLogic = async (month) => {
     })
     .lean();
 
-    console.log(`[generateSpecificProfessorReportLogic] Enrollments encontrados: ${enrollments ? enrollments.length : 0}`);
-    
     // Debug: Mostrar todos los enrollments del profesor (sin filtro de fecha) para verificar
     const allEnrollmentsForProfessor = await Enrollment.find({
         professorId: TARGET_PROFESSOR_ID,
         status: 1
     }).select('_id startDate endDate status').lean();
-    console.log(`[generateSpecificProfessorReportLogic] Total enrollments activos del profesor (sin filtro de fecha): ${allEnrollmentsForProfessor.length}`);
-    allEnrollmentsForProfessor.forEach((e, idx) => {
-        console.log(`[generateSpecificProfessorReportLogic] Enrollment ${idx + 1}: ID=${e._id}, startDate=${e.startDate}, endDate=${e.endDate}, status=${e.status}`);
-        console.log(`[generateSpecificProfessorReportLogic]   - startDate <= endDate del mes (${endDate.toISOString()}): ${e.startDate <= endDate}`);
-        console.log(`[generateSpecificProfessorReportLogic]   - endDate >= startDate del mes (${startDate.toISOString()}): ${e.endDate >= startDate}`);
-    });
 
     if (!enrollments || enrollments.length === 0) {
-        console.log(`[generateSpecificProfessorReportLogic] No se encontraron enrollments. Retornando null.`);
         return null; // Retorna null si no hay datos
     }
-
-    console.log(`[generateSpecificProfessorReportLogic] Procesando ${enrollments.length} enrollments encontrados...`);
 
     const enrollmentReportMap = new Map();
     let professorName = 'Profesor Desconocido';
@@ -1159,19 +1259,7 @@ const generateSpecificProfessorReportLogic = async (month) => {
 
     for (const enrollment of enrollments) {
         const enrollmentId = enrollment._id.toString();
-        console.log(`[generateSpecificProfessorReportLogic] Procesando enrollment ${enrollmentId}`);
-        console.log(`[generateSpecificProfessorReportLogic] - professorId: ${enrollment.professorId ? (enrollment.professorId._id || enrollment.professorId) : 'null'}`);
-        console.log(`[generateSpecificProfessorReportLogic] - professorId.typeId: ${enrollment.professorId && enrollment.professorId.typeId ? enrollment.professorId.typeId : 'null'}`);
-        console.log(`[generateSpecificProfessorReportLogic] - planId: ${enrollment.planId ? (enrollment.planId._id || enrollment.planId) : 'null'}`);
-        console.log(`[generateSpecificProfessorReportLogic] - status: ${enrollment.status}`);
-        console.log(`[generateSpecificProfessorReportLogic] - startDate: ${enrollment.startDate}`);
-        console.log(`[generateSpecificProfessorReportLogic] - endDate: ${enrollment.endDate}`);
-
         if (!enrollment.professorId || !enrollment.professorId.typeId || !enrollment.planId) {
-            console.warn(`[generateSpecificProfessorReportLogic] ⚠️ Skipping enrollment ${enrollment._id} due to missing professor, professorType or plan info.`);
-            console.warn(`[generateSpecificProfessorReportLogic]   - professorId exists: ${!!enrollment.professorId}`);
-            console.warn(`[generateSpecificProfessorReportLogic]   - professorId.typeId exists: ${!!(enrollment.professorId && enrollment.professorId.typeId)}`);
-            console.warn(`[generateSpecificProfessorReportLogic]   - planId exists: ${!!enrollment.planId}`);
             continue;
         }
 
@@ -1180,7 +1268,6 @@ const generateSpecificProfessorReportLogic = async (month) => {
                 enrollmentInfo: enrollment,
                 professorInfo: enrollment.professorId
             });
-            console.log(`[generateSpecificProfessorReportLogic] ✅ Enrollment ${enrollmentId} agregado al mapa`);
         }
 
         if (professorName === 'Profesor Desconocido' && enrollment.professorId.name) {
@@ -1188,10 +1275,7 @@ const generateSpecificProfessorReportLogic = async (month) => {
         }
     }
 
-    console.log(`[generateSpecificProfessorReportLogic] Enrollments válidos después de filtrar: ${enrollmentReportMap.size}`);
-
     if (enrollmentReportMap.size === 0) {
-        console.log(`[generateSpecificProfessorReportLogic] ⚠️ No hay enrollments válidos. Retornando null.`);
         return null;
     }
 
@@ -1299,6 +1383,23 @@ const generateSpecificProfessorReportLogic = async (month) => {
         // Balance Remaining = (Amount + Old Balance) - Total
         const balanceRemaining = (calculatedAmount + oldBalance) - total;
 
+        // Buscar clases perdidas (classViewed = 4) para este enrollment dentro del mes
+        const monthStartStr = moment(startDate).format('YYYY-MM-DD');
+        const monthEndStr = moment(endDate).format('YYYY-MM-DD');
+        const lostClasses = await ClassRegistry.find({
+            enrollmentId: enrollment._id,
+            classDate: {
+                $gte: monthStartStr,
+                $lte: monthEndStr
+            },
+            reschedule: 0, // Solo clases normales, no reschedules
+            classViewed: 4 // Solo clases perdidas (lost classes)
+        }).lean();
+
+        // Calcular monto de clases perdidas
+        const lostClassesCount = lostClasses.length;
+        const lostClassesAmount = pricePerHour > 0 ? lostClassesCount * pricePerHour : 0;
+
         details.push({
             enrollmentId: enrollment._id,
             period: period,
@@ -1311,7 +1412,16 @@ const generateSpecificProfessorReportLogic = async (month) => {
             oldBalance: parseFloat(oldBalance.toFixed(2)),
             payment: parseFloat(payment.toFixed(2)),
             total: parseFloat(total.toFixed(2)),
-            balanceRemaining: parseFloat(balanceRemaining.toFixed(2))
+            balanceRemaining: parseFloat(balanceRemaining.toFixed(2)),
+            lostClasses: {
+                count: lostClassesCount,
+                amount: parseFloat(lostClassesAmount.toFixed(2)),
+                details: lostClasses.map(c => ({
+                    classId: c._id,
+                    classDate: c.classDate,
+                    classTime: c.classTime || null
+                }))
+            }
         });
         // PARTE 10: Sumatorias para el subtotal (reporte especial de Andrea Vivas)
         // Para el reporte especial, sumamos 'total' (no 'payment') y 'balanceRemaining'
@@ -1494,6 +1604,7 @@ const generateExcedenteReportLogic = async (month) => {
 
     // Buscar ingresos excedentes básicos: sin enlace a penalización, enrollment, ni profesor
     // (idStudent no existe en el modelo Income; solo se filtran los anteriores)
+    // IMPORTANTE: Excluir explícitamente los ingresos que tienen estos campos con valores no-null
     const excedenteIncomes = await Income.find({
         income_date: {
             $gte: startDate,
@@ -1507,9 +1618,11 @@ const generateExcedenteReportLogic = async (month) => {
     .populate('idPaymentMethod', 'name type')
     .lean();
 
+    console.log('excedenteIncomes', excedenteIncomes);
+
     // Calcular total del excedente de ingresos
     const totalExcedenteIncomes = excedenteIncomes.reduce((sum, income) => sum + (income.amount || 0), 0);
-
+    console.log('totalExcedenteIncomes', totalExcedenteIncomes);
     // Crear array simple de detalles de ingresos
     const incomeDetails = excedenteIncomes.map(income => ({
         incomeId: income._id,
@@ -1652,9 +1765,10 @@ const generateExcedenteReportLogic = async (month) => {
         createdAt: bonus.createdAt
     }));
 
-    // 🆕 PARTE 12: Buscar enrollments futuros prepagados (creados en el mes pero con fechas fuera del rango)
-    // Enrollments cuyo createdAt está dentro del mes, pero startDate y endDate están completamente fuera del rango
-    // Para estar "fuera del rango": endDate < inicio del mes (completamente antes) O startDate > fin del mes (completamente después)
+    // 🆕 PARTE 12: Buscar enrollments prepagados (con incomes en el mes pero balance no consumido)
+    // Incluye:
+    // 1. Enrollments con fechas fuera del rango del mes (futuros o pasados) con incomes en el mes
+    // 2. Enrollments con fechas dentro del mes pero que han pagado menos de lo necesario (availableBalance < totalAmount) con incomes en el mes
     const prepaidEnrollments = await Enrollment.find({
         createdAt: {
             $gte: startDate,
@@ -1668,6 +1782,18 @@ const generateExcedenteReportLogic = async (month) => {
             // Opción 2: Completamente después del mes (startDate > fin del mes)
             {
                 startDate: { $gt: endDate }
+            },
+            // Opción 3: Fechas dentro del mes pero con pago insuficiente
+            // (startDate y endDate dentro del rango, pero availableBalance < totalAmount)
+            {
+                startDate: { $gte: startDate, $lte: endDate },
+                endDate: { $gte: startDate, $lte: endDate },
+                $expr: {
+                    $lt: [
+                        { $ifNull: ["$available_balance", 0] },
+                        { $ifNull: ["$totalAmount", 0] }
+                    ]
+                }
             }
         ]
     })
@@ -1687,7 +1813,7 @@ const generateExcedenteReportLogic = async (month) => {
     let prepaidIncomesCount = 0;
     let prepaidIncomesTotal = 0;
 
-    // Para cada enrollment prepagado, buscar incomes y calcular excedente
+    // Para cada enrollment prepagado, buscar incomes y calcular balance
     for (const enrollment of prepaidEnrollments) {
         if (!enrollment.planId || !enrollment.enrollmentType) {
             continue;
@@ -1709,25 +1835,17 @@ const generateExcedenteReportLogic = async (month) => {
             continue; // Si no hay incomes, no incluir este enrollment
         }
 
-        // Calcular excedente usando la misma lógica que enrollments ordinarios
+        // Calcular balance: dinero recibido que aún no se ha consumido
+        // Usar availableBalance directamente (no calculatedAmount) porque representa el balance real en la cuenta
         const availableBalance = enrollment.available_balance || 0;
-        const totalAmount = enrollment.totalAmount || 0;
         
-        let calculatedAmount = 0;
-        let calculatedBalance = 0;
-        
-        if (availableBalance >= totalAmount) {
-            calculatedAmount = totalAmount;
-            calculatedBalance = availableBalance - totalAmount;
-        } else {
-            calculatedAmount = 0;
-            calculatedBalance = availableBalance;
-        }
-
-        // El excedente es el calculatedAmount (o calculatedBalance si es diferente)
-        // Usamos calculatedAmount como excedente para estos enrollments prepagados
-        const excedenteForPrepaidEnrollment = calculatedAmount;
-        totalPrepaidEnrollments += excedenteForPrepaidEnrollment;
+        // El balance es el availableBalance completo (dinero disponible que no se ha consumido)
+        // Esto incluye casos donde:
+        // - Las clases no han comenzado (fechas futuras)
+        // - Se ha pagado menos de lo necesario (availableBalance < totalAmount)
+        // - Se ha pagado completo pero las clases están en el futuro
+        const balanceForPrepaidEnrollment = availableBalance;
+        totalPrepaidEnrollments += balanceForPrepaidEnrollment;
 
         // Sumar incomes a los totales
         const prepaidIncomesSum = prepaidIncomes.reduce((sum, income) => sum + (income.amount || 0), 0);
@@ -1774,14 +1892,11 @@ const generateExcedenteReportLogic = async (month) => {
             plan: planDisplay,
             startDate: enrollment.startDate,
             endDate: enrollment.endDate,
-            excedente: parseFloat(excedenteForPrepaidEnrollment.toFixed(2)),
+            balance: parseFloat(balanceForPrepaidEnrollment.toFixed(2)),
             incomes: prepaidIncomeDetails
         });
     }
 
-    // Actualizar totales incluyendo enrollments prepagados
-    const updatedTotalExcedenteIncomes = totalExcedenteIncomes + prepaidIncomesTotal;
-    const updatedNumberOfIncomes = excedenteIncomes.length + prepaidIncomesCount;
 
     // 🆕 REGLA 1 y 4: Buscar enrollments en pausa (status = 3) y enrollments que cambiaron de status 3 a 0 o 2
     // REGLA 5.2: Incluir enrollments en pausa aunque estén fuera del rango de fechas del mes
@@ -1968,8 +2083,8 @@ const generateExcedenteReportLogic = async (month) => {
     // Calcular total general de excedentes (ingresos + clases no vistas + enrollments prepagados + enrollments en pausa - bonos + penalizaciones)
     // Los bonos se restan porque aparecen con valor negativo
     // Las penalizaciones se suman porque representan dinero que se debe pagar (excedente)
-    const totalExcedente = updatedTotalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments + totalPausedEnrollmentsExcedente - totalBonuses + totalExcedentePenalizations;
-    console.log("Total de excedentes: ", totalExcedente, updatedTotalExcedenteIncomes, totalExcedenteClasses, totalPrepaidEnrollments, totalPausedEnrollmentsExcedente, totalBonuses, totalExcedentePenalizations);
+    const totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnrollments + totalPausedEnrollmentsExcedente - totalBonuses + totalExcedentePenalizations;
+    console.log("Total de excedentes: ", totalExcedente, totalExcedenteIncomes, totalExcedenteClasses, totalPrepaidEnrollments, totalPausedEnrollmentsExcedente, totalBonuses, totalExcedentePenalizations);
     // Si no hay excedentes de ningún tipo, retornar null
     if (excedenteIncomes.length === 0 && classNotViewedDetails.length === 0 && professorBonuses.length === 0 && prepaidEnrollmentsDetails.length === 0 && pausedEnrollmentsDetails.length === 0 && totalExcedentePenalizations === 0) {
         return null;
@@ -1978,13 +2093,13 @@ const generateExcedenteReportLogic = async (month) => {
     return {
         reportDateRange: `${moment.utc(startDate).format("MMM Do YYYY")} - ${moment.utc(endDate).format("MMM Do YYYY")}`,
         totalExcedente: parseFloat(totalExcedente.toFixed(2)),
-        totalExcedenteIncomes: parseFloat(updatedTotalExcedenteIncomes.toFixed(2)),
+        totalExcedenteIncomes: parseFloat(totalExcedenteIncomes.toFixed(2)),
         totalExcedenteClasses: parseFloat(totalExcedenteClasses.toFixed(2)),
         totalPrepaidEnrollments: parseFloat(totalPrepaidEnrollments.toFixed(2)), // 🆕 Total de enrollments prepagados
         totalPausedEnrollments: parseFloat(totalPausedEnrollmentsExcedente.toFixed(2)), // 🆕 REGLA 1 y 4: Total de enrollments en pausa
         totalBonuses: parseFloat(totalBonuses.toFixed(2)), // PARTE 11: Total de bonos (positivo)
         totalExcedentePenalizations: parseFloat(totalExcedentePenalizations.toFixed(2)), // 🆕 Total de excedente por penalizaciones de estudiantes con incomes
-        numberOfIncomes: updatedNumberOfIncomes,
+        numberOfIncomes: excedenteIncomes.length,
         numberOfClassesNotViewed: classNotViewedDetails.reduce((sum, detail) => sum + detail.numberOfClasses, 0),
         numberOfBonuses: professorBonuses.length,
         numberOfPausedEnrollments: pausedEnrollmentsDetails.length,
@@ -2550,13 +2665,13 @@ incomesCtrl.getIncomesSummaryByPaymentMethod = async (req, res) => {
 // ====================================================================
 
 /**
- * @route GET /api/incomes/professors-payout-report
- * @description Genera un desglose contable detallado por profesor para un mes específico (Método Convencional).
+ * @route GET /api/incomes/professors-payout-report
+ * @description Genera un desglose contable detallado por profesor para un mes específico (Método Convencional).
  * REGLA FINAL: El reporte muestra datos desde el primer día del mes solicitado hasta la fecha actual cuando se solicita el reporte.
  * Por ejemplo, si se solicita el 20 de febrero, mostrará datos del 1 de febrero al 20 de febrero (no hasta el final del mes).
- * @queryParam {string} month - Mes en formato YYYY-MM (ej. "2025-07"). Obligatorio.
- * @access Private (Requiere JWT)
- */
+ * @queryParam {string} month - Mes en formato YYYY-MM (ej. "2025-07"). Obligatorio.
+ * @access Private (Requiere JWT)
+ */
 incomesCtrl.professorsPayoutReport = async (req, res) => {
     try {
         const { month } = req.query;

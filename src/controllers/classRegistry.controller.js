@@ -92,7 +92,7 @@ classRegistryCtrl.getById = async (req, res) => {
 classRegistryCtrl.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed, classTime, vocabularyContent } = req.body;
+        const { hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed, classTime, vocabularyContent, professorId, userId } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID de registro de clase inválido.' });
@@ -255,6 +255,32 @@ classRegistryCtrl.update = async (req, res) => {
             updateFields.vocabularyContent = vocabularyContent === null || vocabularyContent === '' ? null : vocabularyContent.trim();
         }
 
+        if (professorId !== undefined) {
+            // Si es string vacío, convertir a null
+            if (professorId === '' || professorId === null) {
+                updateFields.professorId = null;
+            } else {
+                // Validar que sea un ObjectId válido
+                if (!mongoose.Types.ObjectId.isValid(professorId)) {
+                    return res.status(400).json({ message: 'ID de profesor inválido.' });
+                }
+                updateFields.professorId = professorId;
+            }
+        }
+
+        if (userId !== undefined) {
+            // Si es string vacío, convertir a null
+            if (userId === '' || userId === null) {
+                updateFields.userId = null;
+            } else {
+                // Validar que sea un ObjectId válido
+                if (!mongoose.Types.ObjectId.isValid(userId)) {
+                    return res.status(400).json({ message: 'ID de usuario inválido.' });
+                }
+                updateFields.userId = userId;
+            }
+        }
+
         // Lógica para actualizar balance_per_class cuando classViewed cambia a 1, 2 o 3
         if (classViewed !== undefined && [1, 2, 3].includes(classViewed)) {
             // Verificar que el classViewed anterior no sea ya 1, 2 o 3 (solo aplicar si cambia)
@@ -385,7 +411,7 @@ classRegistryCtrl.update = async (req, res) => {
 classRegistryCtrl.createReschedule = async (req, res) => {
     try {
         const { id } = req.params; // ID de la clase original
-        const { classDate, classTime, hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed } = req.body;
+        const { classDate, classTime, hoursViewed, minutesViewed, classType, contentType, studentMood, note, homework, token, classViewed, professorId, userId } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID de registro de clase inválido.' });
@@ -504,6 +530,32 @@ classRegistryCtrl.createReschedule = async (req, res) => {
                 return res.status(400).json({ message: 'El campo classViewed debe ser 0, 1 o 2.' });
             }
             rescheduleClassData.classViewed = classViewed;
+        }
+
+        if (professorId !== undefined) {
+            // Si es string vacío, convertir a null
+            if (professorId === '' || professorId === null) {
+                rescheduleClassData.professorId = null;
+            } else {
+                // Validar que sea un ObjectId válido
+                if (!mongoose.Types.ObjectId.isValid(professorId)) {
+                    return res.status(400).json({ message: 'ID de profesor inválido.' });
+                }
+                rescheduleClassData.professorId = professorId;
+            }
+        }
+
+        if (userId !== undefined) {
+            // Si es string vacío, convertir a null
+            if (userId === '' || userId === null) {
+                rescheduleClassData.userId = null;
+            } else {
+                // Validar que sea un ObjectId válido
+                if (!mongoose.Types.ObjectId.isValid(userId)) {
+                    return res.status(400).json({ message: 'ID de usuario inválido.' });
+                }
+                rescheduleClassData.userId = userId;
+            }
         }
 
         const newRescheduleClass = new ClassRegistry(rescheduleClassData);
