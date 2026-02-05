@@ -1259,7 +1259,7 @@ El reporte de excedentes ahora incluye cuatro componentes:
       "enrollmentId": "64f8a1b2c3d4e5f6a7b8c9d5",
       "period": "Jan 1st - Jan 31st",
       "plan": "S - Grizzly",
-      "studentName": "Grupo Avanzado (Suplente)",  // ← Clase con suplente
+      "studentName": "Grupo Avanzado (Suplente)",  // ← Suplente externo
       "amount": 200.00,
       "amountInDollars": 200.00,
       "totalHours": 12,
@@ -1270,9 +1270,69 @@ El reporte de excedentes ahora incluye cuatro componentes:
       "totalTeacher": 21.00,
       "totalBespoke": 4.01,
       "balanceRemaining": 174.99,
+      "professorClasses": {
+        "count": 1,
+        "details": [...]
+      },
+      "lostClasses": {
+        "count": 0,
+        "amount": 0.00,
+        "details": []
+      },
+      "substituteClasses": {
+        "count": 1,
+        "details": [...]
+      },
       "status": 1,
-      "isSubstitute": true,
+      "isSubstitute": true,  // true para suplentes externos
+      "isEnrollmentSubstitute": false,  // false para suplentes externos
       "originalEnrollmentProfessorId": "64f8a1b2c3d4e5f6a7b8c9d1"
+    },
+    {
+      "professorId": "685a14c96c566777c1b5dc3a",
+      "enrollmentId": "697bce740216f8094c2eafe4",
+      "period": "Jan 1st - Jan 31st",
+      "plan": "S - Panda",
+      "studentName": "Eduliana Dávila (Suplente del Enrollment)",  // ← Suplente del enrollment
+      "amount": 0.00,  // Suplentes no tienen amount propio
+      "amountInDollars": 0.00,
+      "totalHours": 8,
+      "pricePerHour": 10.625,  // Mismo que el enrollment original
+      "hoursSeen": 1.0,
+      "pPerHour": 7.00,
+      "balance": 89.38,  // balanceRemaining del enrollment original
+      "totalTeacher": 7.00,
+      "totalBespoke": 3.63,
+      "balanceRemaining": 78.75,  // balance - totalTeacher - totalBespoke
+      "professorClasses": {
+        "count": 0,
+        "details": []
+      },
+      "lostClasses": {
+        "count": 0,
+        "amount": 0.00,
+        "details": []
+      },
+      "substituteClasses": {
+        "count": 1,
+        "details": [
+          {
+            "classId": "697bce740216f8094c2eafeb",
+            "classDate": "2026-02-04",
+            "classTime": "10:00",
+            "minutesViewed": 60,
+            "classViewed": 1,
+            "reschedule": 0,
+            "isReschedule": false,
+            "originalClassDate": null,
+            "originalClassTime": null
+          }
+        ]
+      },
+      "status": 1,
+      "isSubstitute": false,  // false para suplentes del enrollment
+      "isEnrollmentSubstitute": true,  // true para suplentes del enrollment
+      "originalEnrollmentProfessorId": "695af0ad5837b7123c2807a5"
     }
   ],
   "totalTeacher": 321.00,
@@ -1526,6 +1586,89 @@ Cada objeto en el array `report` ahora incluye tres campos de sumatorias que agr
   "totalTeacher": 200.50,        // 97.50 + 103.00
   "totalBespoke": 55.01,         // 24.38 + 30.63
   "totalBalanceRemaining": 94.49 // 48.12 + 46.37
+}
+```
+
+#### **🆕 Información de Clases por Enrollment**
+Cada detalle en el array `details` incluye información sobre las clases dadas por el profesor y suplentes:
+
+**Campos Disponibles:**
+
+1. **`professorClasses`** (object): Clases dadas por el profesor original del enrollment
+   - **`count`** (number): Cantidad de clases dadas por el profesor original
+   - **`details`** (array): Array de objetos con información de cada clase
+     - `classId`: ID de la clase
+     - `classDate`: Fecha de la clase
+     - `classTime`: Hora de la clase
+     - `minutesViewed`: Minutos vistos
+     - `classViewed`: Estado de la clase (1 = vista, 2 = parcialmente vista)
+     - `reschedule`: Si es reschedule (0 = no, 1 = pendiente, 2 = visto)
+     - `isReschedule`: Si es una clase reschedule (hija)
+     - `originalClassDate`: Fecha de la clase original (si es reschedule)
+     - `originalClassTime`: Hora de la clase original (si es reschedule)
+
+2. **`substituteClasses`** (object): Clases dadas por suplentes (solo presente para suplentes)
+   - **`count`** (number): Cantidad de clases dadas por el suplente
+   - **`details`** (array): Array de objetos con información de cada clase (misma estructura que `professorClasses`)
+
+3. **`lostClasses`** (object): Clases perdidas (classViewed = 4) del enrollment
+   - **`count`** (number): Cantidad de clases perdidas
+   - **`amount`** (number): Monto calculado como `count * pricePerHour` (representa el valor que se debe deducir del balance)
+   - **`details`** (array): Array de objetos con información de cada clase perdida (misma estructura que `professorClasses`)
+
+**Ejemplo:**
+```json
+{
+  "enrollmentId": "697bce740216f8094c2eafe4",
+  "professorClasses": {
+    "count": 2,
+    "details": [
+      {
+        "classId": "697bce740216f8094c2eafe9",
+        "classDate": "2026-02-03",
+        "classTime": "10:00",
+        "minutesViewed": 30,
+        "classViewed": 2,
+        "reschedule": 1,
+        "isReschedule": false,
+        "originalClassDate": null,
+        "originalClassTime": null
+      }
+    ]
+  },
+  "substituteClasses": {
+    "count": 1,
+    "details": [
+      {
+        "classId": "697bce740216f8094c2eafeb",
+        "classDate": "2026-02-04",
+        "classTime": "10:00",
+        "minutesViewed": 60,
+        "classViewed": 1,
+        "reschedule": 0,
+        "isReschedule": false,
+        "originalClassDate": null,
+        "originalClassTime": null
+      }
+    ]
+  },
+  "lostClasses": {
+    "count": 1,
+    "amount": 10.625,
+    "details": [
+      {
+        "classId": "697bce740216f8094c2eafec",
+        "classDate": "2026-02-05",
+        "classTime": "10:00",
+        "minutesViewed": 0,
+        "classViewed": 4,
+        "reschedule": 0,
+        "isReschedule": false,
+        "originalClassDate": null,
+        "originalClassTime": null
+      }
+    ]
+  }
 }
 ```
 
@@ -2668,9 +2811,33 @@ Donde `totalNormalClasses` = cantidad de `ClassRegistry` con `reschedule = 0` pa
   - Las horas de reschedules van al profesor del reschedule
 
 #### **Suplentes en Reportes:**
-- Las clases dadas por suplentes aparecen en el reporte del suplente
-- Se marca como "(Suplente)" en el nombre del estudiante
-- Se calculan `pricePerHour` y `pPerHour` específicos para el suplente
+
+**Tipos de Suplentes:**
+1. **Suplente del Enrollment** (`isEnrollmentSubstitute: true`):
+   - Profesor asignado como suplente en el campo `enrollment.substituteProfessor.professorId`
+   - Se marca como "(Suplente del Enrollment)" en el nombre del estudiante
+   - **Cálculos específicos:**
+     - `amount`: Siempre `0` (no tiene amount propio)
+     - `pricePerHour`: Usa el `pricePerHour` del enrollment original
+     - `balance`: Usa el `balanceRemaining` del enrollment original como balance inicial
+     - `balanceRemaining`: Calculado como `balance - totalTeacher - totalBespoke`
+   - Aparece en el reporte del suplente del enrollment
+
+2. **Suplente Externo** (`isSubstitute: true`):
+   - Profesor que dio clases pero NO es ni el profesor original ni el suplente del enrollment
+   - Se marca como "(Suplente)" en el nombre del estudiante
+   - **Cálculos específicos:**
+     - `amount`: Calculado normalmente basado en el enrollment
+     - `pricePerHour`: Calculado específicamente para el suplente
+     - `balance`: Calculado normalmente
+     - `balanceRemaining`: Calculado normalmente
+   - Aparece en el reporte del suplente externo
+
+**Campos Adicionales para Suplentes:**
+- `professorClasses`: Clases dadas por el profesor original del enrollment
+- `substituteClasses`: Clases dadas por el suplente (solo para suplentes)
+- `lostClasses`: Clases perdidas (classViewed = 4) del enrollment
+- `originalEnrollmentProfessorId`: ID del profesor original del enrollment
 
 #### **Aplicado en:**
 - Función `processClassRegistryForEnrollment`

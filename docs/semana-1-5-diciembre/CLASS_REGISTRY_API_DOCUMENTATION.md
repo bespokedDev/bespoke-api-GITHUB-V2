@@ -845,7 +845,9 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
   "homework": "Ejercicios de gramática",
   "token": "abc123xyz",
   "classViewed": 1,
-  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please"
+  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+  "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
+  "userId": "64f8a1b2c3d4e5f6a7b8c9d4"
 }
 ```
 
@@ -866,6 +868,8 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
 - `token` (String/null): Token de la clase (puede ser null o string vacío)
 - `classViewed` (Number): Estado de visualización. Valores: `0` (no vista), `1` (vista), `2` (parcialmente vista)
 - `vocabularyContent` (String/null): Contenido de vocabulario de la clase (puede ser null o string vacío)
+- `professorId` (String/null): ID del profesor que dio la clase (ObjectId válido de MongoDB o null/string vacío para limpiar el campo)
+- `userId` (String/null): ID del usuario que registró/actualizó la clase (ObjectId válido de MongoDB o null/string vacío para limpiar el campo)
 
 **⚠️ Nota:** El campo `reschedule` se maneja de forma especial mediante el endpoint de reschedule y no se puede actualizar directamente.
 
@@ -1050,7 +1054,9 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
   },
   "homework": null,
   "token": null,
-  "classViewed": 0
+  "classViewed": 0,
+  "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
+  "userId": "64f8a1b2c3d4e5f6a7b8c9d4"
 }
 ```
 
@@ -1075,6 +1081,8 @@ Crea una nueva clase de tipo reschedule basada en una clase existente. Este endp
 - `homework` (String/null): Tarea asignada (puede ser null)
 - `token` (String/null): Token de la clase (puede ser null)
 - `classViewed` (Number): Estado de visualización. Valores: `0` (no vista), `1` (vista), `2` (parcialmente vista). Por defecto: `0`
+- `professorId` (String/null): ID del profesor que dará la clase de reschedule (ObjectId válido de MongoDB o null/string vacío)
+- `userId` (String/null): ID del usuario que crea el reschedule (ObjectId válido de MongoDB o null/string vacío)
 
 #### **Response Exitosa (201 Created)**
 ```json
@@ -1262,7 +1270,9 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
   "homework": "Ejercicios de gramática",
   "token": "abc123xyz",
   "classViewed": 1,
-  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please"
+  "vocabularyContent": "Palabras nuevas: hello, goodbye, thank you, please",
+  "professorId": "64f8a1b2c3d4e5f6a7b8c9d3",
+  "userId": "64f8a1b2c3d4e5f6a7b8c9d4"
 }
 ```
 
@@ -1288,6 +1298,8 @@ Actualiza los datos de un registro de clase. Solo se pueden actualizar los campo
   - `3`: No show (no asistió)
   - `4`: Otro estado
 - `vocabularyContent` (String/null): Contenido de vocabulario de la clase (puede ser `null` o string vacío)
+- `professorId` (String/null): ID del profesor que dio la clase (ObjectId válido de MongoDB o null/string vacío para limpiar el campo)
+- `userId` (String/null): ID del usuario que registró/actualizó la clase (ObjectId válido de MongoDB o null/string vacío para limpiar el campo)
 
 **⚠️ Nota:** El campo `reschedule` se maneja de forma especial mediante el endpoint de reschedule y no se puede actualizar directamente.
 
