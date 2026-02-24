@@ -18,11 +18,12 @@ const specialProfessorReportCtrl = {};
  * @returns {number} - Horas fraccionarias (0.25, 0.5, 0.75, 1.0)
  */
 const convertMinutesToFractionalHours = (minutes) => {
-    if (!minutes || minutes <= 0) return 0;
-    if (minutes <= 15) return 0.25;
-    if (minutes <= 30) return 0.5;
-    if (minutes <= 45) return 0.75;
-    return 1.0; // 45-60 minutos = 1 hora
+    if (!minutes || minutes < 1) return 0;
+    if (minutes >= 1 && minutes <= 15) return 0.25;
+    if (minutes > 15 && minutes <= 30) return 0.5;
+    if (minutes > 30 && minutes <= 45) return 0.75;
+    if (minutes > 45 && minutes <= 60) return 1.0;
+    return 1.0; // >60 minutos = 1 hora
 };
 
 /**

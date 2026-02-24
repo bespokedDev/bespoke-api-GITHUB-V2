@@ -282,9 +282,10 @@ classRegistryCtrl.update = async (req, res) => {
         }
 
         // Lógica para actualizar balance_per_class cuando classViewed cambia a 1, 2 o 3
-        if (classViewed !== undefined && [1, 2, 3].includes(classViewed)) {
+        if (classViewed !== undefined && [1, 2, 3].includes(Number(classViewed))) {
             // Verificar que el classViewed anterior no sea ya 1, 2 o 3 (solo aplicar si cambia)
-            const previousClassViewed = existingClass.classViewed;
+            // Usar Number() para evitar problemas de tipo (ej: "1" !== 1 que causaría doble resta)
+            const previousClassViewed = Number(existingClass.classViewed);
             
             if (previousClassViewed !== 1 && previousClassViewed !== 2 && previousClassViewed !== 3) {
                 // Obtener el enrollment relacionado
@@ -294,59 +295,71 @@ classRegistryCtrl.update = async (req, res) => {
                     return res.status(404).json({ message: 'Enrollment no encontrado para esta clase.' });
                 }
 
-                // Contar clases originales (reschedule = 0) para este enrollment
-                const totalClasesOriginales = await ClassRegistry.countDocuments({
-                    enrollmentId: enrollment._id,
-                    reschedule: 0
-                });
-
-                if (totalClasesOriginales === 0) {
-                    return res.status(400).json({ 
-                        message: 'No se pueden calcular costos: el enrollment no tiene clases originales registradas.' 
+                // Usar monthlyClasses (como los cronjobs) para consistencia. Fallback a totalClasesOriginales si no está definido.
+                let valorPorClase = 0;
+                const monthlyClasses = enrollment.monthlyClasses || 0;
+                if (monthlyClasses > 0) {
+                    valorPorClase = enrollment.totalAmount / monthlyClasses;
+                } else {
+                    const totalClasesOriginales = await ClassRegistry.countDocuments({
+                        enrollmentId: enrollment._id,
+                        reschedule: 0
                     });
+                    if (totalClasesOriginales === 0) {
+                        return res.status(400).json({ 
+                            message: 'No se pueden calcular costos: el enrollment no tiene monthlyClasses ni clases originales registradas.' 
+                        });
+                    }
+                    valorPorClase = enrollment.totalAmount / totalClasesOriginales;
                 }
 
-                // Calcular valor por clase
-                const valorPorClase = enrollment.totalAmount / totalClasesOriginales;
-
                 // Calcular valor a restar según el tipo de classViewed
+                // Regla: si hay reschedule padre/hijo, el total descontado por slot no puede exceder valorPorClase (cap 60 min)
                 let valorARestar = 0;
+                const classViewedNum = Number(classViewed);
+                const isReschedule = existingClass.originalClassId != null;
+                let yaDescontado = 0;
 
-                if (classViewed === 1 || classViewed === 3) {
-                    // Clase vista completa o no show: restar el valor completo
-                    valorARestar = valorPorClase;
-                } else if (classViewed === 2) {
-                    // Clase parcialmente vista: validar minutesViewed y calcular proporción
+                if (isReschedule) {
+                    // Es reschedule (hijo): verificar cuánto ya descontó el padre
+                    const parentId = existingClass.originalClassId;
+                    const parentClass = await ClassRegistry.findById(parentId).select('classViewed minutesViewed').lean();
+                    if (parentClass && [1, 2, 3].includes(Number(parentClass.classViewed))) {
+                        const pv = Number(parentClass.classViewed);
+                        yaDescontado = (pv === 1 || pv === 3)
+                            ? valorPorClase
+                            : valorPorClase * utilsFunctions.getMultiplierFromMinutes(parentClass.minutesViewed || 0);
+                    }
+                } else {
+                    // Es original (padre): verificar cuánto ya descontaron los reschedules
+                    const rescheduleChildren = await ClassRegistry.find({
+                        enrollmentId: enrollment._id,
+                        originalClassId: existingClass._id,
+                        classViewed: { $in: [1, 2, 3] }
+                    }).select('minutesViewed classViewed').lean();
+                    for (const child of rescheduleChildren) {
+                        const cv = Number(child.classViewed);
+                        const childMins = (cv === 1 || cv === 3) ? 60 : (child.minutesViewed || 0);
+                        yaDescontado += valorPorClase * utilsFunctions.getMultiplierFromMinutes(childMins);
+                    }
+                }
+
+                if (classViewedNum === 1 || classViewedNum === 3) {
+                    valorARestar = Math.min(valorPorClase, Math.max(0, valorPorClase - yaDescontado));
+                } else if (classViewedNum === 2) {
                     const minutes = minutesViewed !== undefined ? minutesViewed : existingClass.minutesViewed;
-                    
                     if (minutes === null || minutes === undefined) {
                         return res.status(400).json({ 
                             message: 'El campo minutesViewed es requerido cuando classViewed es 2 (clase parcialmente vista).' 
                         });
                     }
-
                     if (minutes < 15) {
                         return res.status(400).json({ 
                             message: 'El campo minutesViewed debe ser mayor o igual a 15 cuando classViewed es 2.' 
                         });
                     }
-
-                    // Calcular multiplicador según minutos
-                    let multiplicador = 0;
-                    if (minutes >= 0 && minutes <= 15) {
-                        multiplicador = 0.25;
-                    } else if (minutes > 15 && minutes <= 30) {
-                        multiplicador = 0.5;
-                    } else if (minutes > 30 && minutes <= 45) {
-                        multiplicador = 0.75;
-                    } else if (minutes > 45 && minutes <= 60) {
-                        multiplicador = 1.0;
-                    } else {
-                        // Si es más de 60 minutos, se considera como 1.0 (clase completa)
-                        multiplicador = 1.0;
-                    }
-
-                    valorARestar = valorPorClase * multiplicador;
+                    const myValue = valorPorClase * utilsFunctions.getMultiplierFromMinutes(minutes);
+                    valorARestar = Math.min(myValue, Math.max(0, valorPorClase - yaDescontado));
                 }
 
                 // Validar que balance_per_class no quede negativo

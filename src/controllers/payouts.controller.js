@@ -69,11 +69,12 @@ const populatePaymentMethod = (payoutsOrSinglePayout) => {
 
 // Función auxiliar para convertir minutos a horas fraccionales
 const convertMinutesToFractionalHours = (minutes) => {
-    if (!minutes || minutes <= 0) return 0;
-    if (minutes <= 15) return 0.25;
-    if (minutes <= 30) return 0.5;
-    if (minutes <= 45) return 0.75;
-    return 1.0; // 45-60 minutos = 1 hora
+    if (!minutes || minutes < 1) return 0;
+    if (minutes >= 1 && minutes <= 15) return 0.25;
+    if (minutes > 15 && minutes <= 30) return 0.5;
+    if (minutes > 30 && minutes <= 45) return 0.75;
+    if (minutes > 45 && minutes <= 60) return 1.0;
+    return 1.0; // >60 minutos = 1 hora
 };
 
 // Función auxiliar para procesar ClassRegistry de un enrollment y calcular horas vistas y dinero
@@ -177,15 +178,14 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
         console.log(`[processClassRegistryForPayoutPreview] Procesando clase original ${classRecord._id}: encontró ${reschedulesForThisClass.length} reschedules (hijos) asociados`);
 
         // Calcular minutos de la clase original
-        // Si classViewed === 3 (no show), usar minutesClassDefault (60 minutos) si minutesViewed es null o 0
-        // Las clases no show se pagan como hora completa estándar
-        // Para classViewed: 0, 1 y 2, usar el valor de minutesViewed (si es null o 0, se convierte a 0)
-        let classOriginalMinutes = classRecord.minutesViewed;
-        if (classRecord.classViewed === 3 && (!classOriginalMinutes || classOriginalMinutes === null || classOriginalMinutes === 0)) {
-            classOriginalMinutes = classRecord.minutesClassDefault || 60; // 1 hora completa para clases no show
-            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: classViewed=3 y minutesViewed es null/0 → usando minutesClassDefault=${classOriginalMinutes}`);
+        // No-show (classViewed 3): SIEMPRE usar hora completa (minutesClassDefault o 60), ignorar lo que puso el admin
+        // Para classViewed: 0, 1 y 2, usar minutesViewed
+        let classOriginalMinutes = 0;
+        if (classRecord.classViewed === 3) {
+            classOriginalMinutes = classRecord.minutesClassDefault || 60; // No-show original: siempre hora completa
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: classViewed=3 (no show) → usando hora completa=${classOriginalMinutes} min`);
         } else {
-            classOriginalMinutes = classOriginalMinutes || 0;
+            classOriginalMinutes = classRecord.minutesViewed || 0;
         }
 
         // Solo procesar clases originales con classViewed válido (1, 2 o 3) O si tienen reschedules asociados
@@ -210,21 +210,32 @@ const processClassRegistryForPayoutPreview = async (enrollment, monthStartDate, 
         }
 
         // Si hay reschedules, sumar sus minutos
+        // Reschedule no-show (3) o lost (4): usar minutesViewed del padre como fallback
+        // Solo cuando el padre no aporta (classViewed 0); si padre 1/2/3 ya está en minutesToUse
         for (const reschedule of reschedulesForThisClass) {
-            if (reschedule.minutesViewed) {
-                console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: sumando ${reschedule.minutesViewed} minutos del reschedule (hijo) ${reschedule._id}`);
-                minutesToUse += reschedule.minutesViewed;
+            let rescheduleMinutes = 0;
+            if ([3, 4].includes(reschedule.classViewed)) {
+                if ([1, 2, 3].includes(classRecord.classViewed)) continue;
+                rescheduleMinutes = classRecord.minutesViewed || 0;
+                if (rescheduleMinutes === 0) continue;
             } else {
-                console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: reschedule (hijo) ${reschedule._id} tiene minutesViewed=null/0, se ignora`);
+                rescheduleMinutes = reschedule.minutesViewed || 0;
+            }
+            if (rescheduleMinutes > 0) {
+                console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: sumando ${rescheduleMinutes} min del reschedule (hijo) ${reschedule._id} [classViewed=${reschedule.classViewed}]`);
+                minutesToUse += rescheduleMinutes;
             }
         }
 
+        // Cap: suma no puede exceder 60 minutos
+        const minutesToUseCapped = Math.min(minutesToUse, 60);
+
         // Solo convertir y acumular si hay minutos válidos
-        if (minutesToUse > 0) {
-            const fractionalHours = convertMinutesToFractionalHours(minutesToUse);
-            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: minutos totales=${minutesToUse}, horas fraccionales=${fractionalHours}`);
+        if (minutesToUseCapped > 0) {
+            const fractionalHours = convertMinutesToFractionalHours(minutesToUseCapped);
+            console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: minutos totales=${minutesToUseCapped}${minutesToUse > 60 ? ` (cap aplicado, suma original=${minutesToUse})` : ''}, horas fraccionales=${fractionalHours}`);
             totalHours += fractionalHours;
-            totalMinutes += minutesToUse;
+            totalMinutes += minutesToUseCapped;
         } else {
             console.log(`[processClassRegistryForPayoutPreview] Clase original ${classRecord._id}: minutos totales=0, no se acumula`);
         }
