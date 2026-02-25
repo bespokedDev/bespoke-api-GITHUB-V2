@@ -136,6 +136,20 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
             console.log(`   ⚠️ Enrollment en pausa: effectiveEndDate limitado a pauseDate: ${moment(effectiveEndDate).format('YYYY-MM-DD')}`);
         }
     }
+
+    // REGLA: Si enrollment está disuelto (status = 0), solo considerar clases con classDate anterior a disolveDate
+    if (enrollment.status === 0 && enrollment.disolveDate) {
+        const disolveDateObj = moment.utc(enrollment.disolveDate);
+        const lastValidClassDate = disolveDateObj.clone().subtract(1, 'day'); // Último día que se cuenta (classDate < disolveDate)
+        const monthStartObj = moment(monthStartDate);
+        if (lastValidClassDate.isBefore(monthStartObj, 'day')) {
+            return new Map(); // Disolución antes del mes: no hay clases en este mes
+        }
+        const monthEndObj = moment(monthEndDate);
+        effectiveEndDate = (lastValidClassDate.isBefore(monthEndObj) || lastValidClassDate.isSame(monthEndObj, 'day'))
+            ? lastValidClassDate.endOf('day').toDate()
+            : monthEndDate;
+    }
     
     // Formatear fechas del mes para comparar con classDate (string YYYY-MM-DD)
     const monthStartStr = moment(monthStartDate).format('YYYY-MM-DD');
@@ -151,6 +165,10 @@ const processClassRegistryForEnrollment = async (enrollment, monthStartDate, mon
         if (isTargetEnrollment) {
             console.log(`⏸️ Enrollment en pausa sin pauseDate: No se procesan registros de clase`);
         }
+        return new Map();
+    }
+    // Si enrollment está disuelto (status = 0) sin disolveDate, no procesar clases
+    if (enrollment.status === 0 && !enrollment.disolveDate) {
         return new Map();
     }
     // Si status = 3 con pauseDate: effectiveEndDate ya está acotado arriba; se procesan clases vistas / no show hasta pauseDate
@@ -2006,14 +2024,15 @@ const generateExcedenteReportLogic = async (month) => {
     }
 
 
-    // 🆕 REGLA 1 y 4: Buscar enrollments en pausa (status = 3) y enrollments que cambiaron de status 3 a 0 o 2
+    // 🆕 REGLA 1 y 4: Buscar enrollments en pausa (status = 3), disueltos (status = 0) y enrollments que cambiaron a 2
     // REGLA 5.2: Incluir enrollments en pausa aunque estén fuera del rango de fechas del mes
+    // Enrollments disueltos (status 0): solo suman excedente si balance_transferred_to_enrollment es null
     const pausedEnrollments = await Enrollment.find({
         $or: [
             { status: 3 }, // Enrollments actualmente en pausa
-            // Enrollments que cambiaron de status 3 a 0 (disuelto) o 2 (desactivado)
-            // Esto se detecta buscando enrollments con status 0 o 2 que tengan pauseDate
-            { status: { $in: [0, 2] }, pauseDate: { $exists: true, $ne: null } }
+            { status: 0 }, // Enrollments disueltos (se filtra en el loop por balance_transferred_to_enrollment)
+            // Enrollments que cambiaron de status 3 a 2 (desactivado) con pauseDate
+            { status: 2, pauseDate: { $exists: true, $ne: null } }
         ]
     })
     .populate('planId', 'name pricing')
@@ -2035,15 +2054,23 @@ const generateExcedenteReportLogic = async (month) => {
             continue;
         }
 
-        // REGLA 1.2: Si cambió a status 0 (disuelto), todo lo no visto queda excedente
-        // REGLA 1.3: Si cambió a status 2 (desactivado), el available_balance es excedente
-        // REGLA 4: Para enrollments en pausa (status 3), excedente = (availableBalance - totalAmount) + balance_per_class
-        // EXCEPCIÓN: Si availableBalance < totalAmount, usar balance_per_class directamente (no aplicar la fórmula)
+        // Enrollments disueltos (status 0): solo sumar excedente si balance_transferred_to_enrollment es null
+        if (enrollment.status === 0) {
+            if (enrollment.balance_transferred_to_enrollment != null) {
+                continue; // Con transferencia a otro enrollment, no se suma a excedentes
+            }
+        }
+
+        // REGLA 1.2/1.3: Status 0 (disuelto sin transfer): excedente = available_balance - total_amount + balance_per_class
+        // REGLA 4: Para enrollments en pausa (status 3) o status 2: excedente = (availableBalance - totalAmount) + balance_per_class
+        // EXCEPCIÓN para status 3/2: Si availableBalance < totalAmount, usar balance_per_class directamente
         const availableBalance = enrollment.available_balance || 0;
         const balancePerClass = enrollment.balance_per_class ?? 0;
         const totalAmount = enrollment.totalAmount || 0;
         let excedenteValue;
-        if (availableBalance < totalAmount) {
+        if (enrollment.status === 0) {
+            excedenteValue = availableBalance - totalAmount + balancePerClass;
+        } else if (availableBalance < totalAmount) {
             excedenteValue = balancePerClass;
         } else {
             excedenteValue = (availableBalance - totalAmount) + balancePerClass;
@@ -2077,6 +2104,8 @@ const generateExcedenteReportLogic = async (month) => {
                 plan: planDisplay,
                 status: enrollment.status,
                 pauseDate: enrollment.pauseDate || null,
+                disolveDate: enrollment.disolveDate || null,
+                balance_transferred_to_enrollment: enrollment.balance_transferred_to_enrollment || null,
                 availableBalance: parseFloat(availableBalance.toFixed(2)),
                 excedente: parseFloat(excedenteValue.toFixed(2))
             });

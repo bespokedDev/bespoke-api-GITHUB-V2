@@ -406,9 +406,10 @@ enrollmentCtrl.create = async (req, res) => {
             // Asignar monthlyClasses al enrollment
             req.body.monthlyClasses = monthlyClasses;
 
-            // Inicializar disolve_user como null al crear
+            // Inicializar disolve_user, balance_transferred_to_enrollment y disolveDate como null al crear
             req.body.disolve_user = null;
-            
+            req.body.balance_transferred_to_enrollment = null;
+            req.body.disolveDate = null;
             // Inicializar pauseDate como null al crear
             req.body.pauseDate = null;
 
@@ -485,9 +486,10 @@ enrollmentCtrl.create = async (req, res) => {
             enrollmentEndDate.setUTCHours(23, 59, 59, 999);
             req.body.endDate = enrollmentEndDate;
 
-            // Inicializar disolve_user como null al crear
+            // Inicializar disolve_user, balance_transferred_to_enrollment y disolveDate como null al crear
             req.body.disolve_user = null;
-            
+            req.body.balance_transferred_to_enrollment = null;
+            req.body.disolveDate = null;
             // Inicializar pauseDate como null al crear
             req.body.pauseDate = null;
 
@@ -842,8 +844,9 @@ enrollmentCtrl.activate = async (req, res) => {
  */
 enrollmentCtrl.disolve = async (req, res) => {
     try {
-        const { disolve_reason } = req.body;
+        const { disolve_reason, transfer_to_enrollment_id } = req.body;
         const userId = req.user?.id;
+        const enrollmentIdToDisolve = req.params.id;
 
         // Validar que se proporcione la razón de disolución
         if (!disolve_reason || typeof disolve_reason !== 'string' || disolve_reason.trim() === '') {
@@ -855,6 +858,17 @@ enrollmentCtrl.disolve = async (req, res) => {
             return res.status(400).json({ message: 'ID de usuario inválido.' });
         }
 
+        // Si se envía enrollment destino: no puede ser el mismo que el que se disuelve
+        if (transfer_to_enrollment_id) {
+            const targetIdStr = transfer_to_enrollment_id.toString();
+            const toDisolveIdStr = enrollmentIdToDisolve.toString();
+            if (targetIdStr === toDisolveIdStr) {
+                return res.status(404).json({
+                    message: 'El ID del enrollment al que se quiere enviar el dinero no puede ser igual al enrollment que se está disolviendo.'
+                });
+            }
+        }
+
         // Obtener información del usuario que realiza el disolve
         const user = await User.findById(userId).lean();
         if (!user) {
@@ -862,7 +876,7 @@ enrollmentCtrl.disolve = async (req, res) => {
         }
 
         // Obtener el enrollment antes de actualizarlo para extraer los IDs de estudiantes
-        const enrollment = await Enrollment.findById(req.params.id).lean();
+        const enrollment = await Enrollment.findById(enrollmentIdToDisolve).lean();
         if (!enrollment) {
             return res.status(404).json({ message: 'Matrícula no encontrada' });
         }
@@ -879,14 +893,37 @@ enrollmentCtrl.disolve = async (req, res) => {
             })
             .filter(id => id !== null && id !== undefined);
 
-        // Actualizar el enrollment
+        const disolveDate = new Date();
+        let updatePayload = {
+            status: 0, // 0 = disolve
+            disolve_reason: disolve_reason.trim(),
+            disolve_user: userId,
+            disolveDate,
+            balance_transferred_to_enrollment: null
+        };
+
+        if (transfer_to_enrollment_id && mongoose.Types.ObjectId.isValid(transfer_to_enrollment_id)) {
+            const targetEnrollment = await Enrollment.findById(transfer_to_enrollment_id).lean();
+            if (!targetEnrollment) {
+                return res.status(404).json({ message: 'Matrícula destino no encontrada.' });
+            }
+            const availableBalance = enrollment.available_balance ?? 0;
+            const totalAmount = enrollment.totalAmount ?? 0;
+            const balancePerClass = enrollment.balance_per_class ?? 0;
+            const amountToTransfer = availableBalance - totalAmount + balancePerClass;
+            if (amountToTransfer > 0) {
+                const newTargetBalance = (targetEnrollment.available_balance ?? 0) + amountToTransfer;
+                await Enrollment.findByIdAndUpdate(transfer_to_enrollment_id, {
+                    available_balance: parseFloat(newTargetBalance.toFixed(2))
+                });
+            }
+            updatePayload.balance_transferred_to_enrollment = transfer_to_enrollment_id;
+        }
+
+        // Actualizar el enrollment disuelto
         const disolvedEnrollment = await Enrollment.findByIdAndUpdate(
-            req.params.id,
-            { 
-                status: 0, // 0 = disolve
-                disolve_reason: disolve_reason.trim(),
-                disolve_user: userId
-            },
+            enrollmentIdToDisolve,
+            updatePayload,
             { new: true }
         );
 

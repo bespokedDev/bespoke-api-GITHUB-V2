@@ -23,7 +23,7 @@ const headers = {
 El controlador de ingresos utiliza la función **`convertMinutesToFractionalHours`** desde el módulo compartido **`src/utils/utilsFunctions`**. Dicha función convierte minutos a horas fraccionarias para el cálculo de horas vistas en reportes y en el procesamiento de ClassRegistry (clases vistas/parcialmente vistas).
 
 - **Entrada**: `minutes` (número).
-- **Salida**: `0`, `0.25`, `0.5`, `0.75` o `1.0` según rangos: ≤15 → 0.25, ≤30 → 0.5, ≤50 → 0.75, >50 → 1.0.
+- **Salida**: `0`, `0.25`, `0.5`, `0.75` o `1.0` según bandas: 1-15 → 0.25, 16-30 → 0.5, 31-45 → 0.75, 46-60 → 1.0, >60 → 1.0.
 - **Uso en Incomes**: Cálculo de horas vistas por clase en reportes de profesores y en la lógica que procesa `ClassRegistry` (horas por clase, reschedules, etc.). La misma función se usa en el controlador de enrollments (pausa) y en los cronjobs de class registry para el descuento en `balance_per_class` de clases parcialmente vistas (`classViewed: 2`).
 
 ---
@@ -1193,12 +1193,18 @@ El reporte de excedentes ahora incluye cinco componentes:
    - Enrollments creados en el mes pero con fechas fuera del rango
    - Se calcula el excedente usando la misma lógica que enrollments ordinarios
 
-5. **Enrollments en Pausa** (Parte 14.4): 🆕 **NUEVO**
+5. **Enrollments en Pausa** (Parte 14.4):
    - Enrollments con `status = 3` (en pausa)
    - El `available_balance` completo se considera excedente
    - Se incluyen aunque estén fuera del rango de fechas del mes
 
-6. **Penalizaciones Monetarias de Estudiantes** (Parte 13/14.5.2): 🆕 **ACTUALIZADO**
+6. **Enrollments disueltos (status = 0)** (Parte 14.6): 🆕 **NUEVO**
+   - Solo aportan excedente si `balance_transferred_to_enrollment` es **null** (no hubo transferencia a otra matrícula).
+   - Fórmula: `excedente = available_balance - total_amount + balance_per_class`. No se modifican valores del enrollment; solo se suma ese resultado al total de excedentes.
+   - Si `balance_transferred_to_enrollment` **no es null**, no se suma nada a excedentes.
+   - En reportes de profesores, las clases de enrollments disueltos se procesan igual que las de activos, pero **solo** las que tienen `classDate` anterior a `disolveDate` (profesor titular y suplente con las mismas reglas).
+
+7. **Penalizaciones Monetarias de Estudiantes** (Parte 13/14.5.2): 🆕 **ACTUALIZADO**
    - Penalizaciones monetarias activas creadas en el mes del reporte
    - Se suman todas las penalizaciones con `status: 1` y `penalizationMoney > 0`
    - Filtradas por `createdAt` dentro del rango del mes
@@ -3249,15 +3255,14 @@ Si reschedule.classViewed === 3 o 4:
 - Se incluyen en el reporte aunque estén fuera del rango de fechas del mes (persistencia)
 
 **Reglas de Negocio:**
-1. Si enrollment cambió de status 3 a 0 (disuelto): todo lo no visto queda excedente
-2. Si enrollment cambió de status 3 a 2 (desactivado): el `available_balance` es excedente
-3. Si enrollment está en pausa (status 3): el `available_balance` completo es excedente
+1. Si enrollment está en pausa (status 3): el `available_balance` completo es excedente.
+2. Si enrollment cambió de status 3 a 2 (desactivado): el `available_balance` es excedente.
+3. Para enrollments disueltos (status 0), ver **14.6**: solo suman excedente si `balance_transferred_to_enrollment` es null, con la fórmula indicada allí.
 
 **Estructura en Reporte de Excedentes:**
 ```json
 {
   "totalPausedEnrollments": 500.00,
-  "numberOfPausedEnrollments": 2,
   "pausedEnrollmentsDetails": [
     {
       "enrollmentId": "...",
@@ -3267,18 +3272,43 @@ Si reschedule.classViewed === 3 o 4:
       "plan": "G - Plan Grupal",
       "status": 3,
       "pauseDate": "2025-01-25T00:00:00.000Z",
+      "disolveDate": null,
+      "balance_transferred_to_enrollment": null,
       "availableBalance": 250.00,
       "excedente": 250.00
+    },
+    {
+      "enrollmentId": "...",
+      "status": 0,
+      "pauseDate": null,
+      "disolveDate": "2025-01-20T23:59:59.999Z",
+      "balance_transferred_to_enrollment": null,
+      "availableBalance": 100.00,
+      "excedente": 50.00
     }
   ]
 }
 ```
 
 **Aplicado en:**
-- Función `processClassRegistryForEnrollment`: Retorna mapa vacío si enrollment está en pausa
-- Función `generateGeneralProfessorsReportLogic`: Excluye enrollments con `status = 3`
-- Función `generateSpecificProfessorReportLogic`: Excluye enrollments con `status = 3`
-- Función `generateExcedenteReportLogic`: Incluye enrollments en pausa con su `available_balance`
+- Función `processClassRegistryForEnrollment`: Retorna mapa vacío si enrollment está en pausa (status 3) sin `pauseDate`; si status 0 (disuelto), solo considera clases con `classDate` < `disolveDate` (mismas reglas que activos para profesor y suplente).
+- Función `generateGeneralProfessorsReportLogic`: Incluye enrollments con `status` 1, 3 y 0; para status 0 limita clases por `disolveDate`.
+- Función `generateSpecificProfessorReportLogic`: Igual que arriba para el profesor especial.
+- Función `generateExcedenteReportLogic`: Incluye enrollments en pausa (3) y disueltos (0); para status 0 solo suma excedente si `balance_transferred_to_enrollment` es null (fórmula: `available_balance - total_amount + balance_per_class`). Los detalles incluyen `disolveDate` y `balance_transferred_to_enrollment`.
+
+---
+
+#### **14.6: Manejo de Enrollments Disueltos (Status = 0)**
+
+**Cambio Implementado:**
+- Los enrollments con `status = 0` (disuelto) se tratan en **reportes de profesores** igual que los activos, pero **solo** se consideran clases cuya `classDate` (ClassRegistry) es **anterior** a `disolveDate` (Enrollment). Se aplican las mismas reglas para el profesor titular y para el profesor suplente.
+- En el **reporte de excedentes**:
+  - Si `balance_transferred_to_enrollment` es **null**: se calcula `excedente = available_balance - total_amount + balance_per_class` y se suma al total de excedentes (no se alteran valores del enrollment).
+  - Si `balance_transferred_to_enrollment` **no es null**: no se suma ningún excedente por ese enrollment.
+
+**Aplicado en:**
+- `processClassRegistryForEnrollment`: Para status 0 con `disolveDate`, limita clases a `classDate` < `disolveDate`; sin `disolveDate` retorna mapa vacío.
+- `generateExcedenteReportLogic`: Incluye status 0 en la búsqueda de enrollments; en el loop filtra por `balance_transferred_to_enrollment === null` para sumar excedente con la fórmula indicada. `pausedEnrollmentsDetails` incluye `disolveDate` y `balance_transferred_to_enrollment`.
 
 ---
 

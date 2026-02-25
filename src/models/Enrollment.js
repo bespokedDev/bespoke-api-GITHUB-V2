@@ -222,6 +222,17 @@ const EnrollmentSchema = new mongoose.Schema({
         default: null
         // ID del usuario que realizó el disolve del enrollment
     },
+    balance_transferred_to_enrollment: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Enrollment',
+        default: null
+        // Si al disolver se transfirió balance a otra matrícula, aquí el ObjectId de ese enrollment
+    },
+    disolveDate: {
+        type: Date,
+        default: null
+        // Fecha en que se generó el disolve (formato ISO UTC, ej: 2026-03-01T23:59:59.999Z)
+    },
     rescheduleHours: {
         type: Number,
         default: 0,

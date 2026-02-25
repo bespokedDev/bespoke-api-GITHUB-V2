@@ -105,6 +105,8 @@ const headers = {
   "balance_per_class": 0,
   "disolve_reason": null,
   "disolve_user": null,
+  "balance_transferred_to_enrollment": null,
+  "disolveDate": null,
   "rescheduleHours": 0,
   "substituteProfessor": null,
   "cancellationPaymentsEnabled": false,
@@ -175,6 +177,12 @@ const headers = {
 - `disolve_user` (ObjectId): Referencia al usuario que realizó el disolve del enrollment (por defecto: null)
   - Se guarda automáticamente cuando se ejecuta el endpoint de disolución
   - Referencia a la colección `User`
+- `balance_transferred_to_enrollment` (ObjectId): Referencia al enrollment al que se transfirió el balance al disolver (por defecto: null)
+  - Si al disolver se envió `transfer_to_enrollment_id` en el body, aquí se guarda ese ObjectId
+  - Si no hubo transferencia, permanece en null
+  - Referencia a la colección `Enrollment`
+- `disolveDate` (date): Fecha en que se generó el disolve, en formato ISO UTC (por defecto: null)
+  - Se establece automáticamente cuando se ejecuta el endpoint de disolución (`PATCH /api/enrollments/:id/disolve`)
 - `rescheduleHours` (number): Horas de reschedule disponibles para el enrollment (por defecto: 0)
 - `substituteProfessor` (object): Profesor suplente asignado al enrollment (por defecto: null)
   - `professorId` (ObjectId): Referencia al profesor suplente
@@ -555,7 +563,7 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
   - `balance_per_class = 0`
   - `amount` (por estudiante) = `250` (precio del plan según enrollmentType, cada estudiante tiene el mismo amount)
 
-**Nota importante:** Todos estos campos (`pricePerStudent`, `totalAmount`, `available_balance`, `balance_per_class`, y `amount` por estudiante) se calculan automáticamente al crear el enrollment. No es necesario enviarlos en el request body, y si se envían, serán sobrescritos por los cálculos automáticos.
+**Nota importante:** Todos estos campos (`pricePerStudent`, `totalAmount`, `available_balance`, `balance_per_class`, y `amount` por estudiante) se calculan automáticamente al crear el enrollment. Los campos `disolve_user`, `balance_transferred_to_enrollment`, `disolveDate` y `pauseDate` se inicializan en `null` al crear. No es necesario enviar los campos calculados/inicializados en el request body, y si se envían, serán sobrescritos.
 
 #### **Lógica de Generación de Clases**
 
@@ -1517,7 +1525,7 @@ PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/deactivate
 ### **10. Disolver Enrollment**
 - **Método**: `PATCH`
 - **Ruta**: `/api/enrollments/:id/disolve`
-- **Descripción**: Disuelve una matrícula (establece `status` a `0` = disolve), guarda la razón de disolución y el usuario que realiza el disolve
+- **Descripción**: Disuelve una matrícula (establece `status` a `0` = disolve), guarda la razón de disolución, el usuario que realiza el disolve y la fecha (`disolveDate`). Opcionalmente se puede transferir el balance restante a otra matrícula mediante `transfer_to_enrollment_id`.
 - **Acceso**: Solo admin
 
 #### **URL Completa**
@@ -1534,17 +1542,28 @@ PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/disolve
 ```
 
 #### **Parámetros de URL**
-- `id` (string): ID único de la matrícula
+- `id` (string): ID único de la matrícula que se va a disolver
 
 #### **Request Body**
 ```json
 {
-  "disolve_reason": "El estudiante solicitó cancelar el enrollment por motivos personales"
+  "disolve_reason": "El estudiante solicitó cancelar el enrollment por motivos personales",
+  "transfer_to_enrollment_id": "64f8a1b2c3d4e5f6a7b8c9d9"
 }
 ```
 
 #### **Campos del Request Body**
 - `disolve_reason` (string): **OBLIGATORIO** - Razón de disolución del enrollment. Debe ser un string no vacío.
+- `transfer_to_enrollment_id` (ObjectId, opcional): ID de la matrícula a la que se transferirá el balance calculado. Si se omite, no hay transferencia y `balance_transferred_to_enrollment` queda en `null`.
+
+#### **Lógica de transferencia de balance**
+- Si **no** se envía `transfer_to_enrollment_id`: el enrollment se disuelve con `status: 0`, `disolveDate` actual, y `balance_transferred_to_enrollment: null`.
+- Si se envía `transfer_to_enrollment_id` **igual** al `:id` del endpoint: se responde **404** con el mensaje: *"El ID del enrollment al que se quiere enviar el dinero no puede ser igual al enrollment que se está disolviendo."*
+- Si se envía `transfer_to_enrollment_id` **diferente** al `:id` y válido:
+  1. Se calcula el monto a transferir: `available_balance - total_amount + balance_per_class` (valores del enrollment que se disuelve).
+  2. Ese monto se **suma** al `available_balance` del enrollment destino (el indicado por `transfer_to_enrollment_id`).
+  3. En el enrollment disuelto se guarda `balance_transferred_to_enrollment` = ObjectId del enrollment destino.
+  4. Se establece `status: 0`, `disolve_reason`, `disolve_user` y `disolveDate` en el enrollment disuelto.
 
 #### **Response (200 - OK)**
 ```json
@@ -1559,38 +1578,32 @@ PATCH /api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/disolve
       "name": "Admin Usuario",
       "email": "admin@example.com"
     },
+    "balance_transferred_to_enrollment": "64f8a1b2c3d4e5f6a7b8c9d9",
+    "disolveDate": "2026-03-01T23:59:59.999Z",
     ...
   }
 }
 ```
 
-#### **Campos Actualizados**
-Cuando se ejecuta el endpoint de disolución, se actualizan los siguientes campos:
+#### **Campos actualizados al disolver**
+**En el enrollment disuelto (`:id`):**
+- `status`: `0` (disolve)
+- `disolve_reason`: valor enviado en el body
+- `disolve_user`: ObjectId del usuario que realiza el disolve (desde el JWT)
+- `disolveDate`: fecha/hora del disolve (ISO UTC)
+- `balance_transferred_to_enrollment`: `null` si no hubo transferencia; ObjectId del enrollment destino si se envió `transfer_to_enrollment_id` válido y distinto de `:id`
 
-**En el Enrollment:**
-- `status`: Se establece a `0` (disolve)
-- `disolve_reason`: Se guarda la razón proporcionada en el request body
-- `disolve_user`: Se guarda automáticamente el ObjectId del usuario que realiza el disolve (obtenido del token JWT)
+**En el enrollment destino (solo si se envió `transfer_to_enrollment_id` y es distinto de `:id`):**
+- `available_balance`: se le suma el monto `available_balance - total_amount + balance_per_class` del enrollment disuelto (si ese monto es > 0)
 
-**Notificación Creada:**
-Se crea automáticamente un registro en la colección `notifications` con la siguiente información:
-- `idCategoryNotification`: `"6941c9b30646c9359c7f9f68"` (categoría de notificación administrativa)
-- `notification_description`: `"Enrollment disuelto desde el administrativo por [nombre del usuario]"` (incluye el nombre del usuario que realizó el disolve)
-- `idEnrollment`: ObjectId del enrollment disuelto
-- `idStudent`: Array con los IDs de todos los estudiantes asociados al enrollment
-- `idPenalization`: `null`
-- `idProfessor`: `null`
-- `isActive`: `true`
+**Notificación:** Se crea un registro en `notifications` con la misma información que antes (categoría, descripción con nombre del usuario, idEnrollment, idStudent, etc.).
 
-#### **Errores Posibles**
-- `400`: 
-  - ID de matrícula inválido
-  - El campo `disolve_reason` es obligatorio y debe ser un string no vacío
-  - ID de usuario inválido
-- `404`: Matrícula no encontrada
-- `500`: Error interno del servidor
+#### **Errores posibles**
+- `400`: ID de matrícula o usuario inválido; `disolve_reason` obligatorio y no vacío.
+- `404`: Matrícula no encontrada; matrícula destino no encontrada; o **el ID del enrollment al que se quiere enviar el dinero es igual al enrollment que se está disolviendo** (mensaje explícito).
+- `500`: Error interno del servidor.
 
-#### **Ejemplo con cURL**
+#### **Ejemplo con cURL (sin transferencia)**
 ```bash
 curl -X PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/disolve \
   -H "Content-Type: application/json" \
@@ -1600,27 +1613,40 @@ curl -X PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/dis
   }'
 ```
 
+#### **Ejemplo con cURL (con transferencia a otra matrícula)**
+```bash
+curl -X PATCH http://localhost:3000/api/enrollments/64f8a1b2c3d4e5f6a7b8c9d0/disolve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "disolve_reason": "Cambio de plan del estudiante",
+    "transfer_to_enrollment_id": "64f8a1b2c3d4e5f6a7b8c9d9"
+  }'
+```
+
 #### **Ejemplo con JavaScript (Fetch)**
 ```javascript
-const disolveEnrollment = async (enrollmentId, disolveReason) => {
+const disolveEnrollment = async (enrollmentId, disolveReason, transferToEnrollmentId = null) => {
   try {
+    const body = { disolve_reason: disolveReason };
+    if (transferToEnrollmentId) body.transfer_to_enrollment_id = transferToEnrollmentId;
+
     const response = await fetch(`http://localhost:3000/api/enrollments/${enrollmentId}/disolve`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({
-        disolve_reason: disolveReason
-      })
+      body: JSON.stringify(body)
     });
 
     const data = await response.json();
-    
     if (response.ok) {
       console.log('Enrollment disuelto:', data.enrollment);
       console.log('Razón:', data.enrollment.disolve_reason);
       console.log('Usuario que disolvió:', data.enrollment.disolve_user);
+      console.log('Fecha disolve:', data.enrollment.disolveDate);
+      console.log('Balance transferido a:', data.enrollment.balance_transferred_to_enrollment);
     } else {
       console.error('Error:', data.message);
     }
@@ -1629,18 +1655,19 @@ const disolveEnrollment = async (enrollmentId, disolveReason) => {
   }
 };
 
-// Uso
-disolveEnrollment('64f8a1b2c3d4e5f6a7b8c9d0', 'El estudiante solicitó cancelar el enrollment por motivos personales');
+// Sin transferencia
+disolveEnrollment('64f8a1b2c3d4e5f6a7b8c9d0', 'Cancelación por motivos personales');
+
+// Con transferencia a otra matrícula
+disolveEnrollment('64f8a1b2c3d4e5f6a7b8c9d0', 'Cambio de plan', '64f8a1b2c3d4e5f6a7b8c9d9');
 ```
 
-#### **Notas Importantes**
-- Solo usuarios con rol `admin` pueden ejecutar este endpoint
-- El campo `disolve_user` se guarda automáticamente desde el token JWT del usuario que realiza la petición
-- Una vez disuelto, el enrollment no puede ser reactivado directamente (debe usar el endpoint de activación si es necesario)
-- El campo `disolve_reason` es obligatorio y no puede estar vacío
-- Se crea automáticamente una notificación en la colección `notifications` cuando se disuelve un enrollment
-- La notificación incluye el nombre del usuario que realizó el disolve y los IDs de todos los estudiantes asociados al enrollment
-- Si la creación de la notificación falla, el proceso de disolución continúa (solo se registra el error en los logs)
+#### **Notas importantes**
+- Solo usuarios con rol `admin` pueden ejecutar este endpoint.
+- `disolve_user` y `disolveDate` se guardan automáticamente al disolver.
+- Si se envía `transfer_to_enrollment_id`, no puede ser igual al `id` de la URL (se devuelve 404).
+- Al crear un enrollment (POST), `balance_transferred_to_enrollment` y `disolveDate` se inicializan en `null`.
+- Si la creación de la notificación falla, el proceso de disolución continúa (solo se registra el error en logs).
 
 ---
 
