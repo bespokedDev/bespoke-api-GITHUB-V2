@@ -76,7 +76,7 @@ const headers = {
 | `support_file` | String | No | Archivo de soporte o evidencia |
 | `userId` | ObjectId | No | Referencia al usuario administrador (modelo `User`) |
 | `payOutId` | ObjectId | No | Referencia al payout (modelo `Payout`) - Enlace administrativo cuando se debe hacer el pago |
-| `status` | Number | No | Estado del registro de penalización (0 = Inactiva, 1 = Activa). Por defecto: 1 |
+| `status` | Number | No | Estado del registro de penalización (0 = Inactiva/cancelada, 1 = Activa, 2 = Pagada/Aplicada). Por defecto: 1. En la creación siempre se guarda como 1. |
 | `createdAt` | Date | Auto | Fecha de creación (generado automáticamente) |
 | `updatedAt` | Date | Auto | Fecha de última actualización (generado automáticamente) |
 
@@ -115,7 +115,6 @@ POST /api/penalization-registry
   "lateFee": 7,
   "endDate": "2025-01-15T00:00:00.000Z",
   "support_file": "https://storage.example.com/files/evidence-123.pdf",
-  "status": 1,
   "notification": 1,
   "notification_description": "Se ha aplicado una penalización por vencimiento de pago"
 }
@@ -177,9 +176,10 @@ POST /api/penalization-registry
   - Permite vincular una penalización con un payout específico
 
 - **`status`** (number): Estado del registro de penalización
-  - **Valores permitidos**: `0` o `1`
-  - `0` = Inactiva
-  - `1` = Activa (por defecto)
+  - **Valores permitidos**: `0`, `1` o `2`
+  - `0` = Inactiva / cancelada (no se considera en cálculos ni vistas principales)
+  - `1` = Activa (pendiente de aplicar / cobrar)
+  - `2` = Pagada / aplicada (dinero ya consolidado para Bespoke)
   - Si no se proporciona, se establece automáticamente en `1` (activa)
 
 ##### **Campos Opcionales - Detalles**
@@ -1500,7 +1500,7 @@ const getMyPenalizations = async () => {
 
 ### **PATCH** `/api/penalization-registry/:id/status`
 
-Actualiza el status de un registro de penalización existente. Solo permite cambiar entre `0` (inactiva) y `1` (activa).
+Actualiza el status de un registro de penalización existente. Valores permitidos: `0` (inactiva), `1` (activa) o `2` (pagada/aplicada).
 
 #### **URL Completa**
 ```
@@ -1528,9 +1528,10 @@ PATCH /api/penalization-registry/:id/status
 
 ##### **Campos del Request Body**
 - **`status`** (number, requerido): Nuevo status del registro de penalización
-  - **Valores permitidos**: `0` o `1`
-  - `0` = Inactiva
-  - `1` = Activa
+  - **Valores permitidos**: `0`, `1` o `2`
+  - `0` = Inactiva / cancelada
+  - `1` = Activa (pendiente de aplicar / cobrar)
+  - `2` = Pagada / aplicada (dinero ya consolidado o debitado en payout)
 
 #### **Response Exitosa (200 OK)**
 ```json
@@ -1583,10 +1584,10 @@ PATCH /api/penalization-registry/:id/status
 
 ```json
 {
-  "message": "El campo status debe ser 0 (inactiva) o 1 (activa)."
+  "message": "El campo status debe ser 0 (inactiva), 1 (activa) o 2 (pagada/aplicada)."
 }
 ```
-- **Causa**: El campo `status` tiene un valor diferente a 0 o 1
+- **Causa**: El campo `status` tiene un valor diferente a 0, 1 o 2
 
 **404 - Not Found**
 ```json
@@ -1632,7 +1633,7 @@ const updatePenalizationStatus = async (penalizationId, newStatus) => {
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
-        status: newStatus // 0 o 1
+        status: newStatus // 0, 1 o 2
       })
     });
 
@@ -1688,7 +1689,7 @@ Cuando se actualiza el status de un registro de penalización a `0` (inactiva):
 
 #### **Notas Importantes**
 - Solo los administradores pueden actualizar el status de un registro de penalización
-- El campo `status` solo acepta valores `0` (inactiva) o `1` (activa)
+- El campo `status` acepta valores `0` (inactiva), `1` (activa) o `2` (pagada/aplicada)
 - El campo `updatedAt` se actualiza automáticamente cuando se modifica el status
 - Este endpoint solo actualiza el campo `status`, no modifica otros campos del registro
 - Si el status cambia a `0` y el registro tiene `enrollmentId`, se decrementa automáticamente `penalizationCount` del enrollment

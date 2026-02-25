@@ -582,9 +582,9 @@ enrollmentCtrl.getById = async (req, res) => {
         }
 
         // Obtener información de penalizaciones del enrollment
+        // Se devuelven todas las penalizaciones (status 0, 1, 2) para que el front pueda decidir qué mostrar
         const penalizations = await PenalizationRegistry.find({
-            enrollmentId: enrollment._id,
-            status: 1 // Solo penalizaciones activas
+            enrollmentId: enrollment._id
         }).lean();
 
         // Contar total de penalizaciones
@@ -594,9 +594,12 @@ enrollmentCtrl.getById = async (req, res) => {
         const monetaryPenalizations = penalizations.filter(p => p.penalizationMoney && p.penalizationMoney > 0);
         const admonitionPenalizations = penalizations.filter(p => !p.penalizationMoney || p.penalizationMoney === 0);
 
-        // Calcular total de dinero de penalizaciones
+        // Calcular total de dinero de penalizaciones (solo status 1, como monto vigente asociado al enrollment)
         const totalPenalizationMoney = penalizations.reduce((sum, p) => {
-            return sum + (p.penalizationMoney || 0);
+            if (p.status === 1) {
+                return sum + (p.penalizationMoney || 0);
+            }
+            return sum;
         }, 0);
 
         // Obtener ConversationalAttendance relacionados con el enrollment

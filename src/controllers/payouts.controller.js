@@ -428,12 +428,12 @@ payoutCtrl.create = async (req, res) => {
         //     );
         // }
 
-        // 11. Actualizar penalizaciones: establecer payOutId
+        // 11. Actualizar penalizaciones: establecer payOutId y status 2 (Pagada - ya debitada en el payout)
         if (validatedPenalizationInfo.length > 0) {
             const penalizationIds = validatedPenalizationInfo.map(p => p.id);
             await PenalizationRegistry.updateMany(
                 { _id: { $in: penalizationIds } },
-                { $set: { payOutId: savedPayout._id } }
+                { $set: { payOutId: savedPayout._id, status: 2 } }
             );
         }
 
