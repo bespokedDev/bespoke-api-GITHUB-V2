@@ -926,19 +926,19 @@ El endpoint incluye información detallada sobre las penalizaciones del enrollme
 
 **Campos de `penalizationInfo`:**
 - **`penalizationCount`** (number): Número total de penalizaciones que tiene el enrollment (campo del modelo Enrollment)
-- **`totalPenalizations`** (number): Número total de penalizaciones activas (`status: 1`) asociadas al enrollment
-- **`monetaryPenalizations`** (object): Información sobre penalizaciones monetarias
-  - **`count`** (number): Cantidad de penalizaciones monetarias (donde `penalizationMoney > 0` y `status: 1`)
-  - **`totalAmount`** (number): Suma total del dinero de todas las penalizaciones monetarias
-- **`admonitionPenalizations`** (object): Información sobre penalizaciones de tipo amonestación
-  - **`count`** (number): Cantidad de penalizaciones de tipo amonestación (donde `penalizationMoney = 0` o `null` y `status: 1`)
-- **`totalPenalizationMoney`** (number): Suma total de dinero de todas las penalizaciones activas (incluye todas las penalizaciones con `status: 1`, incluso si `penalizationMoney` es 0)
+- **`totalPenalizations`** (number): Número total de penalizaciones asociadas al enrollment (cualquier `status`)
+- **`monetaryPenalizations`** (object): Información sobre penalizaciones monetarias **activas**
+  - **`count`** (number): Cantidad de penalizaciones monetarias activas (donde `penalizationMoney > 0` y `status: 1`)
+  - **`totalAmount`** (number): Suma total del dinero de todas las penalizaciones monetarias activas
+- **`admonitionPenalizations`** (object): Información sobre penalizaciones de tipo amonestación **activas**
+  - **`count`** (number): Cantidad de penalizaciones de tipo amonestación activas (donde `penalizationMoney = 0` o `null` y `status: 1`)
+- **`totalPenalizationMoney`** (number): Suma total de dinero de todas las penalizaciones **activas** (solo penalizaciones con `status: 1`)
 
 **Categorización de Penalizaciones:**
 - **Penalización Monetaria**: Penalizaciones con `status: 1` y `penalizationMoney > 0`
 - **Penalización de Tipo Amonestación**: Penalizaciones con `status: 1` y `penalizationMoney = 0` o `null`
 
-**Nota**: Solo se consideran penalizaciones activas (`status: 1`) para todos los cálculos y categorizaciones.
+**Nota**: El endpoint devuelve todas las penalizaciones del enrollment (cualquier `status`), pero los totales y conteos de `penalizationInfo` solo consideran penalizaciones activas (`status: 1`).
 
 #### **Conversational Attendances (`conversationalAttendances`)**
 

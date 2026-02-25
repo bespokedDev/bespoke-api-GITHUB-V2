@@ -1446,7 +1446,7 @@ El reporte de excedentes ahora incluye cinco tipos de excedentes:
   "totalExcedenteClasses": 1000.00,             // Total de excedente por clases no vistas
   "totalPrepaidEnrollments": 200.00,            // 🆕 Total de enrollments prepagados (Parte 12)
   "totalBonuses": 200.00,                       // Total de bonos (se resta del total)
-  "totalExcedentePenalizations": 0.00,          // 🆕 PARTE 13: Total de excedente por penalizaciones monetarias
+  "totalExcedentePenalizations": 0.00,          // 🆕 PARTE 13: Total de excedente por penalizaciones monetarias (estudiantes/enrollments pagadas + profesores)
   "numberOfIncomes": 3,                         // Cantidad de ingresos excedentes (incluye prepagados)
   "numberOfClassesNotViewed": 20,               // Cantidad de clases no vistas
   "numberOfBonuses": 2,                         // Cantidad de bonos
@@ -1454,7 +1454,7 @@ El reporte de excedentes ahora incluye cinco tipos de excedentes:
   "classNotViewedDetails": [...],               // Array de clases perdidas (classViewed = 4) (Parte 9)
   "prepaidEnrollmentsDetails": [...],           // 🆕 Array de enrollments prepagados (Parte 12)
   "pausedEnrollmentsDetails": [...],            // 🆕 PARTE 14: Array de enrollments en pausa
-  "penalizationDetails": [...],                 // 🆕 PARTE 14: Array de penalizaciones de estudiantes con incomes vinculados
+  "penalizationDetails": [...],                 // 🆕 PARTE 14: Array de penalizaciones monetarias de estudiantes/enrollments y profesores
   "bonusDetails": [...]                          // Array de bonos con valor negativo (Parte 11)
 }
 ```
@@ -1465,10 +1465,11 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 ```
 
 **Notas Importantes:**
-- `totalExcedentePenalizations`: Solo penalizaciones de estudiantes con incomes vinculados (ver Parte 14.5.2)
+- `totalExcedentePenalizations`: Penalizaciones monetarias que representan dinero para Bespoke:
+  - Penalizaciones de estudiantes/enrollments con `status = 2` y completamente pagadas (cubiertas por incomes vinculados).
+  - Penalizaciones de profesores (con `professorId`) con `status` 1 o 2.
 - `totalPausedEnrollments`: Total de `available_balance` de enrollments en pausa (ver Parte 14.4)
-- Las penalizaciones de estudiantes se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
-- Las penalizaciones de profesores se descuentan del pago del profesor (no son excedente)
+- Las penalizaciones monetarias se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
 
 #### **🆕 Lógica de Alias y Ordenamiento**
 
@@ -3118,17 +3119,21 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 - ❌ Se filtraban por `createdAt` dentro del rango del mes
 
 #### **Nueva Implementación (Parte 14.5):**
-- ✅ Solo las penalizaciones de **estudiantes** (`idStudent`) pueden generar excedente
-- ✅ Solo generan excedente si tienen **incomes vinculados** (`Income.idPenalizationRegistry = PenalizationRegistry._id`)
-- ✅ Se incluyen aunque estén fuera del rango de fechas del mes (persistencia)
-- ✅ Las penalizaciones de **profesores** (`idProfessor`) se descuentan del pago del profesor (ver Parte 14.5.1)
+- ✅ Penalizaciones monetarias de **estudiantes/enrollments** generan excedente solo cuando:
+  - Tienen `status = 2` (pagadas/aplicadas) y
+  - Están completamente cubiertas por incomes vinculados (`Income.idPenalizationRegistry = PenalizationRegistry._id`).
+- ✅ Penalizaciones monetarias de **profesores** (`professorId`) siempre representan dinero para Bespoke:
+  - Se consideran en `totalExcedentePenalizations` tanto en `status = 1` como `status = 2`.
+- ✅ Las penalizaciones monetarias se incluyen aunque estén fuera del rango de fechas del mes (persistencia).
 
-#### **Cálculo del Excedente:**
-- Se buscan todas las penalizaciones de estudiantes con `status: 1` y `penalizationMoney > 0`
-- Para cada penalización, se buscan incomes vinculados y se suman sus `amount`
-- **Si los incomes cubren completamente el `penalizationMoney`**: excedente = `penalizationMoney`
-- **Si los incomes NO cubren completamente**: excedente = suma de los incomes vinculados
-- Solo se incluyen penalizaciones que tienen al menos un income vinculado
+#### **Cálculo del Excedente (resumen):**
+- **Estudiantes/enrollments**:
+  - Se buscan penalizaciones con `studentId`, `penalizationMoney > 0` y `status in [1, 2]`.
+  - Se calculan los incomes vinculados y se verifica si la penalización está completamente pagada.
+  - Solo si `status = 2` y está completamente pagada se suma su `penalizationMoney` a `totalExcedentePenalizations`.
+- **Profesores**:
+  - Se buscan penalizaciones con `professorId`, `penalizationMoney > 0` y `status in [1, 2]`.
+  - Cada penalización suma directamente su `penalizationMoney` a `totalExcedentePenalizations`.
 
 #### **Estructura en Reporte de Excedentes:**
 ```json
@@ -3151,12 +3156,9 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 ```
 
 #### **Campos del Reporte:**
-- `totalExcedentePenalizations` (number): Suma total de todas las penalizaciones monetarias activas creadas en el mes del reporte
-  - Se calcula sumando todos los valores de `penalizationMoney` de las penalizaciones que cumplen:
-    - `status: 1` (activas)
-    - `penalizationMoney > 0` (monetarias)
-    - `createdAt` dentro del rango del mes del reporte
-  - Representa el total de dinero de penalizaciones que se debe pagar en el mes
+- `totalExcedentePenalizations` (number): Suma total de todas las penalizaciones monetarias que representan ganancia para Bespoke:
+  - Penalizaciones de estudiantes/enrollments con `status = 2`, `penalizationMoney > 0` y completamente pagadas.
+  - Penalizaciones de profesores con `penalizationMoney > 0` y `status in [1, 2]`.
 
 #### **Cálculo del Total:**
 ```
@@ -3164,12 +3166,10 @@ totalExcedente = totalExcedenteIncomes + totalExcedenteClasses + totalPrepaidEnr
 ```
 
 #### **Notas Importantes:**
-- ⚠️ **Cambio importante**: Ya NO se suman todas las penalizaciones automáticamente
-- Solo las penalizaciones de estudiantes con incomes vinculados generan excedente
-- Las penalizaciones de profesores se descuentan del pago (ver Parte 14.5.1)
-- Se incluyen penalizaciones aunque estén fuera del rango de fechas del mes (persistencia)
-- Si una penalización no tiene incomes vinculados, NO genera excedente
-- Si no hay penalizaciones con incomes vinculados, `totalExcedentePenalizations` será `0.00`
+- ⚠️ **Cambio importante**: Ya NO se suman todas las penalizaciones automáticamente.
+- Penalizaciones de estudiantes/enrollments solo generan excedente cuando están pagadas (`status = 2`) y cubiertas por incomes vinculados.
+- Penalizaciones de profesores con dinero (status 1 o 2) siempre se consideran excedente, porque ese monto se queda en Bespoke.
+- Se incluyen penalizaciones monetarias aunque estén fuera del rango de fechas del mes (persistencia).
 
 #### **Aplicado en:**
 - Función `generateExcedenteReportLogic`

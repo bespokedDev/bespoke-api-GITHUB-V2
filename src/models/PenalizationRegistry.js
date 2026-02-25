@@ -91,11 +91,12 @@ const PenalizationRegistrySchema = new mongoose.Schema({
     },
     status: {
         type: Number,
-        enum: [0, 1],
+        enum: [0, 1, 2],
         default: 1
         // Estado del registro de penalización
-        // 0 = Inactiva
-        // 1 = Activa (por defecto)
+        // 0 = Inactiva / cancelada (no considerar en cálculos ni vistas principales)
+        // 1 = Activa (pendiente de aplicar / cobrar)
+        // 2 = Pagada / aplicada (dinero ya consolidado para Bespoke)
     }
 }, {
     timestamps: true // Añade automáticamente createdAt y updatedAt

@@ -254,21 +254,10 @@ penalizationRegistryCtrl.create = async (req, res) => {
             registryData.support_file = typeof support_file === 'string' ? support_file.trim() : support_file;
         }
 
-        // Establecer status en 1 (activa) por defecto al crear
-        // Si se proporciona status en el request body, se respeta; si no, se establece explícitamente en 1
-        if (req.body.status !== undefined && req.body.status !== null) {
-            const statusValue = Number(req.body.status);
-            if (statusValue === 0 || statusValue === 1) {
-                registryData.status = statusValue;
-            } else {
-                return res.status(400).json({
-                    message: 'El campo status debe ser 0 (inactiva) o 1 (activa).'
-                });
-            }
-        } else {
-            // Asegurar que siempre se establezca explícitamente en 1 (activa) por defecto
-            registryData.status = 1; // Activa por defecto
-        }
+        // Establecer status en 1 (activa) al crear siempre
+        // La creación de penalizaciones debe iniciar como "activa / pendiente"
+        // y luego cambiar a 0 o 2 explícitamente mediante actualización.
+        registryData.status = 1;
 
         // Crear el registro de penalización
         const newPenalizationRegistry = new PenalizationRegistry(registryData);
@@ -634,7 +623,7 @@ penalizationRegistryCtrl.getMyPenalizations = async (req, res) => {
  * - id (URL): ID del registro de penalización a actualizar
  * 
  * Body:
- * - status (number): Nuevo status del registro (0 = Inactiva, 1 = Activa)
+ * - status (number): Nuevo status del registro (0 = Inactiva, 1 = Activa, 2 = Pagada/Aplicada)
  */
 penalizationRegistryCtrl.updateStatus = async (req, res) => {
     try {
@@ -655,11 +644,11 @@ penalizationRegistryCtrl.updateStatus = async (req, res) => {
             });
         }
 
-        // Validar que status sea 0 o 1
+        // Validar que status sea 0, 1 o 2
         const statusValue = Number(status);
-        if (statusValue !== 0 && statusValue !== 1) {
+        if (![0, 1, 2].includes(statusValue)) {
             return res.status(400).json({
-                message: 'El campo status debe ser 0 (inactiva) o 1 (activa).'
+                message: 'El campo status debe ser 0 (inactiva), 1 (activa) o 2 (pagada/aplicada).'
             });
         }
 

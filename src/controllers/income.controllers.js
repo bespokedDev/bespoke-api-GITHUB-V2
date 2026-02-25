@@ -27,7 +27,7 @@ const moment = require('moment'); // Asegúrate de importar moment
  * Se usa para create, getById y list.
  */
 const populateIncome = async (query) => {
-    return await Income.findOne(query)
+    const result = await Income.findOne(query)
         .populate('idDivisa', 'name')
         .populate('idProfessor', 'name ciNumber')
         .populate('idPaymentMethod', 'name type')
@@ -40,8 +40,69 @@ const populateIncome = async (query) => {
                 { path: 'professorId', select: 'name ciNumber' }
             ]
         })
-        .populate('idPenalizationRegistry', 'penalizationMoney status penalization_description enrollmentId studentId professorId')
+        .populate({
+            path: 'idPenalizationRegistry',
+            populate: [
+                {
+                    path: 'enrollmentId',
+                    select: 'alias status planId studentIds professorId',
+                    populate: [
+                        { path: 'planId', select: 'name' },
+                        { path: 'studentIds.studentId', select: 'name' },
+                        { path: 'professorId', select: 'name lastName' }
+                    ]
+                },
+                { path: 'studentId', select: 'name studentCode' },
+                { path: 'professorId', select: 'name lastName' },
+                { path: 'idPenalizacion', select: 'name penalizationLevels' }
+            ]
+        })
         .lean();
+    addStudentNamesToPenalizationEnrollment(result);
+    return result;
+};
+
+/**
+ * Añade studentNames (nombres de estudiantes concatenados con coma) al enrollment
+ * dentro de idPenalizationRegistry cuando existe. Modifica el objeto in-place.
+ * @param {Object|Object[]} incomeOrIncomes - Un income o array de incomes (con idPenalizationRegistry populado)
+ */
+const addStudentNamesToPenalizationEnrollment = (incomeOrIncomes) => {
+    const items = Array.isArray(incomeOrIncomes) ? incomeOrIncomes : [incomeOrIncomes];
+    for (const income of items) {
+        const enrollment = income && income.idPenalizationRegistry && income.idPenalizationRegistry.enrollmentId;
+        if (!enrollment || !enrollment.studentIds || !Array.isArray(enrollment.studentIds)) continue;
+        const names = enrollment.studentIds
+            .map(s => s.studentId && s.studentId.name)
+            .filter(Boolean);
+        enrollment.studentNames = names.join(', ');
+    }
+    return incomeOrIncomes;
+};
+
+/**
+ * Actualiza el status del PenalizationRegistry según el total de incomes vinculados.
+ * Si total de incomes >= penalizationMoney → status = 2 (Pagada).
+ * Si total < penalizationMoney → status = 1 (Activa), para que vuelva a mostrarse como pendiente.
+ * @param {ObjectId} penalizationRegistryId - ID del registro de penalización
+ */
+const updatePenalizationRegistryStatusByLinkedIncomes = async (penalizationRegistryId) => {
+    if (!penalizationRegistryId) return;
+    try {
+        const penalization = await PenalizationRegistry.findById(penalizationRegistryId).lean();
+        if (!penalization) return;
+        const penalizationMoney = penalization.penalizationMoney || 0;
+        const linkedIncomes = await Income.find({ idPenalizationRegistry: penalizationRegistryId }).lean();
+        // Sumar solo amountInDollars para decidir si la penalización está pagada
+        const totalIncomesAmount = linkedIncomes.reduce((sum, inc) => sum + (inc.amountInDollars ?? 0), 0);
+        const isFullyPaid = totalIncomesAmount >= penalizationMoney;
+        const newStatus = isFullyPaid ? 2 : 1;
+        if (Number(penalization.status) === newStatus) return;
+        await PenalizationRegistry.findByIdAndUpdate(penalizationRegistryId, { status: newStatus }, { runValidators: true });
+        console.log(`[INCOME] PenalizationRegistry ${penalizationRegistryId} actualizado a status ${newStatus} (totalIncomes: ${totalIncomesAmount.toFixed(2)}, penalizationMoney: ${penalizationMoney})`);
+    } catch (err) {
+        console.error(`[INCOME] Error actualizando status de PenalizationRegistry ${penalizationRegistryId}:`, err.message);
+    }
 };
 
 /**
@@ -1071,9 +1132,10 @@ const generateGeneralProfessorsReportLogic = async (month) => {
 
         // Contar y sumar penalizaciones monetarias del profesor (status: 1 y penalizationMoney > 0)
         const professorObjectId = new mongoose.Types.ObjectId(professorId);
+        // Penalizaciones monetarias del profesor (status 1 o 2, siempre son dinero para Bespoke)
         const monetaryPenalizations = await PenalizationRegistry.find({
             professorId: professorObjectId,
-            status: 1,
+            status: { $in: [1, 2] },
             penalizationMoney: { $gt: 0 }
         })
         .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel')
@@ -1354,8 +1416,16 @@ const generateSpecificProfessorReportLogic = async (month) => {
                     return 'Estudiante Desconocido';
                 }).join(' & ')
                 : 'Estudiante Desconocido';
-        
-        
+        // Nombres de estudiantes siempre (para mostrar además del alias en el reporte)
+        const studentNames = sortedStudentList.length > 0
+            ? sortedStudentList.map(s => {
+                if (s.studentId && s.studentId.name) {
+                    return s.studentId.name;
+                }
+                return 'Estudiante Desconocido';
+            }).join(' & ')
+            : 'Estudiante Desconocido';
+
         // PARTE 2: Calcular pricePerHour dividiendo el precio del plan entre el total de ClassRegistry normales
         // Buscar todos los ClassRegistry del enrollment donde reschedule = 0 (solo clases normales, no reschedules)
         const totalNormalClasses = await ClassRegistry.countDocuments({
@@ -1437,9 +1507,11 @@ const generateSpecificProfessorReportLogic = async (month) => {
 
         details.push({
             enrollmentId: enrollment._id,
+            enrollmentAlias: enrollment.alias != null ? (typeof enrollment.alias === 'string' ? enrollment.alias.trim() : String(enrollment.alias)) : null,
             period: period,
             plan: planDisplay,
             studentName: studentNamesConcatenated,
+            studentNames: studentNames,
             amount: parseFloat(calculatedAmount.toFixed(2)),
             amountInDollars: parseFloat(calculatedAmount.toFixed(2)), // Mantener compatibilidad
             totalHours: totalHours,
@@ -1524,9 +1596,10 @@ const generateSpecificProfessorReportLogic = async (month) => {
 
     // Contar y sumar penalizaciones monetarias del profesor especial (status: 1 y penalizationMoney > 0)
     const professorObjectId = new mongoose.Types.ObjectId(professorId);
+    // Penalizaciones monetarias del profesor (status 1 o 2, siempre son dinero para Bespoke)
     const monetaryPenalizations = await PenalizationRegistry.find({
         professorId: professorObjectId,
-        status: 1,
+        status: { $in: [1, 2] },
         penalizationMoney: { $gt: 0 }
     })
     .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel')
@@ -2010,15 +2083,21 @@ const generateExcedenteReportLogic = async (month) => {
         }
     }
 
-    // 🆕 REGLA: PenalizationRegistry como excedente solo si tiene incomes vinculados (para estudiantes)
-    // REGLA 5.1: Incluir penalizaciones de estudiantes con pagos incompletos aunque estén fuera del rango de fechas
-    // Buscar penalizaciones con idStudent (status: 1 y penalizationMoney > 0) - Solo monetarias
+    // 🆕 REGLA: PenalizationRegistry como excedente cuando representa dinero que queda en Bespoke
+    // REGLA 5.1: Incluir penalizaciones monetarias de enrollments/estudiantes y profesores
+    // - Estudiantes/enrollments: solo status 2 (pagadas/aplicadas) suman al excedente
+    // - Profesores: status 1 y 2 suman al excedente porque siempre es dinero para Bespoke
+
+    // Penalizaciones monetarias de estudiantes o enrollments (con incomes vinculados); excluir las de profesor (van en otro bloque)
     const studentPenalizations = await PenalizationRegistry.find({
-        status: 1,
-        penalizationMoney: { $gt: 0 }, // Solo penalizaciones monetarias (mayor a 0)
-        studentId: { $exists: true, $ne: null }
+        status: { $in: [1, 2] },
+        penalizationMoney: { $gt: 0 },
+        $and: [
+            { $or: [ { studentId: { $exists: true, $ne: null } }, { enrollmentId: { $exists: true, $ne: null } } ] },
+            { $or: [ { professorId: null }, { professorId: { $exists: false } } ] }
+        ]
     })
-    .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel studentId status')
+    .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel studentId enrollmentId status')
     .populate({
         path: 'idPenalizacion',
         select: 'name penalizationLevels',
@@ -2029,12 +2108,18 @@ const generateExcedenteReportLogic = async (month) => {
         select: 'name studentCode',
         model: 'Student'
     })
+    .populate({
+        path: 'enrollmentId',
+        select: 'alias',
+        model: 'Enrollment'
+    })
     .sort({ createdAt: -1 })
     .lean();
 
     const penalizationDetails = [];
     let totalExcedentePenalizations = 0;
 
+    // Penalizaciones monetarias de estudiantes/enrollments
     for (const penalization of studentPenalizations) {
         // Buscar incomes vinculados a esta penalización (Income.idPenalizationRegistry = PenalizationRegistry._id)
         const linkedIncomes = await Income.find({
@@ -2044,35 +2129,21 @@ const generateExcedenteReportLogic = async (month) => {
         .populate('idPaymentMethod', 'name type')
         .lean();
 
-        // Sumar los amounts de los incomes vinculados
-        const totalIncomesAmount = linkedIncomes.reduce((sum, income) => sum + (income.amount || 0), 0);
+        // Sumar amountInDollars de los incomes vinculados (mismo criterio que para marcar status 2)
+        const totalIncomesAmount = linkedIncomes.reduce((sum, income) => sum + (income.amountInDollars ?? 0), 0);
         const penalizationMoney = penalization.penalizationMoney || 0;
 
         // Verificar si está completamente pagada
         const isFullyPaid = totalIncomesAmount >= penalizationMoney;
-        
-        // REGLA: Solo incluir penalizaciones completamente pagadas si status = 1 (activa)
-        // Esto permite rastrear los incomes vinculados aunque la penalización esté pagada
-        if (isFullyPaid && linkedIncomes.length > 0 && penalization.status !== 1) {
-            continue; // Saltar penalizaciones completamente pagadas con status != 1
-        }
 
-        // Calcular excedente según el estado de pago
+        // Para estudiantes/enrollments:
+        // - Solo penalizaciones status 2 (pagadas/aplicadas) se suman como excedente
+        // - Si no está completamente pagada, no se considera excedente aún
         let excedenteAmount = 0;
-        
-        if (linkedIncomes.length === 0) {
-            // Sin pagos → excedente = penalizationMoney completo
+        if (penalization.status === 2 && isFullyPaid) {
             excedenteAmount = penalizationMoney;
-        } else if (isFullyPaid && penalization.status === 1) {
-            // Completamente pagada pero status = 1 (activa) → excedente = penalizationMoney completo
-            // Se muestra para rastrear los incomes vinculados
-            excedenteAmount = penalizationMoney;
-        } else {
-            // Con pagos insuficientes → excedente = lo que falta por pagar (penalizationMoney - totalIncomesAmount)
-            excedenteAmount = penalizationMoney - totalIncomesAmount;
+            totalExcedentePenalizations += excedenteAmount;
         }
-
-        totalExcedentePenalizations += excedenteAmount;
 
         // Buscar el nivel de penalización dentro del array penalizationLevels
         let penalizationLevel = null;
@@ -2091,16 +2162,22 @@ const generateExcedenteReportLogic = async (month) => {
             }
         }
 
+        const enrollmentId = penalization.enrollmentId ? (penalization.enrollmentId._id || penalization.enrollmentId) : null;
+        const enrollmentAlias = penalization.enrollmentId && penalization.enrollmentId.alias != null ? penalization.enrollmentId.alias : null;
+        const studentNameDisplay = penalization.studentId ? penalization.studentId.name : (enrollmentAlias || 'Estudiante Desconocido');
+
         penalizationDetails.push({
             penalizationId: penalization._id,
+            enrollmentId: enrollmentId,
+            enrollmentAlias: enrollmentAlias,
             studentId: penalization.studentId ? penalization.studentId._id : null,
-            studentName: penalization.studentId ? penalization.studentId.name : 'Estudiante Desconocido',
+            studentName: studentNameDisplay,
             studentCode: penalization.studentId ? penalization.studentId.studentCode : null,
             penalizationMoney: parseFloat(penalizationMoney.toFixed(2)),
             totalIncomesAmount: parseFloat(totalIncomesAmount.toFixed(2)),
             excedenteAmount: parseFloat(excedenteAmount.toFixed(2)), // Lo que falta por pagar (o total si no tiene pagos o está completamente pagada con status=1)
             isFullyPaid: isFullyPaid, // Indica si está completamente pagada
-            remainingAmount: isFullyPaid ? 0 : parseFloat(excedenteAmount.toFixed(2)), // Monto restante por pagar (0 si está completamente pagada)
+            remainingAmount: isFullyPaid ? 0 : parseFloat((penalizationMoney - totalIncomesAmount > 0 ? penalizationMoney - totalIncomesAmount : 0).toFixed(2)), // Monto restante por pagar
             status: penalization.status || 1, // Status de la penalización (1 = activa, 0 = inactiva)
             description: penalization.penalization_description || null,
             endDate: penalization.endDate || null,
@@ -2114,10 +2191,79 @@ const generateExcedenteReportLogic = async (month) => {
             linkedIncomes: linkedIncomes.length > 0 ? linkedIncomes.map(income => ({
                 incomeId: income._id,
                 amount: parseFloat((income.amount || 0).toFixed(2)),
+                amountInDollars: parseFloat((income.amountInDollars ?? 0).toFixed(2)),
                 income_date: income.income_date,
                 divisa: income.idDivisa ? income.idDivisa.name : 'Sin divisa',
                 paymentMethod: income.idPaymentMethod ? income.idPaymentMethod.name : 'Sin método de pago'
-            })) : [] // Array vacío si no tiene incomes vinculados
+            })) : []
+        });
+    }
+
+    // Penalizaciones monetarias de profesores (siempre dinero para Bespoke)
+    const professorPenalizations = await PenalizationRegistry.find({
+        professorId: { $exists: true, $ne: null },
+        status: { $in: [1, 2] },
+        penalizationMoney: { $gt: 0 }
+    })
+    .select('penalizationMoney penalization_description createdAt endDate support_file idPenalizacion idpenalizationLevel professorId status')
+    .populate({
+        path: 'idPenalizacion',
+        select: 'name penalizationLevels',
+        model: 'Penalizacion'
+    })
+    .populate({
+        path: 'professorId',
+        select: 'name lastName',
+        model: 'Professor'
+    })
+    .sort({ createdAt: -1 })
+    .lean();
+
+    for (const penalization of professorPenalizations) {
+        const penalizationMoney = penalization.penalizationMoney || 0;
+
+        // Para profesores, tanto status 1 como 2 representan dinero que va a Bespoke
+        totalExcedentePenalizations += penalizationMoney;
+
+        let penalizationLevel = null;
+        if (penalization.idPenalizacion && penalization.idpenalizationLevel) {
+            const levelId = penalization.idpenalizationLevel.toString();
+            const foundLevel = penalization.idPenalizacion.penalizationLevels?.find(
+                level => level._id.toString() === levelId
+            );
+            if (foundLevel) {
+                penalizationLevel = {
+                    id: foundLevel._id.toString(),
+                    tipo: foundLevel.tipo || null,
+                    nivel: foundLevel.nivel || null,
+                    description: foundLevel.description || null
+                };
+            }
+        }
+
+        penalizationDetails.push({
+            penalizationId: penalization._id,
+            studentId: null,
+            studentName: null,
+            studentCode: null,
+            professorId: penalization.professorId ? penalization.professorId._id : null,
+            professorName: penalization.professorId ? penalization.professorId.name : 'Profesor Desconocido',
+            penalizationMoney: parseFloat(penalizationMoney.toFixed(2)),
+            totalIncomesAmount: 0,
+            excedenteAmount: parseFloat(penalizationMoney.toFixed(2)),
+            isFullyPaid: true,
+            remainingAmount: 0,
+            status: penalization.status || 1,
+            description: penalization.penalization_description || null,
+            endDate: penalization.endDate || null,
+            support_file: penalization.support_file || null,
+            createdAt: penalization.createdAt,
+            penalizationType: penalization.idPenalizacion ? {
+                id: penalization.idPenalizacion._id.toString(),
+                name: penalization.idPenalizacion.name || null
+            } : null,
+            penalizationLevel: penalizationLevel,
+            linkedIncomes: []
         });
     }
 
@@ -2176,6 +2322,11 @@ const generateExcedenteReportLogic = async (month) => {
 incomesCtrl.create = async (req, res) => {
     try {
         let incomeData = { ...req.body };
+
+        // Aceptar idPenalization (documentación/front) y mapear al campo del modelo idPenalizationRegistry
+        if (incomeData.idPenalization !== undefined && incomeData.idPenalization !== null && incomeData.idPenalization !== '') {
+            incomeData.idPenalizationRegistry = incomeData.idPenalizationRegistry ?? incomeData.idPenalization;
+        }
 
         const objectIdFields = ['idDivisa', 'idProfessor', 'idPaymentMethod', 'idStudent', 'idEnrollment', 'idPenalizationRegistry'];
         objectIdFields.forEach(field => {
@@ -2434,9 +2585,12 @@ incomesCtrl.create = async (req, res) => {
             }
         }
         // ====================================================================
-        // CASO 3: Income sin idEnrollment ni idProfessor (excedente)
-        // No se aplican reglas de negocio
+        // CASO 3: Income vinculado a PenalizationRegistry (idPenalizationRegistry)
+        // Si la suma de incomes vinculados >= penalizationMoney, pasar la penalización a status 2 (Pagada)
         // ====================================================================
+        if (saved.idPenalizationRegistry) {
+            await updatePenalizationRegistryStatusByLinkedIncomes(saved.idPenalizationRegistry);
+        }
 
         const populatedIncome = await populateIncome({ _id: saved._id });
 
@@ -2479,8 +2633,26 @@ incomesCtrl.list = async (req, res) => {
                     { path: 'professorId', select: 'name ciNumber' }
                 ]
             })
+            .populate({
+                path: 'idPenalizationRegistry',
+                populate: [
+                    {
+                        path: 'enrollmentId',
+                        select: 'alias status planId studentIds professorId',
+                        populate: [
+                            { path: 'planId', select: 'name' },
+                            { path: 'studentIds.studentId', select: 'name' },
+                            { path: 'professorId', select: 'name lastName' }
+                        ]
+                    },
+                    { path: 'studentId', select: 'name studentCode' },
+                    { path: 'professorId', select: 'name lastName' },
+                    { path: 'idPenalizacion', select: 'name penalizationLevels' }
+                ]
+            })
             .lean();
 
+        addStudentNamesToPenalizationEnrollment(incomes);
         res.status(200).json(incomes);
     } catch (error) {
         console.error('Error al listar ingresos:', error);
@@ -2536,8 +2708,15 @@ incomesCtrl.update = async (req, res) => {
             }
         });
 
+        const previousIncome = await Income.findById(req.params.id).select('idPenalizationRegistry').lean();
         const updated = await Income.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
         if (!updated) return res.status(404).json({ message: 'Ingreso no encontrado' });
+
+        // Recalcular status de penalizaciones afectadas (actual y anterior si cambió el enlace)
+        const currentPrId = updated.idPenalizationRegistry ? updated.idPenalizationRegistry.toString() : null;
+        const previousPrId = previousIncome && previousIncome.idPenalizationRegistry ? previousIncome.idPenalizationRegistry.toString() : null;
+        if (currentPrId) await updatePenalizationRegistryStatusByLinkedIncomes(updated.idPenalizationRegistry);
+        if (previousPrId && previousPrId !== currentPrId) await updatePenalizationRegistryStatusByLinkedIncomes(previousIncome.idPenalizationRegistry);
 
         const populatedUpdatedIncome = await populateIncome({ _id: updated._id });
 
@@ -2569,6 +2748,11 @@ incomesCtrl.remove = async (req, res) => {
 
         const deleted = await Income.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ message: 'Ingreso no encontrado' });
+
+        // Si el income estaba vinculado a una penalización, recalcular su status (puede volver a 1 si ya no está cubierta)
+        if (deleted.idPenalizationRegistry) {
+            await updatePenalizationRegistryStatusByLinkedIncomes(deleted.idPenalizationRegistry);
+        }
 
         res.status(200).json({ message: 'Ingreso eliminado exitosamente', income: deleted });
     } catch (error) {
