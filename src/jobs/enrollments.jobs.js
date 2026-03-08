@@ -7,7 +7,309 @@ const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
 const Plan = require('../models/Plans');
 const Student = require('../models/Student');
+const ClassRegistry = require('../models/ClassRegistry');
+const EnrollmentCycleHistory = require('../models/EnrollmentCycleHistory');
 const mongoose = require('mongoose');
+
+// --- Helpers para cálculo de fechas de clases (misma lógica que en enrollments.controllers.js) ---
+const dayMap = {
+    'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'Miércoles': 3, 'Jueves': 4, 'Viernes': 5, 'Sábado': 6
+};
+
+const calculateClassDates = (startDate, endDate, scheduledDays, weeklyClasses) => {
+    if (!startDate || !endDate || !scheduledDays || scheduledDays.length === 0) return [];
+    const start = new Date(startDate);
+    start.setUTCHours(0, 0, 0, 0);
+    const endDateObj = new Date(endDate);
+    const end = new Date(Date.UTC(endDateObj.getUTCFullYear(), endDateObj.getUTCMonth(), endDateObj.getUTCDate(), 0, 0, 0, 0));
+    const scheduledDayNumbers = scheduledDays.map(sd => dayMap[sd.day]).filter(d => d !== undefined);
+    if (scheduledDayNumbers.length === 0) return [];
+    const classDates = [];
+    const currentDate = new Date(start);
+    currentDate.setUTCHours(0, 0, 0, 0);
+    const endYear = end.getUTCFullYear(), endMonth = end.getUTCMonth(), endDay = end.getUTCDate();
+    while (true) {
+        const cy = currentDate.getUTCFullYear(), cm = currentDate.getUTCMonth(), cd = currentDate.getUTCDate();
+        if (cy > endYear || (cy === endYear && cm > endMonth) || (cy === endYear && cm === endMonth && cd > endDay)) break;
+        if (scheduledDayNumbers.includes(currentDate.getUTCDay())) {
+            const dateToAdd = new Date(currentDate);
+            dateToAdd.setUTCHours(0, 0, 0, 0);
+            classDates.push(dateToAdd);
+        }
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        currentDate.setUTCHours(0, 0, 0, 0);
+    }
+    const limitedDates = [];
+    const weeks = {};
+    classDates.forEach(date => {
+        const dateCopy = new Date(date);
+        dateCopy.setUTCHours(0, 0, 0, 0);
+        const dayOfWeek = dateCopy.getUTCDay();
+        const weekStart = new Date(dateCopy);
+        weekStart.setUTCDate(dateCopy.getUTCDate() - dayOfWeek);
+        weekStart.setUTCHours(0, 0, 0, 0);
+        const weekKey = weekStart.getTime();
+        if (!weeks[weekKey]) weeks[weekKey] = [];
+        weeks[weekKey].push(new Date(dateCopy));
+    });
+    Object.keys(weeks).map(k => parseInt(k)).sort((a, b) => a - b).forEach(weekKey => {
+        const weekDates = weeks[weekKey].sort((a, b) => a.getTime() - b.getTime());
+        limitedDates.push(...weekDates.slice(0, weeklyClasses));
+    });
+    return limitedDates.sort((a, b) => a.getTime() - b.getTime());
+};
+
+const calculateClassDatesByWeeks = (startDate, numberOfWeeks, scheduledDays, weeklyClasses) => {
+    if (!startDate || !numberOfWeeks || numberOfWeeks <= 0 || !scheduledDays || scheduledDays.length === 0) return [];
+    const start = new Date(startDate);
+    start.setUTCHours(0, 0, 0, 0);
+    const scheduledDayNumbers = scheduledDays.map(sd => dayMap[sd.day]).filter(d => d !== undefined);
+    if (scheduledDayNumbers.length === 0) return [];
+    const firstWeekSunday = new Date(start);
+    firstWeekSunday.setUTCDate(start.getUTCDate() - start.getUTCDay());
+    firstWeekSunday.setUTCHours(0, 0, 0, 0);
+    const classDates = [];
+    for (let week = 0; week < numberOfWeeks; week++) {
+        const weekStartDate = new Date(firstWeekSunday);
+        weekStartDate.setUTCDate(firstWeekSunday.getUTCDate() + (week * 7));
+        weekStartDate.setUTCHours(0, 0, 0, 0);
+        const weekDates = [];
+        for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+            const currentDate = new Date(weekStartDate);
+            currentDate.setUTCDate(weekStartDate.getUTCDate() + dayOffset);
+            currentDate.setUTCHours(0, 0, 0, 0);
+            if (scheduledDayNumbers.includes(currentDate.getUTCDay())) {
+                if (week === 0 && currentDate.getTime() < start.getTime()) continue;
+                weekDates.push(new Date(currentDate));
+            }
+        }
+        weekDates.sort((a, b) => a.getTime() - b.getTime());
+        classDates.push(...weekDates.slice(0, weeklyClasses));
+    }
+    return classDates.sort((a, b) => a.getTime() - b.getTime());
+};
+
+/** Categoría Administrativa para notificaciones de renovación */
+const ADMINISTRATIVA_CATEGORY_ID = new mongoose.Types.ObjectId('6941c9b30646c9359c7f9f68');
+
+/**
+ * Crea notificación cuando no se pudo renovar por falta de fondos
+ */
+const createRenewalFailureNotification = async (enrollment) => {
+    try {
+        const studentIds = (enrollment.studentIds || [])
+            .map(s => {
+                if (s.studentId && typeof s.studentId === 'object' && s.studentId._id) return s.studentId._id;
+                return s.studentId ? (typeof s.studentId === 'string' ? new mongoose.Types.ObjectId(s.studentId) : s.studentId) : null;
+            })
+            .filter(id => id != null);
+        if (studentIds.length === 0) return false;
+        const newNotification = new Notification({
+            idCategoryNotification: ADMINISTRATIVA_CATEGORY_ID,
+            notification_description: 'No se pudo hacer la renovación de su suscripción por falta de fondos.',
+            idPenalization: null,
+            idEnrollment: enrollment._id,
+            idProfessor: null,
+            idStudent: studentIds,
+            isActive: true
+        });
+        await newNotification.save();
+        console.log(`[CRONJOB RENOVACIÓN] Notificación de fallo de renovación creada para enrollment ${enrollment._id}`);
+        return true;
+    } catch (err) {
+        console.error(`[CRONJOB RENOVACIÓN] Error creando notificación de fallo para enrollment ${enrollment._id}:`, err.message);
+        return false;
+    }
+};
+
+/**
+ * Cronjob de renovación automática de enrollments.
+ * Se ejecuta diariamente; procesa enrollments con endDate = hoy y status = 1.
+ * Si hay saldo suficiente: guarda ciclo en EnrollmentCycleHistory, marca clases no vistas como 4, crea nuevo ciclo y ClassRegistry.
+ * Si no hay saldo: status = 2, notificación y marca classViewed 0 → 4.
+ */
+const processEnrollmentRenewals = async () => {
+    try {
+        console.log('[CRONJOB RENOVACIÓN] Iniciando procesamiento de renovaciones...');
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const todayEnd = new Date(today);
+        todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+        todayEnd.setUTCMilliseconds(-1);
+
+        const enrollments = await Enrollment.find({
+            status: 1,
+            endDate: { $gte: today, $lte: todayEnd }
+        })
+            .populate('planId')
+            .lean();
+
+        if (!enrollments.length) {
+            console.log('[CRONJOB RENOVACIÓN] No hay enrollments con endDate hoy. Finalizando.');
+            return;
+        }
+
+        console.log(`[CRONJOB RENOVACIÓN] Encontrados ${enrollments.length} enrollments a procesar.`);
+
+        for (const enrollment of enrollments) {
+            try {
+                const plan = enrollment.planId;
+                if (!plan || !plan.pricing) {
+                    console.warn(`[CRONJOB RENOVACIÓN] Enrollment ${enrollment._id} sin plan o pricing. Omitiendo.`);
+                    continue;
+                }
+                const studentCount = (enrollment.studentIds || []).length;
+                if (studentCount === 0) {
+                    console.warn(`[CRONJOB RENOVACIÓN] Enrollment ${enrollment._id} sin estudiantes. Omitiendo.`);
+                    continue;
+                }
+                const availableBalance = enrollment.available_balance != null ? Number(enrollment.available_balance) : 0;
+                const totalAmount = Number(enrollment.totalAmount);
+                const enrollmentType = enrollment.enrollmentType || 'single';
+                const priceKey = enrollmentType;
+                const unitPrice = plan.pricing[priceKey] != null ? Number(plan.pricing[priceKey]) : 0;
+                const nuevoTotal = unitPrice * studentCount;
+
+                const noRenew = async () => {
+                    await Enrollment.findByIdAndUpdate(enrollment._id, { status: 2 });
+                    await createRenewalFailureNotification(enrollment);
+                    await ClassRegistry.updateMany(
+                        { enrollmentId: enrollment._id, classViewed: 0 },
+                        { $set: { classViewed: 4 } }
+                    );
+                };
+
+                if (availableBalance < totalAmount) {
+                    await noRenew();
+                    continue;
+                }
+                if (nuevoTotal > availableBalance) {
+                    await noRenew();
+                    continue;
+                }
+
+                const startDate = new Date(enrollment.startDate);
+                const endDate = new Date(enrollment.endDate);
+                const monthlyClasses = Math.max(1, Number(enrollment.monthlyClasses) || 1);
+                const pricePerHour = totalAmount / monthlyClasses;
+
+                // Actualizar balanceRemaining del ciclo que termina (dinero que quedaba al cierre)
+                await EnrollmentCycleHistory.findOneAndUpdate(
+                    {
+                        enrollmentId: enrollment._id,
+                        startDate,
+                        endDate
+                    },
+                    { $set: { balanceRemaining: availableBalance } }
+                ).catch(() => {});
+
+                await ClassRegistry.updateMany(
+                    { enrollmentId: enrollment._id, classViewed: 0 },
+                    { $set: { classViewed: 4 } }
+                );
+
+                const newStartDate = new Date(endDate);
+                newStartDate.setUTCDate(newStartDate.getUTCDate() + 1);
+                newStartDate.setUTCHours(0, 0, 0, 0);
+                const scheduledDays = enrollment.scheduledDays || [];
+
+                let newEndDate;
+                let newMonthlyClasses;
+                let classDates = [];
+
+                if (plan.planType === 1) {
+                    newEndDate = new Date(newStartDate);
+                    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + 1);
+                    newEndDate.setUTCDate(newEndDate.getUTCDate() - 1);
+                    newEndDate.setUTCHours(23, 59, 59, 999);
+                    classDates = calculateClassDates(newStartDate, newEndDate, scheduledDays, plan.weeklyClasses || 0);
+                    newMonthlyClasses = classDates.length;
+                } else if (plan.planType === 2 && plan.weeks) {
+                    const firstWeekSunday = new Date(newStartDate);
+                    firstWeekSunday.setUTCDate(newStartDate.getUTCDate() - newStartDate.getUTCDay());
+                    firstWeekSunday.setUTCHours(0, 0, 0, 0);
+                    const endDateObj = new Date(firstWeekSunday);
+                    endDateObj.setUTCDate(firstWeekSunday.getUTCDate() + (plan.weeks * 7) - 1);
+                    endDateObj.setUTCHours(23, 59, 59, 999);
+                    newEndDate = new Date(endDateObj);
+                    newEndDate.setUTCDate(newEndDate.getUTCDate() - 1);
+                    newEndDate.setUTCHours(23, 59, 59, 999);
+                    newMonthlyClasses = plan.weeks * (plan.weeklyClasses || 0);
+                    classDates = calculateClassDatesByWeeks(newStartDate, plan.weeks, scheduledDays, plan.weeklyClasses || 0);
+                } else {
+                    console.warn(`[CRONJOB RENOVACIÓN] Plan ${plan._id} sin planType 1/2 o weeks. Omitiendo enrollment ${enrollment._id}.`);
+                    continue;
+                }
+
+                const classRegistries = classDates.map(classDate => {
+                    const d = new Date(classDate);
+                    const y = d.getUTCFullYear();
+                    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(d.getUTCDate()).padStart(2, '0');
+                    return {
+                        enrollmentId: enrollment._id,
+                        classDate: `${y}-${m}-${day}`,
+                        classTime: null,
+                        reschedule: 0,
+                        classViewed: 0,
+                        minutesClassDefault: 60,
+                        vocabularyContent: null
+                    };
+                });
+
+                if (classRegistries.length > 0) {
+                    await ClassRegistry.insertMany(classRegistries);
+                }
+
+                const newBalance = availableBalance - nuevoTotal;
+                const balancePerClass = newMonthlyClasses > 0 ? nuevoTotal / newMonthlyClasses : nuevoTotal;
+
+                await Enrollment.findByIdAndUpdate(enrollment._id, {
+                    startDate: newStartDate,
+                    endDate: newEndDate,
+                    monthlyClasses: newMonthlyClasses,
+                    totalAmount: nuevoTotal,
+                    available_balance: Math.max(0, newBalance),
+                    balance_per_class: balancePerClass
+                });
+
+                // Crear historial del nuevo ciclo (balanceRemaining se actualizará a fin de mes)
+                const newPricePerHour = newMonthlyClasses > 0 ? nuevoTotal / newMonthlyClasses : 0;
+                await EnrollmentCycleHistory.create({
+                    enrollmentId: enrollment._id,
+                    startDate: newStartDate,
+                    endDate: newEndDate,
+                    totalAmount: nuevoTotal,
+                    monthlyClasses: newMonthlyClasses,
+                    pricePerHour: parseFloat(newPricePerHour.toFixed(2)),
+                    balanceRemaining: null
+                });
+
+                console.log(`[CRONJOB RENOVACIÓN] Renovado enrollment ${enrollment._id}: ${classRegistries.length} clases.`);
+            } catch (err) {
+                console.error(`[CRONJOB RENOVACIÓN] Error procesando enrollment ${enrollment._id}:`, err.message);
+            }
+        }
+
+        console.log('[CRONJOB RENOVACIÓN] Procesamiento de renovaciones finalizado.');
+    } catch (err) {
+        console.error('[CRONJOB RENOVACIÓN] Error general:', err.message);
+    }
+};
+
+/**
+ * Inicializa el cronjob de renovación automática de enrollments (diario 00:00)
+ */
+const initEnrollmentRenewalsCronjob = () => {
+    cron.schedule('0 0 * * *', async () => {
+        console.log(`[CRONJOB RENOVACIÓN] Ejecutando renovaciones - ${new Date().toISOString()}`);
+        await processEnrollmentRenewals();
+    }, {
+        scheduled: true,
+        timezone: 'America/Caracas'
+    });
+    console.log('[CRONJOB RENOVACIÓN] Cronjob de renovación configurado (diario a medianoche).');
+};
 
 /**
  * Función helper para crear notificación de anulación de enrollment
@@ -442,38 +744,37 @@ const processAutomaticPayments = async () => {
 
                 console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Procesando enrollment ${enrollment._id} con endDate ${endDate.toISOString().split('T')[0]}`);
 
-                // Verificar si hay suficiente saldo ANTES de la resta
-                if (!enrollment.available_balance || enrollment.available_balance < enrollment.totalAmount) {
-                    // No hay suficiente saldo, detener y desactivar pagos automáticos
-                    await Enrollment.findByIdAndUpdate(enrollment._id, {
-                        cancellationPaymentsEnabled: false
-                    });
+                const availableBalance = enrollment.available_balance != null ? Number(enrollment.available_balance) : 0;
+                // Monto a pagar = solo lo del periodo que vence (balanceRemaining del ciclo). Si el estudiante ya pagó el siguiente, available_balance puede ser mayor; no lo tocamos.
+                let amountToPay = 0;
+                const cycleHistory = await EnrollmentCycleHistory.findOne({
+                    enrollmentId: enrollment._id,
+                    startDate: enrollment.startDate,
+                    endDate: enrollment.endDate
+                }).lean();
+                const periodBalanceRemaining = (cycleHistory && cycleHistory.balanceRemaining != null) ? Number(cycleHistory.balanceRemaining) : availableBalance;
+                amountToPay = Math.min(availableBalance, periodBalanceRemaining);
 
-                    // Obtener información completa de estudiantes para la notificación
+                if (amountToPay <= 0) {
+                    await Enrollment.findByIdAndUpdate(enrollment._id, { cancellationPaymentsEnabled: false });
                     const studentIds = enrollment.studentIds
                         .map(s => {
-                            if (s.studentId && typeof s.studentId === 'object' && s.studentId._id) {
-                                return s.studentId._id;
-                            }
+                            if (s.studentId && typeof s.studentId === 'object' && s.studentId._id) return s.studentId._id;
                             return s.studentId ? s.studentId : null;
                         })
                         .filter(id => id !== null && id !== undefined);
-
-                    const students = await Student.find({
-                        _id: { $in: studentIds }
-                    }).select('name email').lean();
-
+                    const students = await Student.find({ _id: { $in: studentIds } }).select('name email').lean();
                     await createAutomaticPaymentFailedNotification(enrollment, students);
                     paymentsFailed++;
-                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pago automático fallido para enrollment ${enrollment._id} - saldo insuficiente`);
+                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pago automático fallido para enrollment ${enrollment._id} - sin saldo del periodo a pagar`);
                     processedCount++;
                     continue;
                 }
 
-                // Hay suficiente saldo, proceder con el pago automático
-                const newAvailableBalance = enrollment.available_balance - enrollment.totalAmount;
+                // Descontar solo el monto del periodo vencido; el resto (ej. pago adelantado del siguiente) se mantiene
+                const newAvailableBalance = parseFloat((availableBalance - amountToPay).toFixed(2));
                 const numberOfStudents = enrollment.studentIds.length;
-                const amountPerStudent = numberOfStudents > 0 ? newAvailableBalance / numberOfStudents : 0;
+                const amountPerStudent = numberOfStudents > 0 ? (newAvailableBalance / numberOfStudents) : 0;
 
                 // Actualizar amount de cada estudiante en studentIds
                 // Necesitamos extraer solo el ObjectId del studentId (puede venir poblado)
@@ -509,71 +810,32 @@ const processAutomaticPayments = async () => {
                     };
                 });
 
-                // Obtener el precio actualizado del plan según enrollmentType
+                // Obtener el precio actualizado del plan según enrollmentType (solo para mantener totalAmount al día)
                 let newTotalAmount = enrollment.totalAmount;
                 if (enrollment.planId && enrollment.planId.pricing) {
-                    const enrollmentType = enrollment.enrollmentType; // 'single', 'couple', 'group'
+                    const enrollmentType = enrollment.enrollmentType;
                     const planPricing = enrollment.planId.pricing[enrollmentType];
-                    
                     if (planPricing !== undefined && planPricing !== enrollment.totalAmount) {
                         newTotalAmount = planPricing;
                         console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Actualizando totalAmount de ${enrollment.totalAmount} a ${newTotalAmount} para enrollment ${enrollment._id}`);
                     }
                 }
 
-                // Calcular nuevo balance_per_class
-                // Lógica: Si (newAvailableBalance >= newTotalAmount) -> balance_per_class = newTotalAmount
-                //         Si (newAvailableBalance < newTotalAmount) -> balance_per_class = newAvailableBalance
-                // El balance_per_class nunca puede ser mayor que totalAmount
-                let newBalancePerClass;
-                if (newAvailableBalance >= newTotalAmount) {
-                    newBalancePerClass = parseFloat(newTotalAmount.toFixed(2));
-                } else {
-                    newBalancePerClass = parseFloat(newAvailableBalance.toFixed(2));
-                }
-
-                // Preparar actualización del enrollment
+                // Mantener available_balance y balance_per_class en sync; desactivar pagos automáticos solo si no alcanza para el próximo periodo
+                const newBalancePerClass = newAvailableBalance;
                 const updateData = {
-                    available_balance: parseFloat(newAvailableBalance.toFixed(2)),
+                    available_balance: newAvailableBalance,
                     balance_per_class: newBalancePerClass,
                     studentIds: updatedStudentIds,
                     totalAmount: parseFloat(newTotalAmount.toFixed(2))
                 };
-
-                // Verificar si después de la resta el saldo es insuficiente para el próximo pago
                 if (newAvailableBalance < newTotalAmount) {
                     updateData.cancellationPaymentsEnabled = false;
                     autoPaymentsDisabled++;
-
-                    // Obtener información completa de estudiantes para la notificación
-                    const studentIds = enrollment.studentIds
-                        .map(s => {
-                            if (s.studentId && typeof s.studentId === 'object' && s.studentId._id) {
-                                return s.studentId._id;
-                            }
-                            return s.studentId ? s.studentId : null;
-                        })
-                        .filter(id => id !== null && id !== undefined);
-
-                    const students = await Student.find({
-                        _id: { $in: studentIds }
-                    }).select('name email').lean();
-
-                    // Actualizar enrollment
-                    await Enrollment.findByIdAndUpdate(enrollment._id, updateData);
-
-                    // Crear notificación de desactivación
-                    await createAutomaticPaymentsDisabledNotification(enrollment, students);
-                    const currentBalancePerClass = enrollment.balance_per_class || 0;
-                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pagos automáticos desactivados para enrollment ${enrollment._id} - saldo insuficiente después del pago`);
-                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] balance_per_class actualizado: ${currentBalancePerClass} → ${newBalancePerClass}`);
-                } else {
-                    // Actualizar enrollment sin desactivar pagos automáticos
-                    await Enrollment.findByIdAndUpdate(enrollment._id, updateData);
-                    const currentBalancePerClass = enrollment.balance_per_class || 0;
-                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pago automático procesado exitosamente para enrollment ${enrollment._id}`);
-                    console.log(`[CRONJOB PAGOS AUTOMÁTICOS] balance_per_class actualizado: ${currentBalancePerClass} → ${newBalancePerClass}`);
                 }
+
+                await Enrollment.findByIdAndUpdate(enrollment._id, updateData);
+                console.log(`[CRONJOB PAGOS AUTOMÁTICOS] Pago automático procesado para enrollment ${enrollment._id}: pagado ${amountToPay.toFixed(2)} (periodo vencido), available_balance = ${newAvailableBalance.toFixed(2)}`);
 
                 paymentsProcessed++;
                 processedCount++;
@@ -707,6 +969,8 @@ module.exports = {
     processAutomaticPayments,
     initAutomaticPaymentsCronjob,
     processExpiredSubstituteProfessors,
-    initSubstituteProfessorExpiryCronjob
+    initSubstituteProfessorExpiryCronjob,
+    processEnrollmentRenewals,
+    initEnrollmentRenewalsCronjob
 };
 

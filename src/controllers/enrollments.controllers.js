@@ -4,6 +4,7 @@ const Plan = require('../models/Plans'); // Necesario para popular
 const Student = require('../models/Student'); // Necesario para popular
 const Professor = require('../models/Professor'); // Necesario para popular
 const ClassRegistry = require('../models/ClassRegistry'); // Modelo para registros de clase
+const EnrollmentCycleHistory = require('../models/EnrollmentCycleHistory'); // Historial de ciclos (start/end, pricePerHour) para reportes
 const Penalizacion = require('../models/Penalizacion'); // Necesario para validar penalizationId
 const PenalizationRegistry = require('../models/PenalizationRegistry'); // Necesario para obtener información de penalizaciones
 const ConversationalAttendance = require('../models/ConversationalAttendance'); // Necesario para obtener registros de conversational attendance
@@ -441,6 +442,20 @@ enrollmentCtrl.create = async (req, res) => {
                 await ClassRegistry.insertMany(classRegistries);
             }
 
+            // Crear registro de historial del ciclo actual (para actualizar balanceRemaining a fin de mes)
+            const pricePerHourCycle = savedEnrollment.monthlyClasses > 0
+                ? savedEnrollment.totalAmount / savedEnrollment.monthlyClasses
+                : 0;
+            await EnrollmentCycleHistory.create({
+                enrollmentId: savedEnrollment._id,
+                startDate: savedEnrollment.startDate,
+                endDate: savedEnrollment.endDate,
+                totalAmount: savedEnrollment.totalAmount,
+                monthlyClasses: savedEnrollment.monthlyClasses,
+                pricePerHour: parseFloat(pricePerHourCycle.toFixed(2)),
+                balanceRemaining: null
+            });
+
             // Popular los campos en la respuesta
             const populatedEnrollment = await Enrollment.findById(savedEnrollment._id)
                                                         .populate(populateOptions)
@@ -522,6 +537,20 @@ enrollmentCtrl.create = async (req, res) => {
             if (classRegistries.length > 0) {
                 await ClassRegistry.insertMany(classRegistries);
             }
+
+            // Crear registro de historial del ciclo actual (para actualizar balanceRemaining a fin de mes)
+            const pricePerHourCycleB = savedEnrollment.monthlyClasses > 0
+                ? savedEnrollment.totalAmount / savedEnrollment.monthlyClasses
+                : 0;
+            await EnrollmentCycleHistory.create({
+                enrollmentId: savedEnrollment._id,
+                startDate: savedEnrollment.startDate,
+                endDate: savedEnrollment.endDate,
+                totalAmount: savedEnrollment.totalAmount,
+                monthlyClasses: savedEnrollment.monthlyClasses,
+                pricePerHour: parseFloat(pricePerHourCycleB.toFixed(2)),
+                balanceRemaining: null
+            });
 
             // Popular los campos en la respuesta
             const populatedEnrollment = await Enrollment.findById(savedEnrollment._id)
@@ -1148,6 +1177,22 @@ enrollmentCtrl.resume = async (req, res) => {
 
         if (classesToRescheduleCount === 0) {
             return res.status(400).json({ message: 'No hay clases pendientes para reagendar.' });
+        }
+
+        // Si al menos una clase del enrollment ya fue vista (classViewed !== 0), guardar el ciclo actual en historial
+        // para que reportes puedan usar el pricePerHour correcto de ese periodo
+        const hasAnyViewedClass = allClasses.some(cr => cr.classViewed != null && cr.classViewed !== 0);
+        if (hasAnyViewedClass && enrollment.startDate && enrollment.endDate != null && enrollment.totalAmount != null && enrollment.monthlyClasses != null && enrollment.monthlyClasses > 0) {
+            const pricePerHour = enrollment.totalAmount / enrollment.monthlyClasses;
+            await EnrollmentCycleHistory.create({
+                enrollmentId: enrollment._id,
+                startDate: enrollment.startDate,
+                endDate: enrollment.endDate,
+                totalAmount: enrollment.totalAmount,
+                monthlyClasses: enrollment.monthlyClasses,
+                pricePerHour: parseFloat(pricePerHour.toFixed(2)),
+                balanceRemaining: null
+            });
         }
 
         let newEndDate;

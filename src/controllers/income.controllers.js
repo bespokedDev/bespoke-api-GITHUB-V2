@@ -11,6 +11,7 @@ const Plan = require('../models/Plans');
 const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
 const ClassRegistry = require('../models/ClassRegistry');
+const EnrollmentCycleHistory = require('../models/EnrollmentCycleHistory');
 const ProfessorBonus = require('../models/ProfessorBonus');
 const PenalizationRegistry = require('../models/PenalizationRegistry');
 
@@ -626,10 +627,35 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             const plan = enrollment.planId;
             const studentList = enrollment.studentIds;
 
-            const period = `${moment.utc(startDate).format("MMM Do")} - ${moment.utc(endDate).format("MMM Do")}`;
             const planPrefix = { 'single': 'S', 'couple': 'C', 'group': 'G' }[enrollment.enrollmentType] || 'U';
             const planName = plan ? plan.name : 'N/A';
             const planDisplay = `${planPrefix} - ${planName}`;
+
+            // Ciclos del enrollment que caen dentro del rango del reporte (primer día del mes hasta fecha fin del reporte)
+            const cyclesInRange = await EnrollmentCycleHistory.find({
+                enrollmentId: enrollment._id,
+                startDate: { $lte: endDate },
+                endDate: { $gte: startDate }
+            }).sort({ startDate: 1 }).lean();
+
+            const periodsToProcess = cyclesInRange.length > 0
+                ? cyclesInRange.map(c => ({
+                    cycle: c,
+                    effectiveStart: new Date(Math.max(c.startDate.getTime(), startDate.getTime())),
+                    effectiveEnd: new Date(Math.min(c.endDate.getTime(), endDate.getTime()))
+                }))
+                : [{ cycle: null, effectiveStart: startDate, effectiveEnd: endDate }];
+
+            let lastBalanceRemaining = 0, lastPricePerHour = 0, lastHoursByProfessor = null;
+            for (const period of periodsToProcess) {
+                const effectiveStart = period.effectiveStart;
+                const effectiveEnd = period.effectiveEnd;
+                const cycle = period.cycle;
+                const periodLabel = cycle
+                    ? `${moment.utc(cycle.startDate).format("MMM Do")} - ${moment.utc(cycle.endDate).format("MMM Do")}`
+                    : `${moment.utc(startDate).format("MMM Do")} - ${moment.utc(endDate).format("MMM Do")}`;
+                const monthStartStr = moment.utc(effectiveStart).format('YYYY-MM-DD');
+                const monthEndStr = moment.utc(effectiveEnd).format('YYYY-MM-DD');
             
             // Ordenar estudiantes alfabéticamente
             const sortedStudentList = studentList && studentList.length > 0
@@ -653,27 +679,30 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                     }).join(' & ')
                     : 'Estudiante Desconocido';
             
-            // PARTE 2: Calcular pricePerHour dividiendo el precio del plan entre el total de ClassRegistry normales
-            // Buscar todos los ClassRegistry del enrollment donde reschedule = 0 (solo clases normales, no reschedules)
-            const totalNormalClasses = await ClassRegistry.countDocuments({
-                enrollmentId: enrollment._id,
-                originalClassId: null // Solo clases normales, excluir reschedules
-            });
-
-            // totalHours debe ser el número real de registros de clase del enrollment
-            // Incluye clases normales (reschedule = 0) y clases padre en reschedule (reschedule = 1 o 2)
-            // Excluye los registros de reschedule en sí (los que tienen originalClassId)
-            const totalHours = await ClassRegistry.countDocuments({
-                enrollmentId: enrollment._id,
-                originalClassId: null // Solo clases padre (normales o en reschedule), excluir reschedules en sí
-            });
-
+            // PARTE 2: pricePerHour y totalHours según ciclo o enrollment actual
+            let totalNormalClasses;
+            let totalHours;
             let pricePerHour = 0;
-            if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
-                const price = plan.pricing[enrollment.enrollmentType];
-                if (typeof price === 'number') {
-                    // Dividir el precio del plan entre el total de clases normales
-                    pricePerHour = price / totalNormalClasses;
+            if (cycle) {
+                totalHours = await ClassRegistry.countDocuments({
+                    enrollmentId: enrollment._id,
+                    originalClassId: null,
+                    classDate: { $gte: monthStartStr, $lte: monthEndStr }
+                });
+                totalNormalClasses = totalHours;
+                pricePerHour = cycle.pricePerHour != null ? Number(cycle.pricePerHour) : 0;
+            } else {
+                totalNormalClasses = await ClassRegistry.countDocuments({
+                    enrollmentId: enrollment._id,
+                    originalClassId: null
+                });
+                totalHours = await ClassRegistry.countDocuments({
+                    enrollmentId: enrollment._id,
+                    originalClassId: null
+                });
+                if (plan && plan.pricing && enrollment.enrollmentType && totalNormalClasses > 0) {
+                    const price = plan.pricing[enrollment.enrollmentType];
+                    if (typeof price === 'number') pricePerHour = price / totalNormalClasses;
                 }
             }
 
@@ -707,26 +736,24 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 console.warn(`[generateGeneralProfessorsReportLogic] ⚠️ El profesor ${professor._id || professor} no tiene typeId, usando pPerHour = 0`);
             }
 
-            // PARTE 1: Calcular amount y balance basado en available_balance y totalAmount
-            const availableBalance = enrollment.available_balance || 0;
-            const totalAmount = enrollment.totalAmount || 0;
+            // PARTE 1: amount y balance según ciclo o enrollment actual
+            const totalAmount = cycle ? (cycle.totalAmount != null ? Number(cycle.totalAmount) : 0) : (enrollment.totalAmount || 0);
+            const availableBalance = cycle
+                ? (cycle.balanceRemaining != null ? Number(cycle.balanceRemaining) : (enrollment.available_balance || 0))
+                : (enrollment.available_balance || 0);
             
             let calculatedAmount = 0;
             let calculatedBalance = 0;
-            
             if (availableBalance >= totalAmount) {
-                // Si available_balance >= totalAmount: amount = totalAmount, balance = available_balance - totalAmount
                 calculatedAmount = totalAmount;
                 calculatedBalance = availableBalance - totalAmount;
             } else {
-                // Si available_balance < totalAmount: amount = 0, balance = available_balance
                 calculatedAmount = 0;
                 calculatedBalance = availableBalance;
             }
 
-            // PARTE 4, 5 y 6: Procesar ClassRegistry y calcular horas vistas
-            // Calcular horas vistas agrupadas por profesor (incluyendo suplentes)
-            const hoursByProfessor = await processClassRegistryForEnrollment(enrollment, startDate, endDate);
+            // PARTE 4, 5 y 6: Procesar ClassRegistry en el rango del periodo (effectiveStart/End)
+            const hoursByProfessor = await processClassRegistryForEnrollment(enrollment, effectiveStart, effectiveEnd);
             
             // Obtener horas vistas del profesor del enrollment
             const enrollmentProfessorId = professor._id.toString();
@@ -755,9 +782,7 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 balanceRemaining = calculatedAmount - totalTeacher - totalBespoke;
             }
 
-            // Buscar clases específicas que dio el profesor del enrollment dentro del mes
-            const monthStartStr = moment.utc(startDate).format('YYYY-MM-DD');
-            const monthEndStr = moment.utc(endDate).format('YYYY-MM-DD');
+            // Usar monthStartStr/monthEndStr del periodo (effectiveStart/effectiveEnd) ya definidos arriba
             const enrollmentProfessorObjectId = new mongoose.Types.ObjectId(enrollmentProfessorId);
             
             // Buscar clases donde el professorId coincide con el profesor del enrollment
@@ -789,11 +814,11 @@ const generateGeneralProfessorsReportLogic = async (month) => {
             const lostClassesCount = lostClasses.length;
             const lostClassesAmount = pricePerHour > 0 ? lostClassesCount * pricePerHour : 0;
 
-            // Crear entrada para el profesor del enrollment
+            // Crear entrada para el profesor del enrollment (una por periodo/ciclo)
             professorDetails.push({
                 professorId: professor._id,
                 enrollmentId: enrollment._id,
-                period: period,
+                period: periodLabel,
                 plan: planDisplay,
                 studentName: studentNamesConcatenated,
                 amount: parseFloat(calculatedAmount.toFixed(2)),
@@ -833,13 +858,16 @@ const generateGeneralProfessorsReportLogic = async (month) => {
                 enrollmentStatus: enrollment.status // Para no duplicar: si es 3 (pausa), no sumar en totalBalanceRemaining
             });
 
-            // PARTE 6: Si hay clases dadas por suplentes, almacenar información para procesarlas después
-            // Guardamos la información de suplentes en una estructura temporal
-            // IMPORTANTE: Guardar balanceRemaining y pricePerHour del enrollment original para usarlos en suplentes
-            const originalBalanceRemaining = parseFloat(balanceRemaining.toFixed(2));
-            const originalPricePerHour = parseFloat(pricePerHour.toFixed(3));
-            
-            for (const [substituteProfessorId, substituteHoursData] of hoursByProfessor.entries()) {
+            lastBalanceRemaining = balanceRemaining;
+            lastPricePerHour = pricePerHour;
+            lastHoursByProfessor = hoursByProfessor;
+            }
+
+            // PARTE 6: Suplentes (una vez por enrollment, con último periodo)
+            const originalBalanceRemaining = parseFloat(Number(lastBalanceRemaining ?? 0).toFixed(2));
+            const originalPricePerHour = parseFloat(Number(lastPricePerHour ?? 0).toFixed(3));
+            const hoursByProfessorForSubstitutes = lastHoursByProfessor || new Map();
+            for (const [substituteProfessorId, substituteHoursData] of hoursByProfessorForSubstitutes.entries()) {
                
                 
                 // Determinar el tipo de profesor

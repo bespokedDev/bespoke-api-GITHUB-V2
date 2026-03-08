@@ -171,8 +171,8 @@ const headers = {
   - `enrollmentType: "couple"` → `plan.pricing.couple`
   - `enrollmentType: "group"` → `plan.pricing.group`
 - `totalAmount` (number): **Calculado automáticamente** - Monto total. Se calcula como `precio_del_plan × número_de_estudiantes`
-- `available_balance` (number): **Calculado automáticamente** - Balance disponible. Se inicializa con el mismo valor de `totalAmount` al crear el enrollment
-- `balance_per_class` (number): **Calculado automáticamente** - Valor del dinero que le queda por cada clase que han visto los estudiantes. Se inicializa en `0` al crear el enrollment y se actualiza automáticamente cuando se crean incomes o se procesan pagos automáticos. Este valor nunca puede ser mayor que `totalAmount`
+- `available_balance` (number): **Balance disponible total** del estudiante para ese enrollment. Se inicializa en `0` al crear el enrollment; aumenta con los incomes (pagos del estudiante) y disminuye con los pagos automáticos (cobro al profesor). A **fin de mes** el cronjob de cierre mensual lo sincroniza con `balance_per_class` para reflejar la realidad. No debe confundirse con "solo aumenta": se actualiza también al descontar pagos al profesor y a fin de mes.
+- `balance_per_class` (number): **Monto total que queda disponible para las clases que aún no se han visto**. Se va descontando según las clases vistas o perdidas (Class Lost). A fin de mes el cronjob de cierre mensual actualiza este valor y sincroniza `available_balance` con él. Se usa junto con **EnrollmentCycleHistory.balanceRemaining** en el reporte contable por periodos.
 - `disolve_reason` (string): Razón de disolución del enrollment (por defecto: null)
 - `disolve_user` (ObjectId): Referencia al usuario que realizó el disolve del enrollment (por defecto: null)
   - Se guarda automáticamente cuando se ejecuta el endpoint de disolución
@@ -215,6 +215,39 @@ const headers = {
   - `3` = En pausa (temporalmente suspendido)
 - `createdAt` (date): Fecha de creación (generado automáticamente)
 - `updatedAt` (date): Fecha de última actualización (generado automáticamente)
+
+---
+
+## 📋 **EnrollmentCycleHistory (Historial de Ciclos)**
+
+### **Descripción**
+Modelo que guarda cada ciclo de un enrollment (periodo entre `startDate` y `endDate`) con los datos necesarios para reportes contables y para el cronjob de pagos automáticos. Permite separar por periodos el dinero que le quedaba al estudiante (`balanceRemaining`) y el valor por clase (`pricePerHour`) de ese ciclo.
+
+**Colección en MongoDB:** `enrollment_cycle_histories`
+
+### **Estructura del esquema**
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `enrollmentId` | ObjectId (ref: Enrollment) | Sí | ID del enrollment al que pertenece el ciclo |
+| `startDate` | Date | Sí | Inicio del ciclo (coincide con `startDate` del enrollment en ese periodo) |
+| `endDate` | Date | Sí | Fin del ciclo (coincide con `endDate` del enrollment en ese periodo) |
+| `totalAmount` | Number (min: 0) | Sí | `totalAmount` del enrollment en este ciclo |
+| `monthlyClasses` | Number (min: 0) | Sí | Número de clases del ciclo |
+| `pricePerHour` | Number (min: 0) | Sí | `totalAmount / monthlyClasses`; valor por clase en este ciclo |
+| `balanceRemaining` | Number (min: 0) | No (default: null) | Dinero que le quedaba al estudiante de este ciclo. Se actualiza a fin de mes en el cronjob de cierre mensual; al renovar se actualiza el ciclo que termina con el `available_balance` antes de descontar. Usado en reporte contable y en el cronjob de pagos automáticos (monto a pagar al profesor del periodo vencido). |
+
+**Índice:** `{ enrollmentId: 1, startDate: 1, endDate: 1 }`
+
+### **Cuándo se crea o actualiza**
+
+1. **Al crear un enrollment** (`POST /api/enrollments`): Se crea un registro para el ciclo actual con `balanceRemaining: null`.
+2. **Al renovar** (cronjob de renovación): Se actualiza el registro del ciclo que termina con `balanceRemaining = available_balance` (antes de restar el nuevo ciclo). Se crea un nuevo registro para el nuevo ciclo con `balanceRemaining: null`.
+3. **Al reanudar** (`PATCH /api/enrollments/:id/resume`): Si había al menos una clase vista, se crea un registro del ciclo actual con `balanceRemaining: null`.
+4. **A fin de mes** (cronjob de cierre mensual de clases): Se actualiza el registro del ciclo actual del enrollment con `balanceRemaining = balance_per_class` (valor tras el cierre del mes).
+
+### **Uso en reporte contable**
+Para periodos vencidos de un enrollment se usa `balanceRemaining` del **EnrollmentCycleHistory** correspondiente como "dinero que le quedaba de ese periodo", sin mezclar con el ciclo activo ni con otros periodos.
 
 ---
 
@@ -512,16 +545,14 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
 - Ejemplo: Si `plan.pricing.couple = 180` y hay 2 estudiantes → `totalAmount = 180 × 2 = 360`
 
 **3. `available_balance`:**
-- Se inicializa con el mismo valor de `totalAmount`
-- Ejemplo: Si `totalAmount = 360` → `available_balance = 360`
+- Se inicializa en `0` al crear el enrollment (el estudiante paga vía incomes).
+- Aumenta con los incomes; disminuye con los pagos automáticos (cronjob que paga al profesor) y con la renovación (descuento del nuevo ciclo).
+- A fin de mes el cronjob de cierre mensual lo iguala a `balance_per_class` para mantener coherencia.
 
 **4. `balance_per_class`:**
-- Se inicializa en `0` al crear el enrollment
-- Se actualiza automáticamente cuando se crean incomes o se procesan pagos automáticos
-- Lógica de actualización:
-  - Si `available_balance >= totalAmount` → `balance_per_class = totalAmount`
-  - Si `available_balance < totalAmount` → `balance_per_class = available_balance`
-- Este valor nunca puede ser mayor que `totalAmount`
+- Representa el **total de dinero que queda para las clases aún no vistas** (no "precio por clase"). Se va descontando al marcar clases vistas o Class Lost.
+- Se inicializa en `0` al crear; se actualiza al crear incomes, al procesar pagos automáticos, al renovar y en el cierre mensual de clases.
+- A fin de mes se sincroniza `available_balance = balance_per_class`.
 
 **4. `amount` (por estudiante en `studentIds`):**
 
@@ -537,7 +568,7 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
 - **Resultado:**
   - `pricePerStudent = 100`
   - `totalAmount = 100 × 1 = 100`
-  - `available_balance = 100`
+  - `available_balance = 0` (el estudiante paga vía incomes)
   - `balance_per_class = 0`
   - `amount` (por estudiante) = `100` (precio del plan según enrollmentType)
 
@@ -548,7 +579,7 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
 - **Resultado:**
   - `pricePerStudent = 180`
   - `totalAmount = 180 × 2 = 360`
-  - `available_balance = 360`
+  - `available_balance = 0`
   - `balance_per_class = 0`
   - `amount` (por estudiante) = `180` (precio del plan según enrollmentType, cada estudiante tiene el mismo amount)
 
@@ -559,11 +590,13 @@ El sistema calcula automáticamente los siguientes campos basándose en el plan 
 - **Resultado:**
   - `pricePerStudent = 250`
   - `totalAmount = 250 × 3 = 750`
-  - `available_balance = 750`
+  - `available_balance = 0`
   - `balance_per_class = 0`
   - `amount` (por estudiante) = `250` (precio del plan según enrollmentType, cada estudiante tiene el mismo amount)
 
 **Nota importante:** Todos estos campos (`pricePerStudent`, `totalAmount`, `available_balance`, `balance_per_class`, y `amount` por estudiante) se calculan automáticamente al crear el enrollment. Los campos `disolve_user`, `balance_transferred_to_enrollment`, `disolveDate` y `pauseDate` se inicializan en `null` al crear. No es necesario enviar los campos calculados/inicializados en el request body, y si se envían, serán sobrescritos.
+
+**Historial de ciclos:** Al crear un enrollment (planType 1 o 2), el sistema crea automáticamente un registro en **EnrollmentCycleHistory** para el ciclo actual (`startDate`, `endDate`, `totalAmount`, `monthlyClasses`, `pricePerHour`, `balanceRemaining: null`). Ese registro se actualizará a fin de mes con `balanceRemaining` en el cronjob de cierre mensual.
 
 #### **Lógica de Generación de Clases**
 

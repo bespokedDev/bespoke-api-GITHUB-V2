@@ -843,6 +843,9 @@ GET /api/incomes/professors-payout-report?month=2025-01
 ```
 
 #### **Response (200)**
+
+La API responde con un objeto JSON con las claves indicadas abajo. Para el **formato completo y tipos** que recibirá el frontend, ver la sección **«Formato del response para el frontend»** más abajo.
+
 ```json
 {
   "message": "Reportes de pagos de profesores para el mes 2025-01 generados exitosamente.",
@@ -873,7 +876,10 @@ GET /api/incomes/professors-payout-report?month=2025-01
           "totalTeacher": 97.50,
           "totalBespoke": 24.38,
           "balanceRemaining": 48.12,
-          "status": 1
+          "professorClasses": { "count": 6, "details": [] },
+          "lostClasses": { "count": 0, "amount": 0, "details": [] },
+          "status": 1,
+          "enrollmentStatus": 1
         }
       ],
       "totalTeacher": 97.50,
@@ -1025,7 +1031,7 @@ GET /api/incomes/professors-payout-report?month=2025-01
     "totalNeto": 287.50,  // 🆕 Total sin descuentos (subtotal.total + bonos)
     "totalFinal": 212.50  // Total con descuentos (totalNeto - penalizaciones)
   },
-  "excedente": {
+  "excedents": {
     "reportDateRange": "Jan 1st 2025 - Jan 31st 2025",
     "totalExcedente": 1800.00,
     "totalExcedenteIncomes": 500.00,
@@ -1169,6 +1175,116 @@ GET /api/incomes/professors-payout-report?month=2025-01
   }
 }
 ```
+
+---
+
+#### **Formato del response para el frontend**
+
+Estructura exacta que devuelve la API en **GET** `/api/incomes/professors-payout-report?month=YYYY-MM` (200). El frontend puede tipar o validar contra este esquema.
+
+**Raíz del response**
+
+| Clave | Tipo | Descripción |
+|-------|------|-------------|
+| `message` | `string` | Mensaje de éxito incluyendo el mes. |
+| `report` | `Array<ProfessorReportItem>` | Lista de reportes por profesor (excluye al profesor especial). |
+| `totals` | `TotalsObject` | Subtotales por sección y total general. |
+| `specialProfessorReport` | `SpecialProfessorReport \| null` | Reporte del profesor especial (ej. Andrea Wias), o `null` si no hay datos. |
+| `excedents` | `ExcedentsReport \| null` | Reporte de excedentes, o `null` si no hay datos. |
+
+**`report[]` — cada elemento (`ProfessorReportItem`)**
+
+| Clave | Tipo | Descripción |
+|-------|------|-------------|
+| `professorId` | `ObjectId` | ID del profesor. |
+| `professorName` | `string` | Nombre del profesor. |
+| `reportDateRange` | `string` | Rango de fechas del reporte (ej. `"Jan 1st 2025 - Jan 31st 2025"`). |
+| `rates` | `{ single?: number, couple?: number, group?: number }` | Tarifas por tipo de enrollment. |
+| `details` | `Array<ProfessorDetailEntry>` | Filas por enrollment/periodo (puede haber varias por enrollment si hay ciclos). |
+| `totalTeacher` | `number` | Suma de Total Teacher del profesor. |
+| `totalBespoke` | `number` | Suma de Total Bespoke. |
+| `totalBalanceRemaining` | `number` | Suma de balance restante (excluyendo filas de suplentes cuando aplica). |
+| `abonos` | `{ total: number, details: BonusDetail[] }` | Bonos del profesor. |
+| `penalizations` | `{ count: number, totalMoney: number, details: PenalizationDetail[] }` | Descuentos por penalizaciones. |
+| `totalNeto` | `number` | Total sin descuentos (totalTeacher + bonos). |
+| `totalFinal` | `number` | Total con descuentos (totalNeto - penalizaciones). |
+
+**`details[]` — cada fila (`ProfessorDetailEntry`)**
+
+| Clave | Tipo | Descripción |
+|-------|------|-------------|
+| `professorId` | `ObjectId` | ID del profesor. |
+| `enrollmentId` | `ObjectId` | ID del enrollment. |
+| `period` | `string` | Etiqueta del periodo (ej. `"Jan 1st - Jan 31st"` o rango del ciclo si hay EnrollmentCycleHistory). |
+| `plan` | `string` | Plan mostrado (ej. `"S - Plan Individual"`). |
+| `studentName` | `string` | Nombre(s) del estudiante o alias del enrollment. |
+| `amount` | `number` | Monto del periodo. |
+| `amountInDollars` | `number` | Igual que amount (compatibilidad). |
+| `totalHours` | `number` | Total de horas/clases del periodo. |
+| `pricePerHour` | `number` | Precio por hora del periodo. |
+| `hoursSeen` | `number` | Horas vistas en el periodo. |
+| `pPerHour` | `number` | Pago por hora al profesor. |
+| `balance` | `number` | Balance usado en el cálculo. |
+| `totalTeacher` | `number` | Hours Seen × pPerHour. |
+| `totalBespoke` | `number` | (Hours Seen × pricePerHour) − totalTeacher. |
+| `balanceRemaining` | `number` | Balance restante del periodo. |
+| `professorClasses` | `{ count: number, details: ClassDetail[] }` | Clases dadas por el profesor en el periodo. |
+| `lostClasses` | `{ count: number, amount: number, details: LostClassDetail[] }` | Clases perdidas (classViewed = 4) en el periodo. |
+| `status` | `number` | Siempre `1` en detalles. |
+| `enrollmentStatus` | `number` | Status del enrollment (1 activo, 3 pausa, 0 disuelto). No sumar balance si es 3 cuando corresponda. |
+| `isSubstitute`? | `boolean` | Presente y `true` si la fila es de un suplente externo. |
+| `isEnrollmentSubstitute`? | `boolean` | Presente y `true` si es el suplente asignado del enrollment. |
+| `substituteClasses`? | `{ count: number, details: ClassDetail[] }` | Presente en filas de suplente; clases dadas por el suplente. |
+| `originalEnrollmentProfessorId`? | `string` | Presente en filas de suplente; ID del profesor titular. |
+
+**`professorClasses.details[]` y `substituteClasses.details[]` (`ClassDetail`)**
+
+- `classId`, `classDate`, `classTime`, `minutesViewed`, `classViewed`, `reschedule`, `isReschedule`, `originalClassDate`, `originalClassTime`.
+
+**`lostClasses.details[]` (`LostClassDetail`)**
+
+- `classId`, `classDate`, `classTime`.
+
+**`totals` (`TotalsObject`)**
+
+| Clave | Tipo | Descripción |
+|-------|------|-------------|
+| `subtotals` | `object` | |
+| `subtotals.normalProfessors` | `{ totalTeacher, totalBespoke, balanceRemaining, totalFinal }` | Totales de profesores normales. |
+| `subtotals.specialProfessor` | `{ total, balanceRemaining, totalFinal }` | Totales del profesor especial. |
+| `subtotals.excedents` | `{ totalExcedente }` | Total de excedentes. |
+| `grandTotal` | `{ balanceRemaining }` | Total general (suma de balanceRemaining de las tres secciones). |
+
+**`specialProfessorReport` (o `null`)**
+
+- `professorId`, `professorName`, `reportDateRange`, `rates`, `details` (array con estructura similar a `ProfessorDetailEntry` pero con campos del reporte especial: `payment`, `total`, `oldBalance`, etc.), `subtotal: { total, balanceRemaining }`, `abonos`, `penalizations`, `totalNeto`, `totalFinal`.
+
+**`excedents` (o `null`)**
+
+| Clave | Tipo | Descripción |
+|-------|------|-------------|
+| `reportDateRange` | `string` | Rango de fechas. |
+| `totalExcedente` | `number` | Total del excedente. |
+| `totalExcedenteIncomes` | `number` | Ingresos sin enrollment ni profesor. |
+| `totalExcedenteClasses` | `number` | Excedente por clases no vistas. |
+| `totalPrepaidEnrollments` | `number` | Enrollments prepagados. |
+| `totalPausedEnrollments` | `number` | Enrollments en pausa. |
+| `totalBonuses` | `number` | Bonos (positivo). |
+| `totalExcedentePenalizations` | `number` | Penalizaciones de estudiantes con incomes. |
+| `numberOfIncomes`, `numberOfClassesNotViewed`, `numberOfBonuses`, `numberOfPausedEnrollments` | `number` | Conteos. |
+| `incomeDetails` | `Array` | Detalle de ingresos excedentes. |
+| `classNotViewedDetails` | `Array` | Clases no vistas. |
+| `prepaidEnrollmentsDetails` | `Array` | Enrollments prepagados. |
+| `pausedEnrollmentsDetails` | `Array` | Enrollments en pausa. |
+| `bonusDetails` | `Array` | Bonos (valor negativo en excedentes). |
+| `penalizationDetails` | `Array` | Penalizaciones con incomes vinculados. |
+
+**Errores**
+
+- **400**: `{ message: string }` — Parámetro `month` faltante o formato distinto de YYYY-MM; o error de formato de ID/fecha.
+- **500**: `{ message: string, error?: string }` — Error interno.
+
+---
 
 #### **🆕 Nueva Funcionalidad - Excedente (Actualizada con Partes 9, 11 y 13)**
 
@@ -3486,6 +3602,7 @@ Si reschedule.classViewed === 3 o 4:
 1. `src/controllers/income.controllers.js`
    - Partes 1-9, 11, 12, 14: Todas las mejoras en reportes financieros
    - Parte 14: Nuevas reglas de negocio para enrollments en pausa, penalizaciones, reschedules y cálculo de horas
+   - **Reporte contable por ciclos**: integración con modelo `EnrollmentCycleHistory` en `generateGeneralProfessorsReportLogic` (consultar ciclos en rango del mes, desglose por periodo/ciclo para amount, balance, pricePerHour, ClassRegistry y suplentes; ver sección «Reporte por ciclos (EnrollmentCycleHistory)»)
 2. `src/controllers/specialProfessorReport.controller.js`
    - Partes 1-5, 7, 10, 11: Ajustes para reporte especial
 3. `src/models/PenalizationRegistry.js`
@@ -3696,7 +3813,7 @@ Map {
 
 ### **3. `generateGeneralProfessorsReportLogic(month)`**
 
-Genera el reporte general de profesores (todos excepto Andrea Wias).
+Genera el reporte general de profesores (todos excepto Andrea Wias). Desde la integración con **EnrollmentCycleHistory**, el reporte desglosa por **ciclos** cuando un enrollment tiene historial de ciclos cuyas fechas caen dentro del mes del reporte.
 
 **Parámetros:**
 - `month` (string): Mes en formato YYYY-MM
@@ -3719,17 +3836,56 @@ Genera el reporte general de profesores (todos excepto Andrea Wias).
 1. **Filtrar enrollments** por fecha (startDate o endDate dentro del mes)
 2. **Agrupar enrollments** por profesor del enrollment
 3. **Para cada enrollment**:
-   - Calcular `pricePerHour` (plan price / total normal classes)
-   - Calcular `amount` y `balance` (basado en available_balance)
-   - Procesar ClassRegistry con `processClassRegistryForEnrollment`
-   - Calcular horas vistas del profesor del enrollment
-   - Calcular `totalTeacher`, `totalBespoke`, `balanceRemaining`
-   - Identificar suplentes y almacenar para procesar después
+   - **[Ciclos]** Consultar `EnrollmentCycleHistory` con `enrollmentId`, `startDate <= endDate`, `endDate >= startDate` (rango del reporte), ordenado por `startDate`
+   - Construir **periodos a procesar** (`periodsToProcess`):
+     - **Si hay ciclos en rango**: un elemento por ciclo con `effectiveStart = max(cycle.startDate, startDate)`, `effectiveEnd = min(cycle.endDate, endDate)`
+     - **Si no hay ciclos**: un solo periodo con `cycle: null`, `effectiveStart: startDate`, `effectiveEnd: endDate`
+   - **Por cada periodo** (véase más abajo **Reporte por ciclos (EnrollmentCycleHistory)**):
+     - Calcular `pricePerHour` y `totalHours` según ciclo o enrollment actual
+     - Calcular `amount` y `balance` según ciclo o enrollment actual
+     - Procesar ClassRegistry con `processClassRegistryForEnrollment(enrollment, effectiveStart, effectiveEnd)`
+     - Calcular horas vistas del profesor, `totalTeacher`, `totalBespoke`, `balanceRemaining`
+     - Filtrar `professorClasses` y `lostClasses` por `monthStartStr`/`monthEndStr` del periodo
+     - Hacer **un** `professorDetails.push` por periodo (con `period: periodLabel`, amount, balance, totalTeacher, totalBespoke, balanceRemaining, professorClasses, lostClasses)
+   - **Suplentes (PARTE 6)**: se ejecutan **una vez por enrollment** (fuera del bucle de periodos), usando el último periodo: `lastBalanceRemaining`, `lastPricePerHour`, `lastHoursByProfessor`
 4. **Procesar suplentes**:
    - Para cada suplente, calcular su propio reporte
    - Marcar como "(Suplente)" en studentName
 5. **Buscar bonos** del profesor para el mes
 6. **Calcular sumatorias totales** de todos los profesores
+
+---
+
+#### **Reporte por ciclos (EnrollmentCycleHistory)**
+
+Cuando un enrollment tiene ciclos registrados en **EnrollmentCycleHistory** cuyas fechas se solapan con el mes del reporte, el reporte contable genera **una fila por ciclo** (o una sola fila si no hay ciclos en rango).
+
+**Consulta de ciclos en rango:**
+
+- `EnrollmentCycleHistory.find({ enrollmentId, startDate: { $lte: endDate }, endDate: { $gte: startDate } }).sort({ startDate: 1 }).lean()`
+- `startDate`/`endDate` del reporte: primer día del mes y fecha fin del reporte (según `month`).
+
+**Por cada periodo (ciclo o periodo único):**
+
+| Concepto | Con ciclo | Sin ciclo (enrollment normal) |
+|----------|-----------|-------------------------------|
+| **Rango de fechas** | `effectiveStart` / `effectiveEnd` (intersección ciclo ↔ mes) | `startDate` / `endDate` del reporte |
+| **pricePerHour** | `cycle.pricePerHour` | `plan.pricing[enrollmentType] / totalNormalClasses` |
+| **totalHours / totalNormalClasses** | Conteo de `ClassRegistry` con `classDate` en `[monthStartStr, monthEndStr]`, `originalClassId: null` | Conteo global del enrollment (`originalClassId: null`) |
+| **totalAmount** | `cycle.totalAmount` | `enrollment.totalAmount` |
+| **availableBalance** | `cycle.balanceRemaining != null ? cycle.balanceRemaining : enrollment.available_balance` | `enrollment.available_balance` |
+| **ClassRegistry** | `processClassRegistryForEnrollment(enrollment, effectiveStart, effectiveEnd)` | Mismo con `startDate`, `endDate` del reporte |
+| **professorClasses / lostClasses** | Filtradas por `classDate` en `[monthStartStr, monthEndStr]` del periodo | Mismo (rango = mes del reporte) |
+| **periodLabel** | `"MMM Do - MMM Do"` con fechas del ciclo | `"MMM Do - MMM Do"` con fechas del reporte |
+
+**Suplentes:**
+
+- Se procesan **una sola vez por enrollment**, después del bucle de periodos.
+- Se usan los valores del **último periodo** iterado: `lastBalanceRemaining`, `lastPricePerHour`, `lastHoursByProfessor` (si no hubo periodos, se usa `new Map()` para horas de suplentes).
+
+**Modelo utilizado:**
+
+- `EnrollmentCycleHistory`: ver documentación de Enrollments / cronjobs para el esquema (`enrollmentId`, `startDate`, `endDate`, `totalAmount`, `balanceRemaining`, `pricePerHour`, `monthlyClasses`, etc.).
 
 **Uso:**
 - Se llama desde `incomesCtrl.professorsPayoutReport`

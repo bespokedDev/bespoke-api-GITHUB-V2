@@ -2,7 +2,7 @@
 
 ## 📋 **Resumen**
 
-El sistema incluye **7 cronjobs** automatizados que se ejecutan periódicamente para gestionar enrollments, pagos, clases y lost class. En producción: los cronjobs diarios (enrollments por impago, pagos automáticos, profesores suplentes expirados, **lost class cuando endDate = hoy**) se ejecutan a las 00:00; el cronjob semanal (clases no gestionadas) los domingos a las 00:00; los cronjobs mensuales (finalización de clases y cierre mensual de clases) el último día de cada mes a las 00:00. La zona horaria es `America/Caracas`.
+El sistema incluye **8 cronjobs** automatizados que se ejecutan periódicamente para gestionar enrollments, pagos, renovaciones, clases y lost class. En producción: los cronjobs diarios (enrollments por impago, pagos automáticos, profesores suplentes expirados, **renovación automática de enrollments**, **lost class cuando endDate = hoy**) se ejecutan a las 00:00; el cronjob semanal (clases no gestionadas) los domingos a las 00:00; los cronjobs mensuales (finalización de clases y cierre mensual de clases) el último día de cada mes a las 00:00. La zona horaria es `America/Caracas`.
 
 ---
 
@@ -191,24 +191,23 @@ Este cronjob procesa automáticamente los pagos de enrollments que tienen habili
    - Filtra enrollments cuyo `endDate` coincida con la fecha actual (mismo día, ignorando la hora)
    - Los enrollments en pausa están protegidos de pagos automáticos
 
-2. **Verificación de Saldo Antes del Pago**
-   - Si `available_balance < totalAmount` ANTES de procesar el pago:
-     - Se detiene el proceso
-     - Se cambia `cancellationPaymentsEnabled` a `false`
-     - Se crea una notificación de pago automático fallido
+2. **Monto a Pagar (solo el periodo que vence)**
+   - El cobro al profesor es **solo por el dinero del periodo que termina**, no por todo el `available_balance`.
+   - Se consulta **EnrollmentCycleHistory** del ciclo que termina hoy (`enrollmentId`, `startDate`, `endDate` del enrollment actual) y se toma `balanceRemaining` (dinero que quedaba de ese periodo).
+   - **Monto a pagar:** `amountToPay = Math.min(available_balance, balanceRemaining del ciclo)`. Si no hay registro en el historial o `balanceRemaining` es null, se usa `available_balance` como fallback.
+   - Así, si el estudiante ya pagó el siguiente periodo, ese dinero no se descuenta; solo se paga al profesor lo correspondiente al periodo vencido.
 
-3. **Procesamiento del Pago Automático**
-   - Si hay suficiente saldo (`available_balance >= totalAmount`):
-     - Se resta: `available_balance = available_balance - totalAmount`
-     - Se divide el nuevo `available_balance` entre la cantidad de estudiantes en `studentIds`
-     - Se actualiza el campo `amount` de cada estudiante con el resultado de la división
-     - Se verifica el precio actual del plan según `enrollmentType` (`single`, `couple`, `group`)
-     - Si el precio del plan cambió respecto a `totalAmount`, se actualiza `totalAmount`
+3. **Verificación de Saldo**
+   - Si `amountToPay <= 0`: se desactiva `cancellationPaymentsEnabled`, se crea notificación de pago fallido y se omite el enrollment.
 
-4. **Validación Post-Pago**
-   - Si después de la resta `available_balance < totalAmount`:
-     - Se cambia `cancellationPaymentsEnabled` a `false`
-     - Se crea una notificación de desactivación de pagos automáticos
+4. **Procesamiento del Pago**
+   - Se descuenta solo el monto del periodo: `newAvailableBalance = available_balance - amountToPay`.
+   - Se reparte `newAvailableBalance` entre los estudiantes (`amount` en `studentIds`).
+   - Se actualiza `available_balance` y `balance_per_class` a `newAvailableBalance` (no a cero).
+   - Se actualiza `totalAmount` si el precio del plan cambió según `enrollmentType`.
+
+5. **Validación Post-Pago**
+   - Solo se desactiva `cancellationPaymentsEnabled` si `newAvailableBalance < newTotalAmount` (no alcanza para el próximo periodo).
 
 #### **Proceso de Ejecución**
 
@@ -233,19 +232,18 @@ Este cronjob procesa automáticamente los pagos de enrollments que tienen habili
    - Compara con la fecha actual normalizada
    - Solo procesa enrollments cuyo `endDate` coincida exactamente con el día actual
 
-3. **Verificación de Saldo**
-   - Si no hay suficiente saldo: desactiva pagos automáticos y crea notificación
-   - Si hay suficiente saldo: procede con el pago
+3. **Obtención del Monto del Periodo**
+   - Busca en **EnrollmentCycleHistory** el registro del ciclo actual (`enrollmentId`, `startDate`, `endDate`).
+   - `amountToPay = Math.min(available_balance, balanceRemaining)` (o `available_balance` si no hay historial).
 
 4. **Cálculo y Actualización**
-   - Calcula nuevo `available_balance` restando `totalAmount`
-   - Divide el nuevo balance entre el número de estudiantes
-   - Actualiza `amount` de cada estudiante en `studentIds`
+   - `newAvailableBalance = available_balance - amountToPay`
+   - Divide `newAvailableBalance` entre el número de estudiantes y actualiza `amount` en `studentIds`
+   - Actualiza `available_balance` y `balance_per_class` a `newAvailableBalance`
    - Verifica y actualiza `totalAmount` según el precio actual del plan
 
 5. **Validación Final**
-   - Verifica si el saldo restante es suficiente para el próximo pago
-   - Si no es suficiente, desactiva pagos automáticos y crea notificación
+   - Solo si `newAvailableBalance < newTotalAmount` se desactiva `cancellationPaymentsEnabled`
 
 #### **Notificaciones Generadas**
 
@@ -277,26 +275,26 @@ Este cronjob procesa automáticamente los pagos de enrollments que tienen habili
 
 #### **Campos Actualizados**
 
-Cuando el pago automático se procesa exitosamente, se actualizan los siguientes campos:
+Cuando el pago automático se procesa exitosamente:
 
-- **`available_balance`**: Se resta `totalAmount` del valor actual
-- **`studentIds[].amount`**: Se actualiza con el resultado de dividir el nuevo `available_balance` entre el número de estudiantes
+- **`available_balance`**: Se resta solo `amountToPay` (monto del periodo vencido): `newAvailableBalance = available_balance - amountToPay`
+- **`balance_per_class`**: Se actualiza a `newAvailableBalance` (sincronizado con el saldo restante)
+- **`studentIds[].amount`**: Se actualiza con `newAvailableBalance / número de estudiantes`
 - **`totalAmount`**: Se actualiza si el precio del plan cambió según `enrollmentType`
-- **`cancellationPaymentsEnabled`**: Se cambia a `false` si el saldo es insuficiente (antes o después del pago)
+- **`cancellationPaymentsEnabled`**: Solo se cambia a `false` si `newAvailableBalance < newTotalAmount`
 
 #### **Ejemplo de Cálculo**
 
-**Escenario:**
-- `available_balance`: 1000
-- `totalAmount`: 300
+**Escenario:** El estudiante ya pagó el siguiente periodo; en el ciclo que vence hoy quedaron 100.
+- `available_balance`: 500 (100 del periodo vencido + 400 adelantados)
+- `balanceRemaining` del ciclo (EnrollmentCycleHistory): 100
 - Número de estudiantes: 2
 
 **Proceso:**
-1. Verificación: `1000 >= 300` ✅ (hay suficiente saldo)
-2. Resta: `available_balance = 1000 - 300 = 700`
-3. División: `amount por estudiante = 700 / 2 = 350`
-4. Actualización: Cada estudiante en `studentIds` recibe `amount: 350`
-5. Validación: `700 >= 300` ✅ (suficiente para próximo pago, pagos automáticos se mantienen activos)
+1. `amountToPay = min(500, 100) = 100` (solo se paga lo del periodo vencido)
+2. `newAvailableBalance = 500 - 100 = 400`
+3. `amount` por estudiante = 400 / 2 = 200
+4. Se mantienen 400 en `available_balance` y `balance_per_class` para el siguiente periodo
 
 #### **Logs del Cronjob**
 El cronjob registra en consola:
@@ -323,7 +321,27 @@ El cronjob registra en consola:
 
 ---
 
-### **3. Cronjob de Profesores Suplentes Expirados**
+### **3. Cronjob de Renovación Automática de Enrollments**
+
+**Archivo**: `src/jobs/enrollments.jobs.js`  
+**Función**: `processEnrollmentRenewals`  
+**Inicialización**: `initEnrollmentRenewalsCronjob`
+
+#### **Descripción**
+Este cronjob ejecuta la renovación automática de enrollments cuyo `endDate` coincide con el día actual y tienen `status = 1` (activo). Si hay saldo suficiente, guarda el ciclo que termina en **EnrollmentCycleHistory** (actualizando `balanceRemaining` si existe el registro), marca clases no vistas como Class Lost (4), crea el nuevo ciclo con sus ClassRegistry y actualiza el enrollment. Si no hay saldo suficiente, desactiva el enrollment (status = 2), crea notificación de fallo de renovación y marca clases 0 → 4.
+
+#### **Reglas de Negocio**
+
+1. **Filtro:** Enrollments con `status: 1` y `endDate` igual al día de ejecución (00:00–23:59 UTC).
+2. **Sin saldo suficiente** (`available_balance < totalAmount` o `nuevoTotal > available_balance`): se pone `status = 2`, se crea notificación "No se pudo hacer la renovación de su suscripción por falta de fondos" y se marcan ClassRegistry con `classViewed: 0` → `4`.
+3. **Con saldo (renovación):** se actualiza EnrollmentCycleHistory del ciclo que termina con `balanceRemaining = available_balance`; se marcan clases 0 → 4; se calcula nuevo ciclo (planType 1 o 2); se crean ClassRegistry del nuevo ciclo; se crea nuevo registro en EnrollmentCycleHistory para el nuevo ciclo (`balanceRemaining: null`); se actualiza el enrollment con las nuevas fechas, montos y saldos.
+
+#### **Horario**
+- Diario a las 00:00 (medianoche), zona `America/Caracas`.
+
+---
+
+### **4. Cronjob de Profesores Suplentes Expirados**
 
 **Archivo**: `src/jobs/enrollments.jobs.js`  
 **Función**: `processExpiredSubstituteProfessors`  
@@ -453,7 +471,7 @@ El cronjob registra en consola:
 
 ---
 
-### **4. Cronjob de Finalización de Clases**
+### **5. Cronjob de Finalización de Clases**
 
 **Archivo**: `src/jobs/classRegistry.jobs.js`  
 **Función**: `processClassFinalization`  
@@ -703,7 +721,7 @@ El cronjob registra en consola:
 
 ---
 
-### **5. Cronjob de Clases No Gestionadas Semanalmente**
+### **6. Cronjob de Clases No Gestionadas Semanalmente**
 
 **Archivo**: `src/jobs/classRegistry.jobs.js`  
 **Función**: `processWeeklyUnguidedClasses`  
@@ -946,7 +964,7 @@ Este cronjob incluye lógica especial para enrollments en pausa:
 
 ---
 
-### **6. Cronjob de Cierre Mensual de Clases**
+### **7. Cronjob de Cierre Mensual de Clases**
 
 **Archivo**: `src/jobs/classRegistry.jobs.js`  
 **Función**: `processMonthlyClassClosure`  
@@ -969,10 +987,12 @@ Este cronjob procesa el cierre mensual de clases, marcando las clases no vistas 
      - Si el enrollment está en pausa pero **no tiene `pauseDate`**: se omite completamente, no se procesa ninguna clase
      - Si el enrollment está en pausa y **tiene `pauseDate`**: solo se procesan clases del mes donde `classDate < pauseDate` (clases anteriores a la pausa)
 
-3. **Actualización de Clases del Mes y `balance_per_class`**
+3. **Actualización de Clases del Mes, `balance_per_class` y `available_balance`**
    - Para cada enrollment, busca todas sus ClassRegistry y filtra las del mes actual (y `classDate < pauseDate` si está en pausa).
    - **Clases con `classViewed: 0`**: Se aplica la **regla padre/reschedule** (padre con reschedule 1 y hija con classViewed 1 o 2 no se marca 4 ni se resta; hijas 0 sí se marcan 4 pero no restan). Solo las que correspondan pasan a `classViewed: 4`. Solo por cada **padre** que pase a 4 se resta de `balance_per_class` un valor completo (`valuePerClass`). Las clases reschedule (hijas) **nunca** restan dinero.
    - **Clases con `classViewed: 2`**: **No se cambian** de estado (siguen en 2). Por cada **padre** con `classViewed: 2` en el mes se resta del `balance_per_class` el **valor de los minutos vistos**: `valuePerClass * convertMinutesToFractionalHours(minutesViewed)`. Los minutos no vistos no se restan.
+   - **Sincronización con `available_balance`:** Tras actualizar `balance_per_class`, se iguala `available_balance = balance_per_class` para reflejar la realidad del saldo disponible (si no hubo restas en el mes, solo se actualiza `available_balance` al valor actual de `balance_per_class`).
+   - **Actualización de `balanceRemaining` en historial:** Se busca el registro de **EnrollmentCycleHistory** del ciclo actual del enrollment (`enrollmentId`, `startDate`, `endDate`) y se actualiza el campo `balanceRemaining` con el valor final de `balance_per_class` (dinero que quedaba del periodo a fin de mes, usado en el reporte contable).
 
 4. **Generación de Estadísticas del Mes**
    - Cuenta las clases por tipo dentro del mes:
@@ -1128,7 +1148,7 @@ Este cronjob incluye lógica especial para enrollments en pausa:
 
 ---
 
-### **7. Cronjob Lost Class cuando endDate = Hoy (Status = 1)**
+### **8. Cronjob Lost Class cuando endDate = Hoy (Status = 1)**
 
 **Archivo**: `src/jobs/classRegistry.jobs.js`  
 **Función**: `processEndDateSameDayLostClass`  

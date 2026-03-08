@@ -5,6 +5,7 @@ const ClassRegistry = require('../models/ClassRegistry');
 const Notification = require('../models/Notification');
 const CategoryNotification = require('../models/CategoryNotification');
 const PenalizationRegistry = require('../models/PenalizationRegistry');
+const EnrollmentCycleHistory = require('../models/EnrollmentCycleHistory');
 const utilsFunctions = require('../utils/utilsFunctions');
 const mongoose = require('mongoose');
 
@@ -725,16 +726,30 @@ const processMonthlyClassClosure = async () => {
                     const fractionViewed = utilsFunctions.convertMinutesToFractionalHours(cr.minutesViewed ?? 0);
                     totalToSubtract += valuePerClass * fractionViewed;
                 }
+                let finalBalanceForCycle = enrollment.balance_per_class ?? 0;
                 if (totalToSubtract > 0) {
                     const currentBalancePerClass = enrollment.balance_per_class ?? 0;
                     const newBalancePerClass = Math.max(0, currentBalancePerClass - totalToSubtract);
+                    finalBalanceForCycle = parseFloat(newBalancePerClass.toFixed(2));
                     await Enrollment.findByIdAndUpdate(
                         enrollment._id,
-                        { balance_per_class: parseFloat(newBalancePerClass.toFixed(2)) },
+                        { balance_per_class: finalBalanceForCycle, available_balance: finalBalanceForCycle },
                         { new: true, runValidators: true }
                     );
-                    console.log(`[CRONJOB MENSUAL] balance_per_class enrollment ${enrollment._id}: ${currentBalancePerClass} - ${totalToSubtract.toFixed(2)} = ${newBalancePerClass.toFixed(2)}`);
+                    console.log(`[CRONJOB MENSUAL] balance_per_class y available_balance enrollment ${enrollment._id}: ${currentBalancePerClass} - ${totalToSubtract.toFixed(2)} = ${finalBalanceForCycle}`);
+                } else {
+                    await Enrollment.findByIdAndUpdate(
+                        enrollment._id,
+                        { available_balance: finalBalanceForCycle },
+                        { new: true, runValidators: true }
+                    );
                 }
+
+                // Actualizar balanceRemaining del ciclo actual en el historial (para reporte contable)
+                await EnrollmentCycleHistory.findOneAndUpdate(
+                    { enrollmentId: enrollment._id, startDate: enrollment.startDate, endDate: enrollment.endDate },
+                    { $set: { balanceRemaining: finalBalanceForCycle } }
+                ).catch(() => {});
 
                 // Obtener todas las clases del mes a procesar (solo las que cumplen el criterio de pausa si aplica)
                 const allClassesInMonth = classesInMonth;
